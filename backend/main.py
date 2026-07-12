@@ -194,6 +194,44 @@ async def weather_alerts(city: str):
     return await check_weather_alerts(city)
 
 
+@app.get("/api/spot-detail")
+async def spot_detail(name: str, city: str, reason: str = "", route_detail: str = ""):
+    """DeepSeek 生成景点详细介绍（≥500字），含著名小景点"""
+    prompt = f"""请为景点「{name}」（位于{city}）撰写一份详细的图文介绍。
+
+要求：
+1. 总字数不低于500字
+2. 包含景点历史背景、文化特色、建筑风格、著名打卡点
+3. 在段落之间穿插介绍该景点内2-3个著名小景点/子景点（如具体宫殿、塔楼、园林、展厅等），每个小景点3-4句话
+4. 语言优美，适合旅行攻略阅读
+5. 输出纯文本，不要markdown格式，分段用空行隔开"""
+
+    try:
+        raw = await call_deepseek("你是一个资深旅行编辑，擅长撰写景点深度介绍。", prompt, 2000)
+        return {"success": True, "content": raw.strip()}
+    except Exception as e:
+        return {"success": False, "content": reason or f"{name}是{city}的著名景点，值得一游。", "error": str(e)}
+
+
+@app.get("/api/hotel-detail")
+async def hotel_detail(name: str, city: str, area: str = "", reason: str = ""):
+    """DeepSeek 生成酒店详细介绍（≥500字）"""
+    prompt = f"""请为酒店「{name}」（位于{city}{area}）撰写一份详细的介绍。
+
+要求：
+1. 总字数不低于500字
+2. 包含酒店位置优势、周边交通、配套设施、房型特色、服务亮点
+3. 在段落之间穿插介绍酒店周边2-3个便利设施或景点（如附近地铁站、商圈、夜市、公园等）
+4. 语言专业，适合旅行攻略阅读
+5. 输出纯文本，不要markdown格式，分段用空行隔开"""
+
+    try:
+        raw = await call_deepseek("你是一个资深旅行编辑，擅长撰写酒店深度介绍。", prompt, 2000)
+        return {"success": True, "content": raw.strip()}
+    except Exception as e:
+        return {"success": False, "content": reason or f"{name}位于{city}{area}，地理位置优越，是旅途中的理想下榻之选。", "error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
