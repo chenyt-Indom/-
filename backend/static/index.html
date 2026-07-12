@@ -220,16 +220,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .weather-hourly-card{background:#fff;border-radius:16px;width:90%;max-width:420px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)}
 .wh-header{background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;padding:20px;border-radius:16px 16px 0 0;text-align:center}
 .wh-date{font-size:20px;font-weight:600;margin-bottom:4px}
+.wh-source{font-size:13px;opacity:.7;margin-top:4px}
 .wh-summary{font-size:16px;opacity:.9}
-.wh-current{display:flex;align-items:center;justify-content:center;gap:12px;padding:16px;background:#f9fafb;border-bottom:1px solid #eee}
-.wh-current-temp{font-size:48px;font-weight:700;color:#4A90D9}
-.wh-current-desc{font-size:18px;color:#666}
+.wh-current{display:flex;gap:16px;padding:16px;background:#f9fafb;border-bottom:1px solid #eee;align-items:center}
+.wh-current-main{flex-shrink:0;text-align:center}
+.wh-current-temp{font-size:48px;font-weight:700;color:#4A90D9;line-height:1}
+.wh-current-desc{font-size:18px;color:#666;margin-top:4px}
+.wh-current-detail{display:grid;grid-template-columns:1fr 1fr;gap:6px;flex:1}
+.wh-detail-item{display:flex;justify-content:space-between;font-size:13px;color:#999}
+.wh-detail-val{font-weight:600;color:#555}
+.wh-alert-bar{padding:8px 16px;margin:0 16px}
 .wh-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:16px}
 .wh-item{text-align:center;padding:10px 4px;border-radius:10px;background:#f9fafb}
 .wh-item.now{background:#EEF4FB;border:1px solid #4A90D9}
 .wh-time{font-size:13px;color:#999;margin-bottom:4px}
 .wh-emoji{font-size:22px;margin-bottom:2px}
 .wh-temp{font-size:15px;color:#333;font-weight:600}
+.wh-rain{font-size:12px;color:#3498DB;margin-top:2px}
+.wh-wind{font-size:12px;color:#999;margin-top:2px}
+.wh-rain-alert{background:#3498DB;color:#fff;padding:12px 16px;margin:0 16px 8px;border-radius:8px;font-size:14px;text-align:center}
 .wh-close{display:block;width:100%;padding:14px;background:#f5f5f5;border:none;font-size:16px;color:#333;cursor:pointer;border-radius:0 0 16px 16px}
 
 /* 极端天气预警条 */
@@ -1267,7 +1276,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
   card.innerHTML = html;
 }
 
-// 天气逐时卡片
+// 天气逐时卡片（集成中国天气智能体 wttr.in 实时数据）
 async function showWeatherHourly(dayIdx) {
   if (!tripData || !tripData.itinerary) return;
   const day = tripData.itinerary[dayIdx];
@@ -1277,7 +1286,7 @@ async function showWeatherHourly(dayIdx) {
   if (!date) return;
 
   const card = document.getElementById('weatherHourlyCard');
-  card.innerHTML = '<div style="text-align:center;padding:40px"><div class="loading-dot" style="background:#4A90D9;display:inline-block;animation:bounce .6s infinite alternate"></div> 加载中...</div>';
+  card.innerHTML = '<div style="text-align:center;padding:40px"><span style="font-size:32px">🌤️</span><div style="color:#999;margin-top:8px">中国天气智能体加载中...</div></div>';
   document.getElementById('weatherHourlyOverlay').classList.add('show');
 
   try {
@@ -1285,38 +1294,88 @@ async function showWeatherHourly(dayIdx) {
     const data = await res.json();
     if (!data.success) { card.innerHTML = '<div style="text-align:center;padding:40px;color:#999">天气数据暂不可用</div><button class="wh-close" onclick="closeWeatherHourly()">关闭</button>'; return; }
 
-    // 天气emoji映射
-    const emojiMap = { '晴':'☀️','多云':'⛅','阴':'☁️','雨':'🌧️','小雨':'🌦️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','雪':'❄️','小雪':'🌨️','中雪':'❄️','大雪':'❄️','暴雪':'❄️','雾':'🌫️','霾':'🌫️','风':'💨','大风':'💨','雷阵雨':'⛈️','沙尘暴':'🌪️' };
-    function getEmoji(w) { for (let k in emojiMap) { if (w.includes(k)) return emojiMap[k]; } return '🌤️'; }
+    const emojiMap = { '晴':'☀️','Sunny':'☀️','Clear':'☀️','多云':'⛅','Partly cloudy':'⛅','Cloudy':'☁️','阴':'☁️','Overcast':'☁️','雨':'🌧️','Rain':'🌧️','Light rain':'🌦️','小雨':'🌦️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','雪':'❄️','Snow':'❄️','雾':'🌫️','Fog':'🌫️','Mist':'🌫️','霾':'🌫️','风':'💨','大风':'💨','雷阵雨':'⛈️','Thunder':'⛈️','Patchy rain':'🌦️','Light drizzle':'🌦️','Moderate rain':'🌧️','Heavy rain':'🌧️' };
+    function getEmoji(w) { for (let k in emojiMap) { if ((w||'').includes(k)) return emojiMap[k]; } return '🌤️'; }
 
     const now = new Date();
     const currentHour = now.getHours();
+    const cur = data.current || {};
 
     let html = `<div class="wh-header">
       <div class="wh-date">${date} ${dest}</div>
-      <div class="wh-summary">白天：${data.day_weather} ${data.day_temp} | 夜间：${data.night_weather} ${data.night_temp}</div>
+      <div class="wh-source">数据来源：${data.source||'中国天气智能体'}</div>
     </div>`;
-    if (data.current) {
+
+    // 实时天气概览
+    if (cur.temp) {
       html += `<div class="wh-current">
-        <div class="wh-current-temp">${data.current.temp}</div>
-        <div class="wh-current-desc">${data.current.weather}</div>
+        <div class="wh-current-main">
+          <div class="wh-current-temp">${cur.temp}</div>
+          <div class="wh-current-desc">${getEmoji(cur.weather)} ${cur.weather}</div>
+        </div>
+        <div class="wh-current-detail">
+          ${cur.feels_like ? `<div class="wh-detail-item"><span>体感</span><span class="wh-detail-val">${cur.feels_like}</span></div>` : ''}
+          ${cur.humidity ? `<div class="wh-detail-item"><span>湿度</span><span class="wh-detail-val">${cur.humidity}</span></div>` : ''}
+          ${cur.wind ? `<div class="wh-detail-item"><span>风力</span><span class="wh-detail-val">${cur.wind.split(' ')[0]||''}</span></div>` : ''}
+          ${cur.uv ? `<div class="wh-detail-item"><span>紫外线</span><span class="wh-detail-val">${cur.uv}</span></div>` : ''}
+          ${cur.visibility ? `<div class="wh-detail-item"><span>能见度</span><span class="wh-detail-val">${cur.visibility}</span></div>` : ''}
+        </div>
       </div>`;
     }
+
+    // 极端天气预警
     if (data.extreme_alert && data.extreme_alert.has_alert) {
-      html += '<div style="padding:8px 16px;background:#FFF3E0;color:#E67E22;margin:0 16px;border-radius:8px;font-size:14px">';
-      data.extreme_alert.alerts.forEach(a => { html += `⚠️ ${a.message}<br>`; });
+      html += '<div class="wh-alert-bar">';
+      data.extreme_alert.alerts.forEach(a => {
+        const bg = a.level === 'danger' ? '#FFE0E0' : '#FFF3E0';
+        const color = a.level === 'danger' ? '#D32F2F' : '#E67E22';
+        html += `<div style="background:${bg};color:${color};padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">⚠️ ${a.message}</div>`;
+      });
       html += '</div>';
     }
+
+    // 官方天气预警
+    if (data.alerts && data.alerts.length) {
+      html += '<div class="wh-alert-bar">';
+      data.alerts.forEach(a => {
+        html += `<div style="background:#FFE0E0;color:#D32F2F;padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">🚨 ${a.headline||a.event||'天气预警'}</div>`;
+      });
+      html += '</div>';
+    }
+
+    // 逐时天气网格（3小时间隔）
     html += '<div class="wh-grid">';
     (data.hours||[]).forEach(h => {
-      const isNow = parseInt(h.time) === currentHour;
+      const hNum = parseInt(h.time);
+      const isNow = hNum === currentHour || hNum === currentHour - 1 || hNum === currentHour - 2;
       html += `<div class="wh-item${isNow ? ' now' : ''}">
         <div class="wh-time">${h.time}${isNow ? ' 现在' : ''}</div>
         <div class="wh-emoji">${getEmoji(h.weather)}</div>
         <div class="wh-temp">${h.temp}</div>
+        ${h.rain_chance && parseInt(h.rain_chance) > 30 ? `<div class="wh-rain">🌧️${h.rain_chance}</div>` : ''}
+        ${h.wind ? `<div class="wh-wind">💨${h.wind.split(' ')[0]||''}</div>` : ''}
       </div>`;
     });
-    html += '</div><button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';
+    html += '</div>';
+
+    // 雨雪到来前1小时提醒
+    let rainAlert = null;
+    for (let i = 0; i < (data.hours||[]).length; i++) {
+      const h = data.hours[i];
+      const w = (h.weather||'').toLowerCase();
+      if ((w.includes('rain') || w.includes('snow') || w.includes('雨') || w.includes('雪')) && parseInt(h.rain_chance) > 50) {
+        const hNum = parseInt(h.time);
+        if (hNum - currentHour > 0 && hNum - currentHour <= 2) {
+          rainAlert = `预计${h.time}左右将有${h.weather}，请提前做好准备`;
+          break;
+        }
+      }
+    }
+    if (rainAlert) {
+      html += `<div class="wh-rain-alert">⏰ ${rainAlert}</div>`;
+    }
+
+    html += '<button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';
     card.innerHTML = html;
   } catch(e) {
     card.innerHTML = '<div style="text-align:center;padding:40px;color:#999">加载失败，请重试</div><button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';

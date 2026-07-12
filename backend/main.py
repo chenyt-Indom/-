@@ -12,7 +12,7 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt
 from image_service import fill_images, fill_booking_images
 from feichangzhun_service import judge_transport, search_flights
-from weather_detail_service import get_hourly_weather, check_weather_alerts
+from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 
 app = FastAPI(title="行旅白 AI 旅行规划")
 app.add_middleware(
@@ -232,6 +232,12 @@ async def weather_hourly(city: str, date: str):
 async def weather_alerts(city: str):
     """获取极端天气预警"""
     return await check_weather_alerts(city)
+
+
+@app.get("/api/weather-now")
+async def weather_now(city: str):
+    """获取实时天气（中国天气智能体集成）"""
+    return await get_realtime_weather(city)
 
 
 @app.get("/api/spot-detail")
