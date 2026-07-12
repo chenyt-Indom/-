@@ -1,9 +1,8 @@
-"""图片搜索服务：Wikipedia API → Wikimedia Commons → DeepSeek → text_to_image 四级兜底，确保必定有图"""
+"""图片搜索服务：真实照片搜索链 — Wikimedia Commons → Wikipedia → Flickr → 无图标记"""
 import asyncio
 import httpx
 import urllib.parse
-from config import IMG_BASE
-from deepseek_service import deepseek_search_images
+import re
 
 
 async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
@@ -12,7 +11,6 @@ async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             search_url = f"https://{lang}.wikipedia.org/w/api.php"
-            # 第一步：搜索页面
             resp = await client.get(search_url, params={
                 "action": "query", "list": "search",
                 "srsearch": query, "srlimit": "3", "format": "json",
@@ -21,7 +19,6 @@ async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
             pages = data.get("query", {}).get("search", [])
             if not pages:
                 return images
-            # 第二步：批量获取页面主图
             titles = "|".join([p["title"] for p in pages])
             resp2 = await client.get(search_url, params={
                 "action": "query", "titles": titles,
@@ -42,12 +39,13 @@ async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
     return images
 
 
-async def search_wikimedia(query: str, limit: int = 5) -> list:
-    """搜索Wikimedia Commons真实图片，返回按评分排序的图片URL列表"""
+async def search_wikimedia(query: str, limit: int = 8) -> list:
+    """搜索Wikimedia Commons真实图片，按质量评分排序"""
     images = []
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             search_url = "https://commons.wikimedia.org/w/api.php"
+            # 搜索图片文件
             resp = await client.get(search_url, params={
                 "action": "query", "list": "search",
                 "srsearch": query, "srnamespace": "6",
@@ -73,7 +71,12 @@ async def search_wikimedia(query: str, limit: int = 5) -> list:
                 url = info.get("thumburl") or info.get("url", "")
                 if not url:
                     continue
+                # 过滤非照片文件（图标、标志、SVG等）
+                mime = info.get("mime", "")
+                if "svg" in mime or "gif" in mime:
+                    continue
                 meta = info.get("extmetadata", {})
+                # 质量评分
                 quality = 0
                 if meta.get("QualityAssessment"):
                     qa = meta["QualityAssessment"].get("value", "")
@@ -87,6 +90,10 @@ async def search_wikimedia(query: str, limit: int = 5) -> list:
                 if w >= 2000: quality += 30
                 elif w >= 1000: quality += 20
                 elif w >= 500: quality += 10
+                # 图片描述相关性加分
+                desc = meta.get("ImageDescription", {}).get("value", "")
+                if any(kw in desc.lower() for kw in ["china", "landmark", "building", "temple", "mountain"]):
+                    quality += 10
                 images.append({
                     "url": url, "title": pg.get("title", ""),
                     "width": w, "height": info.get("height", 0),
@@ -98,66 +105,88 @@ async def search_wikimedia(query: str, limit: int = 5) -> list:
     return images
 
 
-async def _multi_source_search(queries: list, limit: int = 5) -> list:
-    """多源图片搜索：Wikipedia(zh+en) → Wikimedia → DeepSeek"""
+async def search_flickr(query: str, limit: int = 5) -> list:
+    """搜索Flickr公开图片（通过网页搜索，无需API key）"""
+    images = []
+    try:
+        # 使用Flickr的公开搜索页面
+        search_url = f"https://www.flickr.com/search/?text={urllib.parse.quote(query)}&license=4,5,6,7,8,9,10"
+        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+            resp = await client.get(search_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            # 提取图片URL
+            html = resp.text
+            img_urls = re.findall(r'//live\.staticflickr\.com/\d+/\d+_[a-f0-9]+_[a-z]\.jpg', html)
+            seen = set()
+            for url in img_urls:
+                full_url = "https:" + url
+                if full_url not in seen:
+                    seen.add(full_url)
+                    images.append({
+                        "url": full_url, "quality": 60,
+                        "source": "flickr",
+                    })
+                    if len(images) >= limit:
+                        break
+    except Exception:
+        pass
+    return images
+
+
+async def _multi_source_search(queries: list, limit: int = 8) -> list:
+    """多源真实照片搜索：Wikimedia → Wikipedia(zh) → Wikipedia(en) → Flickr"""
     for q in queries:
-        # 1. Wikipedia 中文
-        imgs = await search_wikipedia_image(q, "zh")
-        if imgs: return imgs
-        # 2. Wikipedia 英文
-        imgs = await search_wikipedia_image(q, "en")
-        if imgs: return imgs
-        # 3. Wikimedia Commons
+        # 1. Wikimedia Commons（最高质量真实照片）
         imgs = await search_wikimedia(q, limit)
-        if imgs: return imgs
-        # 4. DeepSeek（补充源）
-        imgs = await deepseek_search_images(q, limit)
-        if imgs: return imgs
+        if imgs:
+            return imgs
+        # 2. Wikipedia 中文
+        imgs = await search_wikipedia_image(q, "zh")
+        if imgs:
+            return imgs
+        # 3. Wikipedia 英文
+        imgs = await search_wikipedia_image(q, "en")
+        if imgs:
+            return imgs
+        # 4. Flickr
+        imgs = await search_flickr(q, limit)
+        if imgs:
+            return imgs
     return []
 
 
-def _text_to_image_url(query: str) -> str:
-    """text_to_image API 兜底URL，确保100%有图"""
-    prompt = f"{query}, travel photography, realistic, 4K, high quality"
-    return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size=landscape_16_9"
-
-
 async def get_best_spot_image(name: str, city: str) -> str:
-    """获取景点最佳图片URL（多源搜索，确保必定返回有效URL）"""
+    """获取景点最佳真实照片URL（多源搜索，找不到真实照片时返回空字符串）"""
     queries = [
         f"{name} {city}",
         f"{name} 景点",
         f"{name} China landmark",
         f"{name}",
     ]
-    imgs = await _multi_source_search(queries, 5)
+    imgs = await _multi_source_search(queries, 8)
     if imgs:
         return imgs[0]["url"]
-    # 最终兜底：text_to_image
-    return _text_to_image_url(f"{name} {city} landmark")
+    return ""  # 找不到真实照片，返回空字符串让前端用占位图
 
 
 async def get_best_hotel_image(name: str, area: str) -> str:
-    """获取酒店最佳图片URL（多源搜索，确保必定返回有效URL）"""
+    """获取酒店最佳真实照片URL（多源搜索，找不到真实照片时返回空字符串）"""
     queries = [
         f"{name} hotel {area}",
         f"{name} 酒店",
         f"{name} {area}",
         f"{name}",
     ]
-    imgs = await _multi_source_search(queries, 5)
+    imgs = await _multi_source_search(queries, 8)
     if imgs:
         return imgs[0]["url"]
-    return _text_to_image_url(f"{name} hotel {area} facade")
+    return ""  # 找不到真实照片，返回空字符串让前端用占位图
 
 
 async def search_images(query: str, limit: int = 5) -> dict:
-    """综合图片搜索API：多源搜索，确保必定返回图片"""
+    """综合图片搜索API：多源搜索真实照片"""
     imgs = await _multi_source_search([query], limit)
     if imgs:
         return {"success": True, "images": imgs, "source": imgs[0].get("source", "unknown")}
-    return {
-        "success": True,
-        "images": [{"url": _text_to_image_url(query), "quality": 50, "source": "text_to_image"}],
-        "source": "text_to_image",
-    }
+    return {"success": True, "images": [], "source": "none"}

@@ -114,6 +114,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .map-pin{font-size:18px;cursor:pointer;padding:4px;opacity:.7;transition:opacity .2s}
 .map-pin:hover{opacity:1}
 .spot-img{width:100%;height:200px;border-radius:12px;object-fit:cover;margin-bottom:10px}
+.spot-placeholder{width:100%;height:200px;border-radius:12px;margin-bottom:10px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#fff;gap:8px}
+.spot-placeholder .ph-spot-name{font-size:20px;font-weight:600;text-align:center;padding:0 16px}
+.spot-placeholder .ph-hint{font-size:14px;opacity:.7}
 .spot-name{font-size:24px;font-weight:600;color:#222;margin-bottom:6px}
 .meta-tag{font-size:16px;color:#4A90D9;background:#EEF4FB;padding:3px 12px;border-radius:8px;display:inline-block;margin-right:6px}
 .meta-tag.booking{color:#E67E22;background:#FFF3E0}
@@ -152,6 +155,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn-book-row{display:flex;gap:8px;margin-top:8px}
 .btn-book-row .btn-book{flex:1;margin-top:0}
 .btn-book-row .btn-map{flex:1;height:42px;background:#fff;color:#4A90D9;border:1px solid #4A90D9;border-radius:21px;font-size:18px;cursor:pointer}
+.hotel-img{width:100%;height:160px;border-radius:12px;object-fit:cover;margin:8px 0;cursor:pointer}
+.hotel-placeholder{width:100%;height:160px;border-radius:12px;margin:8px 0;background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#fff;gap:8px}
+.hotel-placeholder .ph-hotel-name{font-size:18px;font-weight:600;text-align:center;padding:0 16px}
+.hotel-placeholder .ph-hint{font-size:14px;opacity:.7}
 .map-spot-num.hotel{background:#E74C3C}
 .tip-item{display:flex;padding:8px 0;font-size:20px}
 .tip-dot{color:#4A90D9;margin-right:10px;line-height:1.5}
@@ -206,6 +213,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .detail-overlay.show{display:flex}
 .detail-card{background:#fff;border-radius:16px;width:90%;max-width:420px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)}
 .detail-img{width:100%;height:220px;object-fit:cover;border-radius:16px 16px 0 0}
+.detail-placeholder{width:100%;height:220px;border-radius:16px 16px 0 0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:8px}
+.detail-placeholder .ph-detail-name{font-size:22px;font-weight:600;text-align:center;padding:0 20px}
+.detail-placeholder .ph-detail-hint{font-size:15px;opacity:.7}
 .detail-body{padding:20px}
 .detail-title{font-size:24px;font-weight:700;color:#222;margin-bottom:8px}
 .detail-meta{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
@@ -1178,13 +1188,21 @@ function renderTrip(data){
   if (bk.hotels && bk.hotels.length) {
     hHtml = '<div class="bottom-card"><div class="bottom-title">🏨 酒店推荐</div>';
     bk.hotels.forEach((h, hotelIdx) => {
-      const hImg = h.image || getFallbackImgUrl(h.name||'酒店', 'hotel');
+      const hImg = h.image || '';
+      const hEscName = (h.name||'').replace(/'/g,"\\'");
+      const hEscReason = (h.reason||'').replace(/'/g,"\\'");
+      const hClick = hImg
+        ? `onclick="showHotelDetail('${hEscName}','${hImg.replace(/'/g,"\\'")}','${hEscReason}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')"`
+        : `onclick="showHotelDetail('${hEscName}','','${hEscReason}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')"`;
+      const hImgHtml = hImg
+        ? `<img class="hotel-img" src="${hImg}" alt="${h.name}" onerror="imgFallback(this,'hotel','${hEscName}',this.onclick)" ${hClick}>`
+        : `<div class="hotel-placeholder" ${hClick}><div class="ph-hotel-name">${h.name}</div><div class="ph-hint">暂无真实照片</div></div>`;
       hHtml += `<div class="booking-item">
         <div class="booking-row"><span class="booking-hotel-name">${h.name}</span></div>
         <div class="booking-row"><span class="booking-area">${h.area||''}</span><span class="booking-price">${h.price}</span></div>
         <div class="booking-reason">${h.reason||''}</div>
         ${h.stay_days ? `<div class="booking-reason" style="color:#4A90D9">📅 ${h.stay_days}入住</div>` : ''}
-        <img class="hotel-img" src="${hImg}" alt="${h.name}" onerror="imgFallback(this,'hotel','${(h.name||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(h.name||'').replace(/'/g,"\\'")}','${hImg}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">
+        ${hImgHtml}
         ${h.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${h.location}</div>` : ''}
         <div class="btn-book-row">
           <button class="btn-book" onclick="window.open('${h.link}','_blank')">预订酒店</button>
@@ -1196,10 +1214,18 @@ function renderTrip(data){
     if (bk.hotel_changes && bk.hotel_changes.length) {
       hHtml += '<div style="margin-top:16px"><div class="bottom-title" style="border-left-color:#E67E22">🔄 换酒店建议</div>';
       bk.hotel_changes.forEach(ch => {
-        const chImg = ch.image || getFallbackImgUrl(ch.to_hotel||'酒店', 'hotel');
+        const chImg = ch.image || '';
+        const chEscName = (ch.to_hotel||'').replace(/'/g,"\\'");
+        const chEscReason = (ch.reason||'').replace(/'/g,"\\'");
+        const chClick = chImg
+          ? `onclick="showHotelDetail('${chEscName}','${chImg.replace(/'/g,"\\'")}','${chEscReason}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')"`
+          : `onclick="showHotelDetail('${chEscName}','','${chEscReason}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')"`;
+        const chImgHtml = chImg
+          ? `<img class="hotel-img" src="${chImg}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${chEscName}',this.onclick)" ${chClick}>`
+          : `<div class="hotel-placeholder" ${chClick}><div class="ph-hotel-name">${ch.to_hotel}</div><div class="ph-hint">暂无真实照片</div></div>`;
         hHtml += `<div class="hotel-change-card">
           <div class="hotel-change-title">Day ${ch.change_day} 换酒店</div>
-          <img class="hotel-img" src="${chImg}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${(ch.to_hotel||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(ch.to_hotel||'').replace(/'/g,"\\'")}','${chImg}','${(ch.reason||'').replace(/'/g,"\\'")}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')">
+          ${chImgHtml}
           <div class="hotel-change-row">🏨 <b>${ch.from_hotel}</b> → <b>${ch.to_hotel}</b></div>
           <div class="hotel-change-row">📍 ${ch.new_area||''} | ${ch.price||''}</div>
           <div class="hotel-change-row">💡 ${ch.reason||''}</div>
@@ -1262,13 +1288,21 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
       timeRange = `${startTime} - ${endTime}`;
     }
   }
-  // 确保图片URL不为空，为空时生成text_to_image兜底URL
   const spotName = slot.spot||'';
-  const imgUrl = slot.image || getFallbackImgUrl(spotName, 'spot');
+  const imgUrl = slot.image || '';
   const escName = spotName.replace(/'/g,"\\'");
+  const escImgUrl = imgUrl.replace(/'/g,"\\'");
+  const escReason = (slot.reason||'').replace(/'/g,"\\'");
+  const escRouteDetail = (slot.route_detail||'').replace(/'/g,"\\'");
+  const clickHandler = imgUrl
+    ? `onclick="showSpotDetail('${escName}','${escImgUrl}','${escReason}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${escRouteDetail}','${timeRange}',${dayIdx},${slotIdx})"`
+    : `onclick="showSpotDetail('${escName}','','${escReason}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${escRouteDetail}','${timeRange}',${dayIdx},${slotIdx})"`;
+  const imgHtml = imgUrl
+    ? `<img class="spot-img" src="${imgUrl}" alt="${escName}" onerror="imgFallback(this,'spot','${escName}',this.onclick)" ${clickHandler}>`
+    : `<div class="spot-placeholder" ${clickHandler}><div class="ph-spot-name">${escName}</div><div class="ph-hint">暂无真实照片</div></div>`;
   return `<div class="time-slot">
     <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${escName}','${slot.location}')">📍</span>` : ''}</div>
-    <img class="spot-img" src="${imgUrl}" alt="${escName}" onerror="imgFallback(this,'spot','${escName}',this.onclick)" onclick="showSpotDetail('${escName}','${imgUrl}','${(slot.reason||'').replace(/'/g,"\\'")}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${(slot.route_detail||'').replace(/'/g,"\\'")}','${timeRange}',${dayIdx},${slotIdx})">
+    ${imgHtml}
     <div class="spot-name">${spotName}</div>
     ${timeRange ? `<div class="spot-time-range"><span class="sr-icon">🕐</span>${timeRange}</div>` : `<span class="meta-tag">时长：${slot.duration||''}</span>`}
     ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
@@ -1471,7 +1505,7 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
   // 直接使用槽位已有图片，不走额外API请求
-  const finalImage = image || getFallbackImgUrl(name, 'spot');
+  const finalImage = image || '';
   // 获取文本介绍（带缓存）
   const cached = localStorage.getItem(cacheKey);
   let content = '', fromCache = false;
@@ -1533,7 +1567,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
   // 直接使用槽位已有图片，不走额外API请求
-  const finalImage = image || getFallbackImgUrl(name, 'hotel');
+  const finalImage = image || '';
   // 获取文本介绍（带缓存）
   const cached = localStorage.getItem(cacheKey);
   let content = '', fromCache = false;
@@ -1557,10 +1591,14 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
 function renderDetailCard(card, type, opts) {
   const {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, area, price, stay_days, routeInfo} = opts;
   let html = '';
-  // 确保图片src永不为空，为空时生成兜底URL
-  const imgSrc = image || getFallbackImgUrl(name, type);
+  // 确保图片src永不为空，天气用text_to_image兜底，景点/酒店用占位提示
+  const imgSrc = image || (type === 'weather' ? getFallbackImgUrl(name, 'weather') : '');
   const escapedName = name.replace(/'/g, "\\'");
-  html += `<img class="detail-img" src="${imgSrc}" alt="${name}" onerror="imgFallback(this,'${type}','${escapedName}')">`;
+  if (imgSrc) {
+    html += `<img class="detail-img" src="${imgSrc}" alt="${name}" onerror="imgFallback(this,'${type}','${escapedName}')">`;
+  } else {
+    html += `<div class="detail-placeholder"><div class="ph-detail-name">${name}</div><div class="ph-detail-hint">暂无真实照片</div></div>`;
+  }
   html += `<div class="detail-body">
     <div class="detail-title">${type==='hotel'?'🏨 ':''}${name}</div>
     <div class="detail-meta">`;

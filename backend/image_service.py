@@ -1,4 +1,4 @@
-"""图片服务：多源搜索 + text_to_image API 兜底 + URL解析"""
+"""图片服务：真实照片搜索 + 天气图片生成 + URL解析"""
 import asyncio
 import urllib.parse
 import httpx
@@ -7,14 +7,13 @@ from config import IMG_BASE
 
 
 def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
-    """生成天气写实风景照片URL，支持复杂天气如'阴转多云'"""
-    # 提取主要天气描述（处理'阴转多云'、'多云转晴'等）
+    """生成天气写实风景照片URL"""
     desc = weather_desc or "晴"
     if "转" in desc:
         parts = desc.split("转")
-        desc = parts[-1] if parts[-1] else parts[0]  # 取转换后的天气
+        desc = parts[-1] if parts[-1] else parts[0]
     weather_map = {
-        "晴": "sunny day, clear blue sky, bright sunlight, 4K, photorealistic landscape",
+        "晴": "sunny day, clear blue sky, bright sunlight, photorealistic landscape, 4K",
         "多云": "partly cloudy sky, soft sunlight, realistic landscape, 4K",
         "阴": "overcast sky, dramatic clouds, moody landscape, photorealistic, 4K",
         "雨": "rainy weather, wet streets, realistic rain scene, 4K photography",
@@ -43,31 +42,26 @@ async def resolve_image_url(text_to_image_url: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(text_to_image_url)
-            return str(resp.url)  # 返回重定向后的最终URL
+            return str(resp.url)
     except Exception:
-        return text_to_image_url  # 解析失败则返回原始URL
+        return text_to_image_url
 
 
 async def resolve_spot_image(name: str, city: str) -> str:
-    """获取景点图片并解析为CDN直链（用于详情页预加载）"""
+    """获取景点真实图片URL（用于详情页预加载）"""
     url = await get_best_spot_image(name, city)
-    if IMG_BASE in url:
-        return await resolve_image_url(url)
     return url
 
 
 async def resolve_hotel_image(name: str, area: str) -> str:
-    """获取酒店图片并解析为CDN直链（用于详情页预加载）"""
+    """获取酒店真实图片URL（用于详情页预加载）"""
     url = await get_best_hotel_image(name, area)
-    if IMG_BASE in url:
-        return await resolve_image_url(url)
     return url
 
 
 async def fill_images(trip_data: dict, dest: str):
-    """为行程中的景点和天气补全图片URL，并解析text_to_image为CDN直链"""
+    """为行程中的景点和天气补全图片URL"""
     tasks = []
-    # 收集所有需要设置图片的位置
     spot_items = []
     weather_items = []
     for day in trip_data.get("itinerary", []):
@@ -82,12 +76,8 @@ async def fill_images(trip_data: dict, dest: str):
             weather_items.append(w)
     if tasks:
         await asyncio.gather(*tasks)
-    # 批量解析text_to_image URL为CDN直链（确保行程页图片直接可用）
+    # 解析天气图片text_to_image URL为CDN直链
     resolve_tasks = []
-    for item in spot_items:
-        img = item.get("image", "")
-        if IMG_BASE in img:
-            resolve_tasks.append(_resolve_and_set(item, "image", img))
     for w in weather_items:
         img = w.get("image", "")
         if IMG_BASE in img:
@@ -100,60 +90,47 @@ async def _resolve_and_set(item: dict, key: str, url: str):
     """解析单个text_to_image URL为CDN直链并写回item"""
     try:
         resolved = await resolve_image_url(url)
-        if resolved != url:
+        if resolved and resolved != url:
             item[key] = resolved
     except Exception:
         pass
 
 
 async def _fill_spot_image(spot_data: dict, dest: str):
-    """为单个景点补全图片URL"""
+    """为单个景点获取真实照片URL（找不到真实照片时设为空）"""
     name = spot_data.get("spot", "")
     if not name:
         return
     try:
-        spot_data["image"] = await get_best_spot_image(name, dest)
+        url = await get_best_spot_image(name, dest)
+        if url:
+            spot_data["image"] = url
     except Exception:
-        spot_data["image"] = _text_to_image_fallback(f"{name} {dest} landmark")
+        pass
 
 
 async def fill_booking_images(booking_info: dict, dest: str):
-    """为酒店补全门面照片URL，并解析text_to_image为CDN直链"""
+    """为酒店补全真实门面照片URL"""
     tasks = []
-    hotel_items = []
     for hotel in booking_info.get("hotels", []):
         if hotel.get("name"):
-            hotel_items.append(hotel)
             tasks.append(_fill_hotel_image(hotel, dest))
     for change in booking_info.get("hotel_changes", []):
         if change.get("to_hotel"):
-            hotel_items.append(change)
             tasks.append(_fill_hotel_image(change, dest, "to_hotel", "new_area"))
     if tasks:
         await asyncio.gather(*tasks)
-    # 批量解析text_to_image URL为CDN直链
-    resolve_tasks = []
-    for item in hotel_items:
-        img = item.get("image", "")
-        if IMG_BASE in img:
-            resolve_tasks.append(_resolve_and_set(item, "image", img))
-    if resolve_tasks:
-        await asyncio.gather(*resolve_tasks)
 
 
 async def _fill_hotel_image(item: dict, dest: str, name_key: str = "name", area_key: str = "area"):
-    """为单个酒店补全图片URL"""
+    """为单个酒店获取真实照片URL（找不到真实照片时设为空）"""
     name = item.get(name_key, "")
     area = item.get(area_key, dest)
     if not name:
         return
     try:
-        item["image"] = await get_best_hotel_image(name, area)
+        url = await get_best_hotel_image(name, area)
+        if url:
+            item["image"] = url
     except Exception:
-        item["image"] = _text_to_image_fallback(f"{name} hotel {area} facade")
-
-
-def _text_to_image_fallback(query: str) -> str:
-    """text_to_image API 兜底"""
-    prompt = f"{query}, travel photography, realistic, 4K, architectural"
-    return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size=landscape_16_9"
+        pass

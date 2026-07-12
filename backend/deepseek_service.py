@@ -1,7 +1,5 @@
-"""DeepSeek AI 服务：API调用、提示词构建和联网图片搜索"""
+"""DeepSeek AI 服务：API调用和提示词构建"""
 import httpx
-import json
-import re
 from config import DEEPSEEK_KEY, DEEPSEEK_URL
 
 
@@ -201,59 +199,3 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 7. 【换酒店推荐】分析行程中景点的地理分布，如果不同天的景点集中在不同区域（如Day1-3在城东，Day4-5在城西），建议中途换酒店减少通勤时间，在 hotel_changes 中列出换酒店建议
 8. hotels 中 stay_days 字段注明该酒店适合入住的日期范围
 9. 只输出JSON，不要markdown代码块"""
-
-
-async def deepseek_search_images(query: str, limit: int = 3) -> list:
-    """让DeepSeek联网搜索景点/酒店真实图片URL，返回按评分排序的URL列表"""
-    images = []
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                DEEPSEEK_URL,
-                headers={
-                    "Authorization": f"Bearer {DEEPSEEK_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "deepseek-chat",
-                    "messages": [
-                        {"role": "system", "content": "你是一个图片搜索助手。请联网搜索真实可访问的图片URL，只输出JSON数组，不要其他内容。"},
-                        {"role": "user", "content": f"请联网搜索「{query}」的高清真实照片，从旅游网站、图片网站找到{limit}张评分最高的图片URL。\n输出格式：```json\n[{{\"url\":\"图片直链\",\"quality\":评分1-100,\"source\":\"来源\"}}]\n```\n要求：url必须是真实可访问的图片直链(jpg/png/webp)，quality按清晰度+构图+相关性评分。"}
-                    ],
-                    "temperature": 0.3,
-                    "max_tokens": 2000,
-                    "stream": False,
-                },
-            )
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
-            content = content.strip()
-            # 提取JSON数组
-            json_match = re.search(r'\[[\s\S]*\]', content)
-            if json_match:
-                try:
-                    data = json.loads(json_match.group())
-                    if isinstance(data, list):
-                        for item in data:
-                            url = (item.get("url", "") or "").strip()
-                            if url and (url.startswith("http://") or url.startswith("https://")):
-                                # 过滤明显无效的URL
-                                if any(x in url.lower() for x in ["placeholder", "example.com", "undefined"]):
-                                    continue
-                                images.append({
-                                    "url": url,
-                                    "quality": int(item.get("quality", 50)),
-                                    "source": "deepseek",
-                                })
-                        images.sort(key=lambda x: x["quality"], reverse=True)
-                except json.JSONDecodeError:
-                    pass
-            # 如果JSON解析失败，尝试从文本中提取URL
-            if not images:
-                urls = re.findall(r'https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)[^\s"\'<>]*', content, re.IGNORECASE)
-                for url in urls[:limit]:
-                    if not any(x in url.lower() for x in ["placeholder", "example.com"]):
-                        images.append({"url": url, "quality": 50, "source": "deepseek"})
-    except Exception:
-        pass
-    return images
