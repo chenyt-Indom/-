@@ -1,8 +1,35 @@
-"""图片搜索服务：真实照片搜索链 — Wikimedia Commons → Wikipedia → Flickr → 无图标记"""
+"""图片搜索服务：真实照片搜索链 — 高德POI → Wikimedia Commons → Wikipedia → Flickr"""
 import asyncio
 import httpx
 import urllib.parse
 import re
+from config import AMAP_KEY, AMAP_POI_URL
+
+
+async def search_amap_photos(name: str, city: str) -> list:
+    """通过高德POI API搜索景点/酒店真实照片（最可靠的中文景点图片源）"""
+    images = []
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(AMAP_POI_URL, params={
+                "key": AMAP_KEY, "keywords": name, "city": city,
+                "offset": 5, "extensions": "all",
+            })
+            data = resp.json()
+            if data.get("status") == "1":
+                for p in data.get("pois", []):
+                    for pic in (p.get("photos", []) or []):
+                        url = pic.get("url", "")
+                        if url and (url.startswith("http://") or url.startswith("https://")):
+                            images.append({
+                                "url": url, "title": p.get("name", name),
+                                "quality": 85, "source": "amap",
+                            })
+                            if len(images) >= 5:
+                                return images
+    except Exception:
+        pass
+    return images
 
 
 async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
@@ -134,10 +161,14 @@ async def search_flickr(query: str, limit: int = 5) -> list:
     return images
 
 
-async def _multi_source_search(queries: list, limit: int = 8) -> list:
-    """多源真实照片搜索：Wikimedia → Wikipedia(zh) → Wikipedia(en) → Flickr"""
+async def _multi_source_search(name: str, city: str, queries: list, limit: int = 8) -> list:
+    """多源真实照片搜索：高德POI(最快最准) → Wikimedia → Wikipedia → Flickr"""
+    # 1. 高德POI照片（国内景点最可靠来源，优先）
+    imgs = await search_amap_photos(name, city)
+    if imgs:
+        return imgs
+    # 2. 国际源并行搜索
     for q in queries:
-        # 并行搜索所有源，取最快返回结果
         results = await asyncio.gather(
             search_wikimedia(q, limit),
             search_wikipedia_image(q, "zh"),
@@ -159,7 +190,7 @@ async def get_best_spot_image(name: str, city: str) -> str:
         f"{name} China landmark",
         f"{name}",
     ]
-    imgs = await _multi_source_search(queries, 8)
+    imgs = await _multi_source_search(name, city, queries, 8)
     if imgs:
         return imgs[0]["url"]
     return ""  # 找不到真实照片，返回空字符串让前端用占位图
@@ -173,7 +204,7 @@ async def get_best_hotel_image(name: str, area: str) -> str:
         f"{name} {area}",
         f"{name}",
     ]
-    imgs = await _multi_source_search(queries, 8)
+    imgs = await _multi_source_search(name, area, queries, 8)
     if imgs:
         return imgs[0]["url"]
     return ""  # 找不到真实照片，返回空字符串让前端用占位图
@@ -181,7 +212,7 @@ async def get_best_hotel_image(name: str, area: str) -> str:
 
 async def search_images(query: str, limit: int = 5) -> dict:
     """综合图片搜索API：多源搜索真实照片"""
-    imgs = await _multi_source_search([query], limit)
+    imgs = await _multi_source_search(query, "", [query], limit)
     if imgs:
         return {"success": True, "images": imgs, "source": imgs[0].get("source", "unknown")}
     return {"success": True, "images": [], "source": "none"}
