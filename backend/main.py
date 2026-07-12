@@ -14,6 +14,7 @@ from image_service import fill_images, fill_booking_images
 from feichangzhun_service import judge_transport, search_flights
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
+from route_service import get_route_plan
 
 app = FastAPI(title="行旅白 AI 旅行规划")
 app.add_middleware(
@@ -295,6 +296,28 @@ async def hotel_detail(name: str, city: str, area: str = "", reason: str = ""):
         return {"success": True, "content": raw.strip()}
     except Exception as e:
         return {"success": False, "content": reason or f"{name}位于{city}{area}，地理位置优越，是旅途中的理想下榻之选。", "error": str(e)}
+
+
+@app.post("/api/route-plan")
+async def route_plan(request: Request):
+    """高德路线规划：实时路况、驾车耗时、到达时间预测"""
+    body = await request.json()
+    spots = body.get("spots", [])
+    if not spots or len(spots) < 2:
+        return {"success": False, "error": "至少需要2个景点"}
+    routes = await get_route_plan(spots)
+    return {"success": True, "routes": routes}
+
+
+@app.get("/api/saved-trips/refresh")
+async def refresh_saved_trip(city: str, days: int):
+    """刷新收藏行程的实时天气和景点信息"""
+    try:
+        weather_data = await amap_weather(city)
+        return {"success": True, "weather": weather_data, "city": city,
+                "updated_at": __import__("datetime").datetime.now().isoformat()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 if __name__ == "__main__":
