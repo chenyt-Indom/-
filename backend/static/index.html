@@ -493,23 +493,31 @@ function switchBudgetType(type) {
 
 // 图片加载失败时的DOM替换兜底（100%可靠，不依赖任何外部资源）
 function imgFallback(img, type, name, onClickFn) {
-  // 先尝试通过API搜索真实图片
+  // 如果src为空或无效，直接触发API搜索
   const dest = tripData ? tripData.destination : '';
   const query = name + (dest ? ' ' + dest : '');
   img.style.opacity = '0.5';
+  // 优先尝试API搜索真实图片，失败则显示渐变占位卡
   fetch(API + '/api/spot-images?query=' + encodeURIComponent(query) + '&limit=3')
     .then(r => r.json())
     .then(data => {
       if (data.success && data.images && data.images.length > 0) {
-        // 找到了真实图片，替换src
-        img.src = data.images[0].url;
+        const newSrc = data.images[0].url;
+        img.src = newSrc;
         img.style.opacity = '1';
+        // 如果新URL也加载失败，显示渐变占位卡
         img.onerror = function() { showGradientFallback(img, type, name, onClickFn); };
         return;
       }
       showGradientFallback(img, type, name, onClickFn);
     })
-    .catch(() => showGradientFallback(img, type, name, onClickFn));
+    .catch(function() {
+      // 第二次尝试：直接用text_to_image兜底
+      const fallbackUrl = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(name + ' ' + dest + ', travel photography, realistic, 4K') + '&image_size=landscape_16_9';
+      img.src = fallbackUrl;
+      img.style.opacity = '1';
+      img.onerror = function() { showGradientFallback(img, type, name, onClickFn); };
+    });
 }
 
 function showGradientFallback(img, type, name, onClickFn) {
@@ -1022,7 +1030,7 @@ function renderTrip(data){
     const w = day.weather||{};
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      ${w.image ? `<img class="weather-img" src="${w.image}" alt="天气" onerror="imgFallback(this,'weather','天气',this.onclick)" onclick="showWeatherHourly(${dayIdx})">` : ''}
+      <img class="weather-img" src="${w.image||''}" alt="天气" onerror="imgFallback(this,'weather','天气',this.onclick)" onclick="showWeatherHourly(${dayIdx})">
       ${renderSlot('上午','morning',day.morning,dayIdx,0)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
       ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
@@ -1074,7 +1082,7 @@ function renderTrip(data){
         <div class="booking-row"><span class="booking-area">${h.area||''}</span><span class="booking-price">${h.price}</span></div>
         <div class="booking-reason">${h.reason||''}</div>
         ${h.stay_days ? `<div class="booking-reason" style="color:#4A90D9">📅 ${h.stay_days}入住</div>` : ''}
-        ${h.image ? `<img class="hotel-img" src="${h.image}" alt="${h.name}" onerror="imgFallback(this,'hotel','${(h.name||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(h.name||'').replace(/'/g,"\\'")}','${h.image}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">` : ''}
+        <img class="hotel-img" src="${h.image||''}" alt="${h.name}" onerror="imgFallback(this,'hotel','${(h.name||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(h.name||'').replace(/'/g,"\\'")}','${h.image||''}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">
         ${h.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${h.location}</div>` : ''}
         <div class="btn-book-row">
           <button class="btn-book" onclick="window.open('${h.link}','_blank')">预订酒店</button>
@@ -1088,7 +1096,7 @@ function renderTrip(data){
       bk.hotel_changes.forEach(ch => {
         hHtml += `<div class="hotel-change-card">
           <div class="hotel-change-title">Day ${ch.change_day} 换酒店</div>
-          ${ch.image ? `<img class="hotel-img" src="${ch.image}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${(ch.to_hotel||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(ch.to_hotel||'').replace(/'/g,"\\'")}','${ch.image}','${(ch.reason||'').replace(/'/g,"\\'")}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')">` : ''}
+          <img class="hotel-img" src="${ch.image||''}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${(ch.to_hotel||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(ch.to_hotel||'').replace(/'/g,"\\'")}','${ch.image||''}','${(ch.reason||'').replace(/'/g,"\\'")}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')">
           <div class="hotel-change-row">🏨 <b>${ch.from_hotel}</b> → <b>${ch.to_hotel}</b></div>
           <div class="hotel-change-row">📍 ${ch.new_area||''} | ${ch.price||''}</div>
           <div class="hotel-change-row">💡 ${ch.reason||''}</div>
@@ -1153,7 +1161,7 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
   }
   return `<div class="time-slot">
     <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${slot.spot.replace(/'/g,"\\'")}','${slot.location}')">📍</span>` : ''}</div>
-    ${slot.image ? `<img class="spot-img" src="${slot.image}" alt="${slot.spot}" onerror="imgFallback(this,'spot','${slot.spot.replace(/'/g,"\\'")}',this.onclick)" onclick="showSpotDetail('${slot.spot.replace(/'/g,"\\'")}','${slot.image}','${(slot.reason||'').replace(/'/g,"\\'")}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${(slot.route_detail||'').replace(/'/g,"\\'")}','${timeRange}',${dayIdx},${slotIdx})">` : ''}
+    <img class="spot-img" src="${slot.image||''}" alt="${slot.spot}" onerror="imgFallback(this,'spot','${slot.spot.replace(/'/g,"\\'")}',this.onclick)" onclick="showSpotDetail('${slot.spot.replace(/'/g,"\\'")}','${slot.image||''}','${(slot.reason||'').replace(/'/g,"\\'")}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${(slot.route_detail||'').replace(/'/g,"\\'")}','${timeRange}',${dayIdx},${slotIdx})">
     <div class="spot-name">${slot.spot||''}</div>
     ${timeRange ? `<div class="spot-time-range"><span class="sr-icon">🕐</span>${timeRange}</div>` : `<span class="meta-tag">时长：${slot.duration||''}</span>`}
     ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
@@ -1458,7 +1466,10 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
 function renderDetailCard(card, type, opts) {
   const {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, area, price, stay_days, routeInfo} = opts;
   let html = '';
-  if (image) html += `<img class="detail-img" src="${image}" alt="${name}" onerror="imgFallback(this,'${type}','${name.replace(/'/g,"\\'")}')">`;
+  // 确保始终渲染图片元素，即使image为空也会触发onerror走fallback链
+  const imgSrc = image || '';
+  const escapedName = name.replace(/'/g, "\\'");
+  html += `<img class="detail-img" src="${imgSrc}" alt="${name}" onerror="imgFallback(this,'${type}','${escapedName}')">`;
   html += `<div class="detail-body">
     <div class="detail-title">${type==='hotel'?'🏨 ':''}${name}</div>
     <div class="detail-meta">`;
