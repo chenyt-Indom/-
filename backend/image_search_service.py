@@ -9,7 +9,7 @@ async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
     """通过Wikipedia API搜索页面主图，返回真实图片URL列表"""
     images = []
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             search_url = f"https://{lang}.wikipedia.org/w/api.php"
             resp = await client.get(search_url, params={
                 "action": "query", "list": "search",
@@ -43,7 +43,7 @@ async def search_wikimedia(query: str, limit: int = 8) -> list:
     """搜索Wikimedia Commons真实图片，按质量评分排序"""
     images = []
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             search_url = "https://commons.wikimedia.org/w/api.php"
             # 搜索图片文件
             resp = await client.get(search_url, params={
@@ -111,7 +111,7 @@ async def search_flickr(query: str, limit: int = 5) -> list:
     try:
         # 使用Flickr的公开搜索页面
         search_url = f"https://www.flickr.com/search/?text={urllib.parse.quote(query)}&license=4,5,6,7,8,9,10"
-        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
             resp = await client.get(search_url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
@@ -137,22 +137,17 @@ async def search_flickr(query: str, limit: int = 5) -> list:
 async def _multi_source_search(queries: list, limit: int = 8) -> list:
     """多源真实照片搜索：Wikimedia → Wikipedia(zh) → Wikipedia(en) → Flickr"""
     for q in queries:
-        # 1. Wikimedia Commons（最高质量真实照片）
-        imgs = await search_wikimedia(q, limit)
-        if imgs:
-            return imgs
-        # 2. Wikipedia 中文
-        imgs = await search_wikipedia_image(q, "zh")
-        if imgs:
-            return imgs
-        # 3. Wikipedia 英文
-        imgs = await search_wikipedia_image(q, "en")
-        if imgs:
-            return imgs
-        # 4. Flickr
-        imgs = await search_flickr(q, limit)
-        if imgs:
-            return imgs
+        # 并行搜索所有源，取最快返回结果
+        results = await asyncio.gather(
+            search_wikimedia(q, limit),
+            search_wikipedia_image(q, "zh"),
+            search_wikipedia_image(q, "en"),
+            search_flickr(q, limit),
+            return_exceptions=True,
+        )
+        for r in results:
+            if isinstance(r, list) and r:
+                return r
     return []
 
 

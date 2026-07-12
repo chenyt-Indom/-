@@ -212,10 +212,16 @@ async def generate_trip(req: TripRequest):
             if ticket.get("spot") and not ticket.get("location"):
                 ticket["location"] = await amap_geocode(ticket["spot"], dest)
 
-        # 7. 为景点和天气获取真实图片URL（Wikimedia Commons优先）
-        await fill_images(trip_data, dest)
-        # 为酒店获取真实门面图片
-        await fill_booking_images(booking_info, dest)
+        # 7. 为景点和天气获取真实图片URL（带超时，不阻塞主流程）
+        try:
+            await asyncio.wait_for(fill_images(trip_data, dest), timeout=25.0)
+        except (asyncio.TimeoutError, Exception):
+            pass  # 图片获取超时或失败不阻塞攻略生成
+        # 为酒店获取真实门面图片（带超时）
+        try:
+            await asyncio.wait_for(fill_booking_images(booking_info, dest), timeout=25.0)
+        except (asyncio.TimeoutError, Exception):
+            pass  # 酒店图片获取超时或失败不阻塞攻略生成
 
         trip_data["booking_info"] = booking_info
         return {"success": True, "data": trip_data}
