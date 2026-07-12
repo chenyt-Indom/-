@@ -1481,7 +1481,7 @@ function renderDetailCard(card, type, opts) {
   card.innerHTML = html;
 }
 
-// 重新生成详情介绍
+// 重新生成详情介绍（同时刷新图片）
 async function regenerateDetail(cacheKey, type, name) {
   const card = document.getElementById('detailCard');
   localStorage.removeItem(cacheKey);
@@ -1490,16 +1490,29 @@ async function regenerateDetail(cacheKey, type, name) {
   const dest = tripData ? tripData.destination : '';
   const endpoint = type === 'spot' ? '/api/spot-detail' : '/api/hotel-detail';
   try {
+    // 并行：刷新文本 + 刷新图片
     const params = new URLSearchParams({name, city: dest});
-    const res = await fetch(`${API}${endpoint}?${params}`);
-    const data = await res.json();
-    const content = data.content || '';
+    const [textRes, imgRes] = await Promise.all([
+      fetch(`${API}${endpoint}?${params}`),
+      fetch(`${API}/api/spot-images?query=${encodeURIComponent(name + ' ' + dest)}&limit=1`)
+    ]);
+    const textData = await textRes.json();
+    const content = textData.content || '';
     localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
-    // 更新卡片中的内容区域
+    // 更新卡片内容
     const textDiv = card.querySelector('.detail-long-text');
     if (textDiv) textDiv.innerHTML = '<p>' + content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
     const titleDiv = card.querySelector('.detail-section-title');
     if (titleDiv && titleDiv.textContent.includes('详细介绍')) titleDiv.textContent = '📖 详细介绍 (已更新)';
+    // 刷新图片
+    try {
+      const imgData = await imgRes.json();
+      const imgEl = card.querySelector('.detail-img');
+      if (imgData.success && imgData.images && imgData.images.length > 0 && imgEl) {
+        imgEl.src = imgData.images[0].url;
+        imgEl.onerror = function() { imgFallback(this, type, name); };
+      }
+    } catch(e) {}
     if (btn) { btn.textContent = '✅ 已重新生成'; btn.style.color = '#52C41A'; btn.style.borderColor = '#52C41A'; }
   } catch(e) {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 重新生成介绍'; }
