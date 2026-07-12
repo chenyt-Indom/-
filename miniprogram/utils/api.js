@@ -1,5 +1,6 @@
 // API 工具模块：封装与后端通信的请求方法
-const BASE_URL = 'http://localhost:8000';
+// 上线前替换 YOUR_DOMAIN 为你的真实域名
+const BASE_URL = 'https://YOUR_DOMAIN.com';
 
 // 生成旅行攻略，请求体包含目的地、天数、预算、兴趣标签、日期范围
 function generateTrip(data) {
