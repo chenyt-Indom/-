@@ -14,4 +14,4 @@ class TripRequest(BaseModel):
     end_date: str = ""    # 返程日期
     departure_city: str = ""  # 出发城市
     travelers: int = 1    # 旅行人数
-    pace: str = "moderate"  # 游玩节奏: "relaxed"=休闲, "moderate"=适中, "fast"=快速
+    pace: int = 50     # 游玩节奏 0-100，0=极慢，100=极快

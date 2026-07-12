@@ -27,7 +27,7 @@ async def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 
 
 def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                       poi_data: list, weather_data: list, start_date: str, end_date: str,
-                      travelers: int = 1, budget_type: str = "total", pace: str = "moderate") -> str:
+                      travelers: int = 1, budget_type: str = "total", pace: int = 50) -> str:
     """构建行程生成提示词，包含POI数据、天气、人数、预算类型、节奏和JSON格式要求"""
     interest_str = "、".join(interests) if interests else "综合体验"
     poi_str = "\n".join([
@@ -58,13 +58,22 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     if budget_type == "aa":
         budget_info += f"（此为AA制每人预算，实际总预算=每人预算×{travelers}人={budget}×{travelers}，请以总预算为准规划但不在输出中显示计算过程）"
 
-    # 节奏描述
-    pace_map = {
-        "relaxed": "休闲节奏：每天安排1-2个核心景点，留足休息和自由探索时间，上午10点后出发，下午有充足歇脚时间，适合度假式慢旅行",
-        "moderate": "适中节奏：每天安排2-3个景点，早上9点出发，合理分配时间，兼顾游览和休息",
-        "fast": "快速节奏：每天安排3-4个景点，早上8点前出发，充分利用时间，适合打卡式高效旅行"
-    }
-    pace_info = f"\n【游玩节奏】{pace_map.get(pace, pace_map['moderate'])}"
+    # 节奏描述（连续值 0-100）
+    if pace <= 10:
+        pace_desc = "极慢节奏：每天只安排1个核心景点，上午10点后出发，大量自由时间，深度体验为主，适合度假放空"
+    elif pace <= 25:
+        pace_desc = "慢节奏：每天1-2个景点，上午9:30后出发，每个景点预留充足时间，下午可自由探索"
+    elif pace <= 40:
+        pace_desc = "偏休闲节奏：每天2个景点，上午9点出发，适当安排休息时间，游览与放松兼顾"
+    elif pace <= 55:
+        pace_desc = "适中节奏：每天2-3个景点，早上9点出发，合理分配时间，兼顾游览和休息"
+    elif pace <= 70:
+        pace_desc = "偏紧凑节奏：每天3个景点，早上8:30出发，充分利用白天时间，行程较充实"
+    elif pace <= 85:
+        pace_desc = "快节奏：每天3-4个景点，早上8点出发，紧密安排行程，适合打卡式旅行"
+    else:
+        pace_desc = "极快节奏：每天4-5个景点，早上7:30前出发，最大化游览效率，适合特种兵式旅行"
+    pace_info = f"\n【游玩节奏】{pace_desc}"
     pace_info += "\n【重要】游玩节奏优先于所有其他因素！请严格按照此节奏安排每天行程，人数影响为次要考虑。"
 
     return f"""你是一个资深旅行规划师。请根据以下真实数据，生成一份 {days} 天的{dest}行程。
