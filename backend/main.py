@@ -32,7 +32,7 @@ async def health_check():
 
 @app.get("/api/locate")
 async def locate_city(request: Request):
-    """IP定位：高德API优先，失败则用 ip-api.com 兜底。"""
+    """IP定位：高德API优先，ip-api.com兜底，ipapi.co交叉验证。移动端IP可能不准。"""
     import re
     client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
     if not client_ip:
@@ -48,11 +48,39 @@ async def locate_city(request: Request):
         if not is_private and client_ip:
             params["ip"] = client_ip
         resp = await client.get("https://restapi.amap.com/v3/ip", params=params)
-        data = resp.json()
-        if data.get("status") == "1" and data.get("city"):
-            return {"success": True, "city": data["city"].replace("市", ""),
-                    "province": data.get("province", ""),
-                    "adcode": data.get("adcode", "")}
+        amap_data = resp.json()
+        if amap_data.get("status") == "1" and amap_data.get("city"):
+            amap_city = amap_data["city"].replace("市", "")
+            amap_source = "amap"
+            # 方案3：用ipapi.co交叉验证（仅在高德返回了结果时）
+            try:
+                ipapi_resp = await client.get(f"https://ipapi.co/{client_ip}/json/", follow_redirects=True)
+                ipapi_data = ipapi_resp.json()
+                ipapi_city = (ipapi_data.get("city", "") or "").replace("市", "")
+                # 如果两个服务返回不同城市，用ipapi.co的结果（对移动端更准）
+                if ipapi_city and ipapi_city != amap_city and len(ipapi_city) >= 2:
+                    # 再用ip-api.com作为决胜票
+                    try:
+                        ipapi2_resp = await client.get(
+                            f"http://ip-api.com/json/{client_ip}?lang=zh-CN&fields=city,regionName",
+                            follow_redirects=True)
+                        ipapi2_data = ipapi2_resp.json()
+                        ipapi2_city = (ipapi2_data.get("city", "") or "").replace("市", "")
+                        if ipapi2_city and ipapi2_city == ipapi_city:
+                            # 两个都不同意高德，用新结果
+                            return {"success": True, "city": ipapi_city,
+                                    "province": ipapi_data.get("region", ""),
+                                    "adcode": "", "source": "ipapi_co"}
+                    except Exception:
+                        pass
+                    return {"success": True, "city": ipapi_city,
+                            "province": ipapi_data.get("region", ""),
+                            "adcode": "", "source": "ipapi_co"}
+            except Exception:
+                pass
+            return {"success": True, "city": amap_city,
+                    "province": amap_data.get("province", ""),
+                    "adcode": amap_data.get("adcode", ""), "source": amap_source}
         # 方案2：ip-api.com 兜底
         try:
             ip_url = "http://ip-api.com/json/?lang=zh-CN&fields=city,regionName,country"
@@ -60,10 +88,22 @@ async def locate_city(request: Request):
                 ip_url = f"http://ip-api.com/json/{client_ip}?lang=zh-CN&fields=city,regionName,country"
             resp2 = await client.get(ip_url, follow_redirects=True)
             data2 = resp2.json()
-            # ip-api.com 直接返回数据，无 status 字段
             if isinstance(data2, dict) and data2.get("city"):
                 return {"success": True, "city": data2["city"].replace("市", ""),
-                        "province": data2.get("regionName", ""), "adcode": ""}
+                        "province": data2.get("regionName", ""), "adcode": "",
+                        "source": "ip-api"}
+        except Exception:
+            pass
+        # 方案4：ipapi.co 最后兜底
+        try:
+            if not is_private and client_ip:
+                ipapi_resp = await client.get(f"https://ipapi.co/{client_ip}/json/", follow_redirects=True)
+                ipapi_data = ipapi_resp.json()
+                ipapi_city = (ipapi_data.get("city", "") or "").replace("市", "")
+                if ipapi_city:
+                    return {"success": True, "city": ipapi_city,
+                            "province": ipapi_data.get("region", ""),
+                            "adcode": "", "source": "ipapi_co"}
         except Exception:
             pass
         return {"success": False, "city": "", "error": "无法定位"}

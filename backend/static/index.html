@@ -15,6 +15,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .city-badge .city-icon{font-size:18px;pointer-events:none}
 .city-badge .city-name{font-weight:600;max-width:80px;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .city-badge .city-edit{font-size:12px;opacity:.6;pointer-events:none}
+.locate-type{font-size:11px;color:#E67E22;opacity:.8;pointer-events:none}
 .title{font-size:28px;color:#333;font-weight:500;margin-top:8px}
 .subtitle{font-size:18px;color:#999;margin-top:10px}
 .form-card{background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 4px 24px rgba(74,144,217,0.08);border:1px solid #eef4fb}
@@ -277,6 +278,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="city-badge" id="cityBadge" onclick="editCity()">
       <span class="city-icon">📍</span>
       <span class="city-name" id="cityName">定位中...</span>
+      <span class="locate-type" id="locateType"></span>
       <span class="city-edit">编辑</span>
     </div>
   </div>
@@ -487,34 +489,49 @@ function updatePace() {
 
 // 定位：优先GPS精确坐标→逆地理编码，失败则IP定位兜底
 async function locateCity() {
+  const badge = document.getElementById('cityName');
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   // 第一步：尝试浏览器GPS定位
   if (navigator.geolocation) {
     try {
       const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject,
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 });
+          { enableHighAccuracy: true, timeout: isMobile ? 15000 : 8000, maximumAge: 600000 });
       });
       const res = await fetch(API + `/api/regeo?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`);
       const data = await res.json();
       if (data.success && data.city) {
         departureCity = data.city;
-        document.getElementById('cityName').textContent = departureCity;
+        badge.textContent = departureCity;
+        badge.title = 'GPS精确定位';
         return;
       }
-    } catch(e) { /* GPS失败，回退到IP定位 */ }
+    } catch(e) {
+      // GPS失败原因：1)HTTP站点不支持 2)用户拒绝权限 3)定位超时
+      console.log('GPS定位失败:', e.message);
+    }
+  } else {
+    console.log('浏览器不支持GPS定位');
   }
   // 第二步：IP定位兜底
+  badge.textContent = '定位中…';
   try {
     const res = await fetch(API + '/api/locate');
     const data = await res.json();
     if (data.success && data.city) {
       departureCity = data.city;
-      document.getElementById('cityName').textContent = departureCity;
+      badge.textContent = departureCity;
+      badge.title = isMobile ? '基于IP定位，可能不准确，点击可手动修改' : 'IP定位';
+      // 添加小提示标记
+      const marker = document.getElementById('locateType');
+      if (marker) marker.textContent = isMobile ? ' 📍(IP)' : '';
     } else {
-      document.getElementById('cityName').textContent = '点击编辑';
+      badge.textContent = '点击设置城市';
+      badge.title = '定位失败，请手动设置';
     }
   } catch(e) {
-    document.getElementById('cityName').textContent = '点击编辑';
+    badge.textContent = '点击设置城市';
+    badge.title = '定位失败，请手动设置';
   }
 }
 function editCity() {
