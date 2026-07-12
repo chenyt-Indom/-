@@ -240,6 +240,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .wh-wind{font-size:12px;color:#999;margin-top:2px}
 .wh-rain-alert{background:#3498DB;color:#fff;padding:12px 16px;margin:0 16px 8px;border-radius:8px;font-size:14px;text-align:center}
 .wh-close{display:block;width:100%;padding:14px;background:#f5f5f5;border:none;font-size:16px;color:#333;cursor:pointer;border-radius:0 0 16px 16px}
+/* 空气质量卡片 */
+.wh-aqi{padding:12px 16px;margin:0 16px;border-radius:10px;display:flex;align-items:center;gap:12px}
+.wh-aqi-value{font-size:36px;font-weight:700;line-height:1}
+.wh-aqi-info{flex:1}
+.wh-aqi-level{font-size:16px;font-weight:600;margin-bottom:2px}
+.wh-aqi-desc{font-size:13px;color:#999}
+.wh-aqi-detail{display:flex;gap:8px;margin-top:4px;font-size:12px;color:#666}
+/* 天气助手按钮 */
+.wh-ai-btn{display:block;width:calc(100% - 32px);margin:12px 16px;padding:12px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;text-align:center}
+.wh-ai-btn:hover{opacity:.9}
+.wh-ai-reply{background:#EEF4FB;margin:8px 16px;padding:14px;border-radius:10px;font-size:15px;color:#333;line-height:1.6;display:none}
+.wh-ai-reply.show{display:block}
+.wh-ai-loading{text-align:center;color:#4A90D9;font-size:14px;padding:8px;display:none}
+.wh-ai-loading.show{display:block}
 
 /* 极端天气预警条 */
 .alert-bar{position:fixed;top:0;left:0;right:0;background:#E74C3C;color:#fff;padding:12px 20px;font-size:15px;text-align:center;z-index:9999;display:none;animation:slideDown .3s ease}
@@ -1276,7 +1290,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
   card.innerHTML = html;
 }
 
-// 天气逐时卡片（集成中国天气智能体 wttr.in 实时数据）
+// 天气逐时卡片（集成中国天气智能体：wttr.in实时数据 + 空气质量 + AI天气助手）
 async function showWeatherHourly(dayIdx) {
   if (!tripData || !tripData.itinerary) return;
   const day = tripData.itinerary[dayIdx];
@@ -1290,8 +1304,13 @@ async function showWeatherHourly(dayIdx) {
   document.getElementById('weatherHourlyOverlay').classList.add('show');
 
   try {
-    const res = await fetch(API + `/api/weather-hourly?city=${encodeURIComponent(dest)}&date=${encodeURIComponent(date)}`);
-    const data = await res.json();
+    // 并行请求逐时天气 + 空气质量
+    const [hourlyRes, aqiRes] = await Promise.all([
+      fetch(API + `/api/weather-hourly?city=${encodeURIComponent(dest)}&date=${encodeURIComponent(date)}`),
+      fetch(API + `/api/china-weather/air-quality?city=${encodeURIComponent(dest)}`)
+    ]);
+    const data = await hourlyRes.json();
+    const aqiData = await aqiRes.json();
     if (!data.success) { card.innerHTML = '<div style="text-align:center;padding:40px;color:#999">天气数据暂不可用</div><button class="wh-close" onclick="closeWeatherHourly()">关闭</button>'; return; }
 
     const emojiMap = { '晴':'☀️','Sunny':'☀️','Clear':'☀️','多云':'⛅','Partly cloudy':'⛅','Cloudy':'☁️','阴':'☁️','Overcast':'☁️','雨':'🌧️','Rain':'🌧️','Light rain':'🌦️','小雨':'🌦️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','雪':'❄️','Snow':'❄️','雾':'🌫️','Fog':'🌫️','Mist':'🌫️','霾':'🌫️','风':'💨','大风':'💨','雷阵雨':'⛈️','Thunder':'⛈️','Patchy rain':'🌦️','Light drizzle':'🌦️','Moderate rain':'🌧️','Heavy rain':'🌧️' };
@@ -1303,7 +1322,7 @@ async function showWeatherHourly(dayIdx) {
 
     let html = `<div class="wh-header">
       <div class="wh-date">${date} ${dest}</div>
-      <div class="wh-source">数据来源：${data.source||'中国天气智能体'}</div>
+      <div class="wh-summary">${data.source||'中国天气智能体'}</div>
     </div>`;
 
     // 实时天气概览
@@ -1319,6 +1338,21 @@ async function showWeatherHourly(dayIdx) {
           ${cur.wind ? `<div class="wh-detail-item"><span>风力</span><span class="wh-detail-val">${cur.wind.split(' ')[0]||''}</span></div>` : ''}
           ${cur.uv ? `<div class="wh-detail-item"><span>紫外线</span><span class="wh-detail-val">${cur.uv}</span></div>` : ''}
           ${cur.visibility ? `<div class="wh-detail-item"><span>能见度</span><span class="wh-detail-val">${cur.visibility}</span></div>` : ''}
+        </div>
+      </div>`;
+    }
+
+    // 空气质量指数（中国天气智能体）
+    if (aqiData.success && aqiData.aqi) {
+      html += `<div class="wh-aqi" style="background:${aqiData.color}15;border:1px solid ${aqiData.color}40">
+        <div class="wh-aqi-value" style="color:${aqiData.color}">${aqiData.aqi}</div>
+        <div class="wh-aqi-info">
+          <div class="wh-aqi-level" style="color:${aqiData.color}">空气${aqiData.level}</div>
+          <div class="wh-aqi-desc">${aqiData.description}</div>
+          <div class="wh-aqi-detail">
+            ${aqiData.pm25 ? `<span>PM2.5 ${aqiData.pm25}</span>` : ''}
+            ${aqiData.pm10 ? `<span>PM10 ${aqiData.pm10}</span>` : ''}
+          </div>
         </div>
       </div>`;
     }
@@ -1375,6 +1409,11 @@ async function showWeatherHourly(dayIdx) {
       html += `<div class="wh-rain-alert">⏰ ${rainAlert}</div>`;
     }
 
+    // AI天气助手按钮
+    html += `<button class="wh-ai-btn" onclick="askWeatherAI('${dest.replace(/'/g,"\\'")}')" id="whAiBtn">🤖 问问中国天气智能体</button>`;
+    html += `<div class="wh-ai-loading" id="whAiLoading">⏳ AI正在分析天气...</div>`;
+    html += `<div class="wh-ai-reply" id="whAiReply"></div>`;
+
     html += '<button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';
     card.innerHTML = html;
   } catch(e) {
@@ -1382,6 +1421,33 @@ async function showWeatherHourly(dayIdx) {
   }
 }
 function closeWeatherHourly() { document.getElementById('weatherHourlyOverlay').classList.remove('show'); }
+
+// AI天气助手对话
+async function askWeatherAI(city) {
+  const btn = document.getElementById('whAiBtn');
+  const loading = document.getElementById('whAiLoading');
+  const reply = document.getElementById('whAiReply');
+  if (!btn || !loading || !reply) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ 分析中...';
+  loading.classList.add('show');
+  reply.classList.remove('show');
+  try {
+    const res = await fetch(API + `/api/china-weather/chat?city=${encodeURIComponent(city)}&query=${encodeURIComponent('出行建议')}`);
+    const data = await res.json();
+    if (data.reply) {
+      reply.textContent = '💡 ' + data.reply;
+      reply.classList.add('show');
+    }
+  } catch(e) {
+    reply.textContent = '天气助手暂时不可用，请稍后重试';
+    reply.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 问问中国天气智能体';
+    loading.classList.remove('show');
+  }
+}
 
 // 极端天气预警检查
 let weatherAlertTimer = null;
@@ -1458,6 +1524,7 @@ window.showHotelDetail = showHotelDetail;
 window.showWeatherHourly = showWeatherHourly;
 window.closeDetail = closeDetail;
 window.closeWeatherHourly = closeWeatherHourly;
+window.askWeatherAI = askWeatherAI;
 window.closeAlert = closeAlert;
 window.switchBudgetType = switchBudgetType;
 window.changePeople = changePeople;

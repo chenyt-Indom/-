@@ -13,6 +13,7 @@ from deepseek_service import call_deepseek, build_trip_prompt, build_booking_pro
 from image_service import fill_images, fill_booking_images
 from feichangzhun_service import judge_transport, search_flights
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
+from china_weather_service import get_observation, get_air_quality, get_weather_chat
 
 app = FastAPI(title="行旅白 AI 旅行规划")
 app.add_middleware(
@@ -238,6 +239,24 @@ async def weather_alerts(city: str):
 async def weather_now(city: str):
     """获取实时天气（中国天气智能体集成）"""
     return await get_realtime_weather(city)
+
+
+@app.get("/api/china-weather/observation")
+async def china_weather_observation(city: str):
+    """中国天气智能体-实况观测：综合实时数据+预报摘要"""
+    return await get_observation(city)
+
+
+@app.get("/api/china-weather/air-quality")
+async def china_weather_air_quality(city: str):
+    """中国天气智能体-空气质量指数"""
+    return await get_air_quality(city)
+
+
+@app.get("/api/china-weather/chat")
+async def china_weather_chat(city: str, query: str = ""):
+    """中国天气智能体-AI天气对话助手"""
+    return await get_weather_chat(city, query)
 
 
 @app.get("/api/spot-detail")
