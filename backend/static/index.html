@@ -317,6 +317,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .qr-card .qr-sub{font-size:14px;color:#999;margin-bottom:16px}
 .qr-card .qr-tip{font-size:13px;color:#999;margin-top:12px}
 .qr-close{display:block;width:100%;margin-top:16px;padding:10px;background:#f5f5f5;border:none;border-radius:10px;font-size:16px;color:#333;cursor:pointer}
+
+/* 图片预加载过渡页 */
+.loading-page{position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;display:none;justify-content:center;align-items:center;z-index:5000;flex-direction:column}
+.loading-page.show{display:flex}
+.loading-page-inner{text-align:center;padding:40px;max-width:360px;width:90%}
+.loading-page-icon{font-size:64px;margin-bottom:16px;animation:pulse 1.5s ease-in-out infinite}
+.loading-page-title{font-size:22px;font-weight:600;color:#333;margin-bottom:8px}
+.loading-page-sub{font-size:15px;color:#999;margin-bottom:24px}
+.loading-page-progress{font-size:14px;color:#4A90D9;margin:16px 0 12px}
+.loading-page-bar{width:100%;height:6px;background:#e8e8e8;border-radius:3px;overflow:hidden}
+.loading-page-bar-fill{height:100%;width:0;background:linear-gradient(90deg,#4A90D9,#357ABD);border-radius:3px;transition:width .3s ease}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+
+/* 总览页图片缩略图 */
+.ov-weather-thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;margin-right:8px;flex-shrink:0;cursor:pointer}
+.ov-spot-thumb{width:48px;height:48px;border-radius:8px;object-fit:cover;margin-right:10px;flex-shrink:0;cursor:pointer}
+.ov-spot-img{width:100%;height:120px;border-radius:10px;object-fit:cover;margin:8px 0;cursor:pointer}
+.ov-hotel-img{width:100%;height:100px;border-radius:10px;object-fit:cover;margin:8px 0;cursor:pointer}
+.ov-hotel-section{margin-top:12px;padding:0 12px}
+.ov-hotel-title{font-size:16px;font-weight:600;color:#333;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 </style>
 </head>
 <body>
@@ -407,6 +427,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <span class="history-arrow" id="historyArrow">展开</span>
     </div>
     <div class="history-list" id="historyList"></div>
+  </div>
+</div>
+
+<!-- 图片预加载过渡页 -->
+<div class="loading-page" id="loadingPage">
+  <div class="loading-page-inner">
+    <div class="loading-page-icon">🏞️</div>
+    <div class="loading-page-title">正在获取图片</div>
+    <div class="loading-page-sub">AI正在生成详细介绍，请稍候...</div>
+    <div class="ai-loading"><span></span><span></span><span></span></div>
+    <div class="loading-page-progress" id="loadProgress">0/0 张图片已加载</div>
+    <div class="loading-page-bar"><div class="loading-page-bar-fill" id="loadBarFill"></div></div>
   </div>
 </div>
 
@@ -762,7 +794,7 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
     });
     clearInterval(progressTimer);
     const data = await res.json();
-    if(data.success) { tripData = data.data; saveToHistory(data.data); renderOverview(data.data); }
+    if(data.success) { tripData = data.data; saveToHistory(data.data); await showLoadingAndPreload(data.data); }
     else { alert('攻略生成失败，请检查网络后重试\n'+(data.error||'')); }
   } catch(e){ clearInterval(progressTimer); alert('攻略生成失败，请检查网络后重试'); }
   finally {
@@ -771,6 +803,65 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
     this.disabled = false;
   }
 });
+
+// 图片预加载：收集所有图片URL并预加载，完成后显示总览页
+async function showLoadingAndPreload(data) {
+  // 隐藏首页，显示加载页
+  document.getElementById('homePage').style.display='none';
+  document.getElementById('tripPage').style.display='none';
+  document.getElementById('overviewPage').style.display='none';
+  const loadPage = document.getElementById('loadingPage');
+  loadPage.classList.add('show');
+  document.getElementById('loadProgress').textContent = '正在收集图片...';
+  document.getElementById('loadBarFill').style.width = '0%';
+
+  // 收集所有需要预加载的图片URL
+  const imgTasks = [];
+  (data.itinerary||[]).forEach(day => {
+    const w = day.weather||{};
+    if (w.image) imgTasks.push({url: w.image, type: 'weather', name: day.date});
+    ['morning','afternoon','evening'].forEach(slot => {
+      const s = day[slot];
+      if (s && s.image) imgTasks.push({url: s.image, type: 'spot', name: s.spot});
+    });
+  });
+  const bk = data.booking_info||{};
+  (bk.hotels||[]).forEach(h => { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.name}); });
+  (bk.hotel_changes||[]).forEach(h => { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.to_hotel}); });
+
+  const total = imgTasks.length;
+  document.getElementById('loadProgress').textContent = `0/${total} 张图片已加载`;
+  document.getElementById('loadBarFill').style.width = '0%';
+
+  if (total === 0) {
+    loadPage.classList.remove('show');
+    renderOverview(data);
+    return;
+  }
+
+  // 预加载所有图片（带进度条）
+  let loaded = 0;
+  const updateProgress = () => {
+    loaded++;
+    const pct = Math.round(loaded / total * 100);
+    document.getElementById('loadProgress').textContent = `${loaded}/${total} 张图片已加载`;
+    document.getElementById('loadBarFill').style.width = pct + '%';
+  };
+
+  const preloadOne = (url) => new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => { updateProgress(); resolve(); };
+    img.onerror = () => { updateProgress(); resolve(); };
+    img.src = url;
+    setTimeout(() => { updateProgress(); resolve(); }, 8000);
+  });
+
+  await Promise.all(imgTasks.map(t => preloadOne(t.url)));
+
+  // 预加载完成后显示总览
+  loadPage.classList.remove('show');
+  renderOverview(data);
+}
 
 // 总览页
 function renderOverview(data){
@@ -798,42 +889,59 @@ function renderOverview(data){
   let globalOrder = 1;
 
   (data.itinerary||[]).forEach((day, idx) => {
+    const w = day.weather||{};
     const spots = [];
     ['morning','afternoon','evening'].forEach(slot => {
       const s = day[slot];
       if(s && s.spot){
         const [lng, lat] = (s.location||'').split(',').map(Number);
+        const spotInfo = { name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: s.location, need_booking: s.need_booking, lng: isNaN(lng)?0:lng, lat: isNaN(lat)?0:lat, order: globalOrder, image: s.image||'', reason: s.reason||'', duration: s.duration||'', route_detail: s.route_detail||'' };
         if (!isNaN(lng) && !isNaN(lat)) {
-          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: s.location, need_booking: s.need_booking, lng, lat, order: globalOrder });
           allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
-          globalOrder++;
-        } else {
-          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: '', need_booking: s.need_booking });
         }
+        spots.push(spotInfo);
+        globalOrder++;
       }
     });
     allSpots += spots.length;
+    // 天气缩略图 + 标题行
     listHtml += `<div class="day-summary">
       <div class="day-summary-header" onclick="toggleDay(${idx})">
+        ${w.image ? `<img class="ov-weather-thumb" src="${w.image}" alt="天气" onerror="this.style.display='none'" onclick="event.stopPropagation();showWeatherHourly(${idx})">` : ''}
         <span class="day-label">Day ${day.day}</span>
-        <span class="day-summary-date">${day.date||''}</span>
+        <span class="day-summary-date">${day.date||''} ${w.desc||''} ${w.temp||''}</span>
         <span class="day-arrow" id="dayArrow${idx}">▶</span>
       </div>
       <div class="day-spots" id="daySpots${idx}">`;
     spots.forEach((s, si) => {
+      const escName = s.name.replace(/'/g,"\\'");
+      const escReason = (s.reason||'').replace(/'/g,"\\'");
+      const escRoute = (s.route_detail||'').replace(/'/g,"\\'");
       listHtml += `<div class="day-spot">
         <span class="spot-num">${s.order||(si+1)}</span>
+        ${s.image ? `<img class="ov-spot-thumb" src="${s.image}" alt="${escName}" onerror="this.style.display='none'" onclick="event.stopPropagation();showSpotDetailFromOverview('${escName}','${s.image.replace(/'/g,"\\'")}','${escReason}','${s.location||''}','${s.duration||''}',${s.need_booking||false},'${escRoute}','${s.time}',${idx},${si})">` : ''}
         <div class="spot-info"><span class="spot-name">${s.name}${s.need_booking?' ⚠需预约':''}</span><span class="spot-time">${s.time}</span></div>
-        ${s.location ? `<span class="spot-loc-icon" onclick="focusSpot('${s.name}',${s.lat},${s.lng})">📍</span>` : ''}
+        ${s.location ? `<span class="spot-loc-icon" onclick="focusSpot('${escName}',${s.lat},${s.lng})">📍</span>` : ''}
       </div>`;
     });
     listHtml += `</div></div>`;
   });
+  // 酒店图片展示
+  const bk = data.booking_info || {};
+  if (bk.hotels && bk.hotels.length) {
+    listHtml += '<div class="ov-hotel-section"><div class="ov-hotel-title">🏨 推荐酒店</div>';
+    bk.hotels.forEach((h, hi) => {
+      if (h.image) {
+        const escName = (h.name||'').replace(/'/g,"\\'");
+        listHtml += `<img class="ov-hotel-img" src="${h.image}" alt="${escName}" onerror="imgFallback(this,'hotel','${escName}')" onclick="showHotelDetailFromOverview('${escName}','${(h.image||'').replace(/'/g,"\\'")}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">`;
+      }
+    });
+    listHtml += '</div>';
+  }
   document.getElementById('dayList').innerHTML = listHtml;
   document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个景点已标注`;
 
-  // 收集酒店和门票预约位置
-  const bk = data.booking_info || {};
+  // 收集酒店和门票预约位置到地图
   (bk.hotels || []).forEach(h => {
     if (h.location) {
       const [lng, lat] = h.location.split(',').map(Number);
@@ -1359,6 +1467,94 @@ function goHome(){
 }
 
 // 景点详情卡片（AI生成图片 + 预加载 + 缓存 + 高德路线规划）
+// 从总览页点击景点图片：复用已预加载的图片，无需重新搜索
+async function showSpotDetailFromOverview(name, image, reason, location, duration, need_booking, route_detail, timeRange, dayIdx, slotIdx) {
+  const card = document.getElementById('detailCard');
+  const overlay = document.getElementById('detailOverlay');
+  const dest = tripData ? tripData.destination : '';
+  const cacheKey = `spot_detail_${name}_${dest}`;
+  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在生成${name}介绍…</div></div>`;
+  overlay.classList.add('show');
+  document.body.style.overflow = 'hidden';
+  const cached = localStorage.getItem(cacheKey);
+  let content = '', fromCache = false;
+  if (cached) {
+    try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
+  }
+  // 直接使用总览页图片，无需重新搜索
+  if (!fromCache) {
+    try {
+      const params = new URLSearchParams({name, city: dest, reason, route_detail});
+      const res = await fetch(`${API}/api/spot-detail?${params}`);
+      const data = await res.json();
+      content = data.content || reason;
+      localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
+    } catch(e) { content = reason || `${name}是${dest}的著名景点。`; }
+  }
+  const finalImage = image || '';
+  // 路线规划
+  let routeInfo = '';
+  if (dayIdx !== undefined && slotIdx !== undefined && tripData && tripData.itinerary) {
+    const day = tripData.itinerary[dayIdx];
+    if (day) {
+      const slots = ['morning', 'afternoon', 'evening'];
+      let prevSpot = null;
+      for (let i = slotIdx - 1; i >= 0; i--) {
+        const s = day[slots[i]];
+        if (s && s.spot && s.location) { prevSpot = s; break; }
+      }
+      if (prevSpot && location) {
+        const [plng, plat] = prevSpot.location.split(',').map(Number);
+        const [clng, clat] = location.split(',').map(Number);
+        if (!isNaN(plng) && !isNaN(plat) && !isNaN(clng) && !isNaN(clat)) {
+          try {
+            const res = await fetch(API + '/api/route-plan', {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({spots: [{name: prevSpot.spot, lng: plng, lat: plat}, {name, lng: clng, lat: clat}]})
+            });
+            const data = await res.json();
+            if (data.success && data.routes && data.routes[0] && data.routes[0].duration) {
+              const r = data.routes[0];
+              const trafficMap = {'畅通':'green','缓行':'orange','拥堵':'red'};
+              routeInfo = `<div class="route-info"><span class="ri-icon">🚗</span>从「${prevSpot.spot}」出发：${r.distance}，约${r.duration}分钟 <span class="ri-traffic ${trafficMap[r.traffic]||'green'}">${r.traffic}</span></div>`;
+            }
+          } catch(e) {}
+        }
+      }
+    }
+  }
+  renderDetailCard(card, 'spot', {name, image: finalImage, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, dest, reason, routeInfo});
+  document.body.style.overflow = '';
+}
+
+// 从总览页点击酒店图片：复用已预加载的图片，无需重新搜索
+async function showHotelDetailFromOverview(name, image, reason, location, area, price, stay_days) {
+  const card = document.getElementById('detailCard');
+  const overlay = document.getElementById('detailOverlay');
+  const dest = tripData ? tripData.destination : '';
+  const cacheKey = `hotel_detail_${name}_${dest}`;
+  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在生成${name}介绍…</div></div>`;
+  overlay.classList.add('show');
+  document.body.style.overflow = 'hidden';
+  const cached = localStorage.getItem(cacheKey);
+  let content = '', fromCache = false;
+  if (cached) {
+    try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
+  }
+  if (!fromCache) {
+    try {
+      const params = new URLSearchParams({name, city: dest, area, reason});
+      const res = await fetch(`${API}/api/hotel-detail?${params}`);
+      const data = await res.json();
+      content = data.content || reason;
+      localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
+    } catch(e) { content = reason || `${name}位于${dest}${area}，地理位置优越。`; }
+  }
+  const finalImage = image || '';
+  renderDetailCard(card, 'hotel', {name, image: finalImage, area, price, stay_days, location, content, cacheKey, fromCache, dest, reason});
+  document.body.style.overflow = '';
+}
+
 async function showSpotDetail(name, image, reason, location, duration, need_booking, route_detail, timeRange, dayIdx, slotIdx) {
   const card = document.getElementById('detailCard');
   const overlay = document.getElementById('detailOverlay');
@@ -1366,7 +1562,7 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
   const cacheKey = `spot_detail_${name}_${dest}`;
   const imgCacheKey = `spot_img_${name}_${dest}`;
   // 显示加载动画
-  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细行程</div><div style="font-size:13px;color:#999">正在搜索${name}的高清照片…</div></div>`;
+  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在搜索${name}的高清照片…</div></div>`;
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
   const cached = localStorage.getItem(cacheKey);
@@ -1401,7 +1597,7 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
   await Promise.all(fetchPromises);
   // 3. 预加载图片（确保图片在浏览器中加载完成后再显示卡片）
   if (resolvedImage) {
-    card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细行程</div><div style="font-size:13px;color:#999">正在加载${name}图片…</div></div>`;
+    card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在加载${name}图片…</div></div>`;
     await new Promise((resolve) => {
       const img = new Image();
       img.onload = function() { resolvedImage = img.src; resolve(); };
@@ -1454,7 +1650,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
   const cacheKey = `hotel_detail_${name}_${dest}`;
   const imgCacheKey = `hotel_img_${name}_${dest}`;
   // 显示加载动画
-  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细行程</div><div style="font-size:13px;color:#999">正在搜索${name}的外观照片…</div></div>`;
+  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在搜索${name}的外观照片…</div></div>`;
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
   const cached = localStorage.getItem(cacheKey);
@@ -1484,7 +1680,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
   }
   // 3. 预加载图片
   if (resolvedImage) {
-    card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细行程</div><div style="font-size:13px;color:#999">正在加载${name}图片…</div></div>`;
+    card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在加载${name}图片…</div></div>`;
     await new Promise((resolve) => {
       const img = new Image();
       img.onload = function() { resolvedImage = img.src; resolve(); };
@@ -1799,6 +1995,8 @@ window.confirmCity = confirmCity;
 window.cancelCity = cancelCity;
 window.showSpotDetail = showSpotDetail;
 window.showHotelDetail = showHotelDetail;
+window.showSpotDetailFromOverview = showSpotDetailFromOverview;
+window.showHotelDetailFromOverview = showHotelDetailFromOverview;
 window.showWeatherHourly = showWeatherHourly;
 window.closeDetail = closeDetail;
 window.closeWeatherHourly = closeWeatherHourly;
