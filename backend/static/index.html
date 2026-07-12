@@ -330,13 +330,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .loading-page-bar-fill{height:100%;width:0;background:linear-gradient(90deg,#4A90D9,#357ABD);border-radius:3px;transition:width .3s ease}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
 
-/* 总览页图片缩略图 */
-.ov-weather-thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;margin-right:8px;flex-shrink:0;cursor:pointer}
-.ov-spot-thumb{width:48px;height:48px;border-radius:8px;object-fit:cover;margin-right:10px;flex-shrink:0;cursor:pointer}
-.ov-spot-img{width:100%;height:120px;border-radius:10px;object-fit:cover;margin:8px 0;cursor:pointer}
-.ov-hotel-img{width:100%;height:100px;border-radius:10px;object-fit:cover;margin:8px 0;cursor:pointer}
-.ov-hotel-section{margin-top:12px;padding:0 12px}
-.ov-hotel-title{font-size:16px;font-weight:600;color:#333;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+
 </style>
 </head>
 <body>
@@ -1465,22 +1459,25 @@ function goHome(){
   window.scrollTo(0,0);
 }
 
-// 景点详情卡片（AI生成图片 + 预加载 + 缓存 + 高德路线规划）
-// 从总览页点击景点图片：复用已预加载的图片，无需重新搜索
-async function showSpotDetailFromOverview(name, image, reason, location, duration, need_booking, route_detail, timeRange, dayIdx, slotIdx) {
+// 景点详情卡片（AI生成文本介绍 + 直接使用槽位已有图片）
+
+async function showSpotDetail(name, image, reason, location, duration, need_booking, route_detail, timeRange, dayIdx, slotIdx) {
   const card = document.getElementById('detailCard');
   const overlay = document.getElementById('detailOverlay');
   const dest = tripData ? tripData.destination : '';
   const cacheKey = `spot_detail_${name}_${dest}`;
+  // 显示加载动画
   card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在生成${name}介绍…</div></div>`;
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
+  // 直接使用槽位已有图片，不走额外API请求
+  const finalImage = image || getFallbackImgUrl(name, 'spot');
+  // 获取文本介绍（带缓存）
   const cached = localStorage.getItem(cacheKey);
   let content = '', fromCache = false;
   if (cached) {
     try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
   }
-  // 直接使用总览页图片，无需重新搜索
   if (!fromCache) {
     try {
       const params = new URLSearchParams({name, city: dest, reason, route_detail});
@@ -1490,7 +1487,6 @@ async function showSpotDetailFromOverview(name, image, reason, location, duratio
       localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
     } catch(e) { content = reason || `${name}是${dest}的著名景点。`; }
   }
-  const finalImage = image || '';
   // 路线规划
   let routeInfo = '';
   if (dayIdx !== undefined && slotIdx !== undefined && tripData && tripData.itinerary) {
@@ -1526,148 +1522,24 @@ async function showSpotDetailFromOverview(name, image, reason, location, duratio
   document.body.style.overflow = '';
 }
 
-// 从总览页点击酒店图片：复用已预加载的图片，无需重新搜索
-async function showHotelDetailFromOverview(name, image, reason, location, area, price, stay_days) {
-  const card = document.getElementById('detailCard');
-  const overlay = document.getElementById('detailOverlay');
-  const dest = tripData ? tripData.destination : '';
-  const cacheKey = `hotel_detail_${name}_${dest}`;
-  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在生成${name}介绍…</div></div>`;
-  overlay.classList.add('show');
-  document.body.style.overflow = 'hidden';
-  const cached = localStorage.getItem(cacheKey);
-  let content = '', fromCache = false;
-  if (cached) {
-    try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
-  }
-  if (!fromCache) {
-    try {
-      const params = new URLSearchParams({name, city: dest, area, reason});
-      const res = await fetch(`${API}/api/hotel-detail?${params}`);
-      const data = await res.json();
-      content = data.content || reason;
-      localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
-    } catch(e) { content = reason || `${name}位于${dest}${area}，地理位置优越。`; }
-  }
-  const finalImage = image || '';
-  renderDetailCard(card, 'hotel', {name, image: finalImage, area, price, stay_days, location, content, cacheKey, fromCache, dest, reason});
-  document.body.style.overflow = '';
-}
-
-async function showSpotDetail(name, image, reason, location, duration, need_booking, route_detail, timeRange, dayIdx, slotIdx) {
-  const card = document.getElementById('detailCard');
-  const overlay = document.getElementById('detailOverlay');
-  const dest = tripData ? tripData.destination : '';
-  const cacheKey = `spot_detail_${name}_${dest}`;
-  const imgCacheKey = `spot_img_${name}_${dest}`;
-  // 显示加载动画
-  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在搜索${name}的高清照片…</div></div>`;
-  overlay.classList.add('show');
-  document.body.style.overflow = 'hidden';
-  const cached = localStorage.getItem(cacheKey);
-  let content = '', fromCache = false;
-  if (cached) {
-    try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
-  }
-  const fetchPromises = [];
-  // 1. 获取/生成图片并解析为CDN直链
-  let resolvedImage = '';
-  fetchPromises.push((async () => {
-    try {
-      const cachedImg = localStorage.getItem(imgCacheKey);
-      if (cachedImg) { resolvedImage = cachedImg; return; }
-      const res = await fetch(API + '/api/resolve-image?name=' + encodeURIComponent(name) + '&city=' + encodeURIComponent(dest) + '&type=spot');
-      const data = await res.json();
-      if (data.success && data.url) { resolvedImage = data.url; localStorage.setItem(imgCacheKey, resolvedImage); }
-    } catch(e) {}
-  })());
-  // 2. 获取文本介绍
-  if (!fromCache) {
-    fetchPromises.push((async () => {
-      try {
-        const params = new URLSearchParams({name, city: dest, reason, route_detail});
-        const res = await fetch(`${API}/api/spot-detail?${params}`);
-        const data = await res.json();
-        content = data.content || reason;
-        localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
-      } catch(e) { content = reason || `${name}是${dest}的著名景点。`; }
-    })());
-  }
-  await Promise.all(fetchPromises);
-  // 3. 预加载图片（确保图片在浏览器中加载完成后再显示卡片）
-  if (resolvedImage) {
-    card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在加载${name}图片…</div></div>`;
-    await new Promise((resolve) => {
-      const img = new Image();
-      img.onload = function() { resolvedImage = img.src; resolve(); };
-      img.onerror = function() { resolve(); };
-      img.src = resolvedImage;
-      setTimeout(resolve, 5000);
-    });
-  }
-  const finalImage = resolvedImage || image || '';
-  // 4. 路线规划
-  let routeInfo = '';
-  if (dayIdx !== undefined && slotIdx !== undefined && tripData && tripData.itinerary) {
-    const day = tripData.itinerary[dayIdx];
-    if (day) {
-      const slots = ['morning', 'afternoon', 'evening'];
-      let prevSpot = null;
-      for (let i = slotIdx - 1; i >= 0; i--) {
-        const s = day[slots[i]];
-        if (s && s.spot && s.location) { prevSpot = s; break; }
-      }
-      if (prevSpot && location) {
-        const [plng, plat] = prevSpot.location.split(',').map(Number);
-        const [clng, clat] = location.split(',').map(Number);
-        if (!isNaN(plng) && !isNaN(plat) && !isNaN(clng) && !isNaN(clat)) {
-          try {
-            const res = await fetch(API + '/api/route-plan', {
-              method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({spots: [{name: prevSpot.spot, lng: plng, lat: plat}, {name, lng: clng, lat: clat}]})
-            });
-            const data = await res.json();
-            if (data.success && data.routes && data.routes[0] && data.routes[0].duration) {
-              const r = data.routes[0];
-              const trafficMap = {'畅通':'green','缓行':'orange','拥堵':'red'};
-              routeInfo = `<div class="route-info"><span class="ri-icon">🚗</span>从「${prevSpot.spot}」出发：${r.distance}，约${r.duration}分钟 <span class="ri-traffic ${trafficMap[r.traffic]||'green'}">${r.traffic}</span></div>`;
-            }
-          } catch(e) {}
-        }
-      }
-    }
-  }
-  renderDetailCard(card, 'spot', {name, image: finalImage, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, dest, reason, routeInfo});
-  document.body.style.overflow = '';
-}
-
-// 酒店详情卡片（AI生成图片 + 预加载 + 缓存）
+// 酒店详情卡片（直接使用槽位已有图片，只异步获取文本介绍）
 async function showHotelDetail(name, image, reason, location, area, price, stay_days) {
   const card = document.getElementById('detailCard');
   const overlay = document.getElementById('detailOverlay');
   const dest = tripData ? tripData.destination : '';
   const cacheKey = `hotel_detail_${name}_${dest}`;
-  const imgCacheKey = `hotel_img_${name}_${dest}`;
   // 显示加载动画
-  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在搜索${name}的外观照片…</div></div>`;
+  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在生成${name}介绍…</div></div>`;
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
+  // 直接使用槽位已有图片，不走额外API请求
+  const finalImage = image || getFallbackImgUrl(name, 'hotel');
+  // 获取文本介绍（带缓存）
   const cached = localStorage.getItem(cacheKey);
   let content = '', fromCache = false;
   if (cached) {
     try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
   }
-  // 1. 获取/生成图片并解析为CDN直链
-  let resolvedImage = '';
-  try {
-    const cachedImg = localStorage.getItem(imgCacheKey);
-    if (cachedImg) { resolvedImage = cachedImg; } else {
-      const res = await fetch(API + '/api/resolve-image?name=' + encodeURIComponent(name) + '&city=' + encodeURIComponent(dest + ' ' + area) + '&type=hotel');
-      const data = await res.json();
-      if (data.success && data.url) { resolvedImage = data.url; localStorage.setItem(imgCacheKey, resolvedImage); }
-    }
-  } catch(e) {}
-  // 2. 获取文本介绍
   if (!fromCache) {
     try {
       const params = new URLSearchParams({name, city: dest, area, reason});
@@ -1677,18 +1549,6 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
       localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
     } catch(e) { content = reason || `${name}位于${dest}${area}，地理位置优越。`; }
   }
-  // 3. 预加载图片
-  if (resolvedImage) {
-    card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在加载${name}图片…</div></div>`;
-    await new Promise((resolve) => {
-      const img = new Image();
-      img.onload = function() { resolvedImage = img.src; resolve(); };
-      img.onerror = function() { resolve(); };
-      img.src = resolvedImage;
-      setTimeout(resolve, 5000);
-    });
-  }
-  const finalImage = resolvedImage || image || '';
   renderDetailCard(card, 'hotel', {name, image: finalImage, area, price, stay_days, location, content, cacheKey, fromCache, dest, reason});
   document.body.style.overflow = '';
 }
@@ -1697,8 +1557,8 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
 function renderDetailCard(card, type, opts) {
   const {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, area, price, stay_days, routeInfo} = opts;
   let html = '';
-  // 确保始终渲染图片元素，即使image为空也会触发onerror走fallback链
-  const imgSrc = image || '';
+  // 确保图片src永不为空，为空时生成兜底URL
+  const imgSrc = image || getFallbackImgUrl(name, type);
   const escapedName = name.replace(/'/g, "\\'");
   html += `<img class="detail-img" src="${imgSrc}" alt="${name}" onerror="imgFallback(this,'${type}','${escapedName}')">`;
   html += `<div class="detail-body">
@@ -1994,8 +1854,6 @@ window.confirmCity = confirmCity;
 window.cancelCity = cancelCity;
 window.showSpotDetail = showSpotDetail;
 window.showHotelDetail = showHotelDetail;
-window.showSpotDetailFromOverview = showSpotDetailFromOverview;
-window.showHotelDetailFromOverview = showHotelDetailFromOverview;
 window.showWeatherHourly = showWeatherHourly;
 window.closeDetail = closeDetail;
 window.closeWeatherHourly = closeWeatherHourly;
