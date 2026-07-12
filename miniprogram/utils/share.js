@@ -4,7 +4,7 @@ function shareTrip(context, tripData) {
   const ctx = wx.createCanvasContext('shareCanvas', context);
   ctx.setFillStyle('#4A90D9'); ctx.fillRect(0, 0, 375, 80);
   ctx.setFillStyle('#fff'); ctx.setFontSize(22); ctx.setTextAlign('center');
-  ctx.fillText(`旅白 · ${tripData.destination}${tripData.days}日游`, 187, 50);
+  ctx.fillText(`旅白行 · ${tripData.destination}${tripData.days}日游`, 187, 50);
   ctx.setFillStyle('#333'); ctx.setFontSize(14); ctx.setTextAlign('left');
   let y = 110;
   (tripData.itinerary || []).forEach(day => {

@@ -86,8 +86,10 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 5. 只输出JSON，不要markdown代码块"""
 
 
-def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str, itinerary: list) -> str:
-    """构建订票/酒店/门票查询提示词"""
+def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
+                         itinerary: list, departure_city: str = "",
+                         transport_info: dict = None) -> str:
+    """构建订票/酒店/门票查询提示词，包含出发城市、交通判断和飞常准数据"""
     spots_str = ""
     for day in itinerary:
         for slot in ["morning", "afternoon", "evening"]:
@@ -95,11 +97,34 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
             if s and s.get("spot"):
                 spots_str += f"- Day{day['day']} {slot}: {s['spot']}（坐标：{s.get('location','')}，需预约：{'是' if s.get('need_booking') else '否'}）\n"
 
+    dep_info = f"\n【出发城市】{departure_city}" if departure_city else ""
+    trans_info = ""
+    flight_info = ""
+    if transport_info:
+        trans_info = f"""
+【交通判断】{transport_info.get('mode', '')} - {transport_info.get('reason', '')}
+【城市代码】出发：{transport_info.get('dep_iata', '')}，到达：{transport_info.get('arr_iata', '')}"""
+        if transport_info.get("need_flight"):
+            flight_info = f"""
+飞常准航班查询参数：
+- 出发城市：{departure_city}（{transport_info.get('dep_iata', '')}）
+- 到达城市：{dest}（{transport_info.get('arr_iata', '')}）
+- 出发日期：{start_date}
+- 返程日期：{end_date}
+航班link：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html
+火车票link：https://trains.ctrip.com/booking/{departure_city}-{dest}-day-1.html"""
+    else:
+        flight_info = f"""
+机票link：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html
+火车票link：https://trains.ctrip.com/booking/{departure_city}-{dest}-day-1.html"""
+
     return f"""你是一个旅行服务顾问。请为以下行程查询机票、火车票、酒店和门票推荐信息。
 
-【目的地】{dest}
+【目的地】{dest}{dep_info}
 【日期】{start_date} 至 {end_date}
 【预算】{budget}
+{trans_info}
+{flight_info}
 
 【行程景点】
 {spots_str}
@@ -107,7 +132,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 请输出以下 JSON 格式（不要输出其他内容）：
 {{
   "flights": [
-    {{"type": "去程/返程", "suggest": "推荐航班/车次", "price": "参考价格", "link": "https://flights.ctrip.com/", "note": "说明"}}
+    {{"type": "去程/返程", "suggest": "推荐航班/车次", "price": "参考价格", "link": "航班/火车票链接", "note": "说明"}}
   ],
   "hotels": [
     {{"name": "酒店名", "area": "推荐区域", "price": "参考价格/晚", "reason": "推荐理由", "location": "坐标", "link": "https://hotels.ctrip.com/", "note": "说明"}}
@@ -115,12 +140,15 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
   "tickets": [
     {{"spot": "景点名", "price": "门票价格", "need_booking": true, "booking_days": "提前N天", "platform": "预约平台", "link": "https://www.ctrip.com/", "note": "预约说明", "location": "坐标"}}
   ],
+  "transport_mode": "推荐交通工具（高铁/动车/飞机/自驾等）",
   "booking_tips": ["预约贴士1", "预约贴士2"]
 }}
 
 要求：
-1. 机票/火车票给出真实航线建议和参考价格
-2. 酒店推荐位置方便、性价比高的，给出具体名称和位置坐标
-3. 门票中 need_booking=true 的景点必须说明提前几天预约、在哪个平台预约
-4. link 字段给出真实可跳转的订购链接（携程/去哪儿/12306等）
-5. 只输出JSON，不要markdown代码块"""
+1. 根据距离判断交通工具：300km以内推荐高铁/动车，300-800km高铁优先，800km以上推荐飞机
+2. flights中机票link必须使用上述格式，填入真实出发城市和目的地
+3. 机票/火车票给出真实航线建议和参考价格
+4. transport_mode字段：说明推荐的交通工具及理由
+5. 酒店推荐位置方便、性价比高的，给出具体名称和位置坐标
+6. 门票中 need_booking=true 的景点必须说明提前几天预约
+7. 只输出JSON，不要markdown代码块"""

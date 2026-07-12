@@ -66,6 +66,12 @@
     </view>
   </view>
 
+  <!-- 推荐交通方式 -->
+  <view class="bottom-card" wx:if="{{booking.transport_mode}}">
+    <view class="bottom-title">🚄 推荐交通方式</view>
+    <view class="transport-text">{{booking.transport_mode}}</view>
+  </view>
+
   <!-- 预算明细 -->
   <view class="bottom-card" wx:if="{{tripData.budget_breakdown}}">
     <view class="bottom-title">预算明细</view>

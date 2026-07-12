@@ -15,6 +15,7 @@ function generateTrip(data) {
         interests: data.interests || [],
         start_date: data.start_date || '',
         end_date: data.end_date || '',
+        departure_city: data.departure_city || '',
       },
       success(res) {
         if (res.statusCode === 200) {
@@ -30,4 +31,4 @@ function generateTrip(data) {
   });
 }
 
-module.exports = { generateTrip };
+module.exports = { generateTrip, BASE_URL };

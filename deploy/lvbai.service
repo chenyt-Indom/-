@@ -1,5 +1,5 @@
 [Unit]
-Description=旅白 AI 旅行规划后端
+Description=旅白行 AI 旅行规划后端
 After=network.target
 
 [Service]

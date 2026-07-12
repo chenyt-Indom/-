@@ -3,13 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>旅白 AI 旅行规划</title>
+<title>旅白行 AI 旅行规划</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;min-height:100vh;color:#333}
 .container{max-width:420px;margin:0 auto;padding:40px 24px 32px}
 .header{text-align:center;margin-bottom:40px}
+.header-top{display:flex;align-items:center;justify-content:center;gap:12px}
 .logo{font-size:48px;font-weight:900;color:#4A90D9;letter-spacing:6px}
+.city-badge{display:inline-flex;align-items:center;gap:4px;background:#EEF4FB;color:#4A90D9;padding:8px 16px;border-radius:20px;font-size:16px;cursor:pointer;border:1px solid #d0e4f7;margin-top:10px}
+.city-badge .city-icon{font-size:18px;pointer-events:none}
+.city-badge .city-name{font-weight:600;max-width:80px;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.city-badge .city-edit{font-size:12px;opacity:.6;pointer-events:none}
 .title{font-size:28px;color:#333;font-weight:500;margin-top:8px}
 .subtitle{font-size:18px;color:#999;margin-top:10px}
 .form-card{background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 4px 24px rgba(74,144,217,0.08);border:1px solid #eef4fb}
@@ -18,7 +23,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .input{width:100%;border:1px solid #e8e8e8;border-radius:12px;padding:16px 18px;font-size:20px;background:#f9fafb;color:#333;outline:none;transition:border-color .2s}
 .input:focus{border-color:#4A90D9}
 .date-row{display:flex;align-items:center;gap:10px}
-.date-picker{flex:1;border:1px solid #e8e8e8;border-radius:12px;padding:14px 14px;font-size:18px;background:#f9fafb;color:#333;cursor:pointer}
+.date-picker{flex:1;min-width:0;border:1px solid #e8e8e8;border-radius:12px;padding:14px 10px;font-size:16px;background:#f9fafb;color:#333;cursor:pointer;text-align:center}
 .date-picker.placeholder{color:#999}
 .date-arrow{font-size:24px;color:#4A90D9;font-weight:600;flex-shrink:0}
 .days-hint{text-align:right;margin-top:8px;font-size:16px;color:#666}
@@ -143,28 +148,44 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .map-spot-loc a{color:#4A90D9;text-decoration:none}
 .map-spot-loc a:hover{text-decoration:underline}
 
+/* 城市编辑弹窗 */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:none;justify-content:center;align-items:center;z-index:9999}
+.modal-overlay.show{display:flex}
+.modal-box{background:#fff;padding:30px;border-radius:12px;width:80%;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.modal-title{font-size:20px;font-weight:600;margin-bottom:20px;text-align:center;color:#333}
+.modal-input{width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:16px;margin-bottom:20px;outline:none;box-sizing:border-box}
+.modal-input:focus{border-color:#4A90D9}
+.modal-btns{display:flex;gap:10px}
+.modal-btn{flex:1;padding:10px;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+.modal-btn.ok{background:#4A90D9;color:#fff}
+.modal-btn.cancel{background:#f5f5f5;color:#333}
+
 .history-section{margin-top:40px}
 .history-header{display:flex;justify-content:space-between;align-items:center;padding:20px 0;border-bottom:1px solid #eee;cursor:pointer}
 .history-title{font-size:20px;font-weight:600;color:#333}
 .history-arrow{font-size:16px;color:#4A90D9}
-.history-list{padding-top:10px;display:none}
-.history-list.show{display:block}
+.history-list{max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease;opacity:0}
+.history-list.show{max-height:800px;opacity:1;padding-top:10px}
 .history-item{display:flex;justify-content:space-between;align-items:center;padding:16px 12px;border-bottom:1px solid #f5f5f5;cursor:pointer}
 .h-left{display:flex;align-items:center;gap:10px}
 .h-dest{font-size:18px;color:#333;font-weight:500}
 .h-days{font-size:14px;color:#4A90D9;background:#EEF4FB;padding:3px 10px;border-radius:8px}
 .h-time{font-size:14px;color:#999}
 </style>
-<script src="https://webapi.amap.com/maps?v=2.0&key=a0c3b637da468b7b66c5f4dbaa5d676b"></script>
 </head>
 <body>
 
 <!-- 首页 -->
 <div class="container" id="homePage">
   <div class="header">
-    <div class="logo">旅白</div>
+    <div class="logo">旅白行</div>
     <div class="title">AI 旅行规划</div>
     <div class="subtitle">输入你的需求，AI 为你规划完美行程</div>
+    <div class="city-badge" id="cityBadge" onclick="editCity()">
+      <span class="city-icon">📍</span>
+      <span class="city-name" id="cityName">定位中...</span>
+      <span class="city-edit">编辑</span>
+    </div>
   </div>
   <div class="form-card">
     <div class="form-item">
@@ -174,9 +195,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="form-item">
       <label class="label">出行日期</label>
       <div class="date-row">
-        <input type="date" class="date-picker" id="startDate">
+        <input type="date" class="date-picker" id="startDate" min="">
         <span class="date-arrow">→</span>
-        <input type="date" class="date-picker" id="endDate">
+        <input type="date" class="date-picker" id="endDate" min="">
       </div>
       <div class="days-hint" id="daysHint" style="display:none">
         共 <span class="days-num" id="daysNum">0</span> 天行程
@@ -235,6 +256,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="trip-header"><h2 id="tripTitle"></h2></div>
   <div class="weather-bar" id="weatherBar"></div>
   <div id="dayCards"></div>
+  <div id="transportCard"></div>
   <div id="budgetCard"></div>
   <div id="flightsCard"></div>
   <div id="hotelsCard"></div>
@@ -260,9 +282,63 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <script>
-const API = 'https://YOUR_DOMAIN.com';
+(function() {
+const API = window.location.origin;
 let selectedTags = [];
 let tripData = null;
+let departureCity = '';
+
+// 定位：优先GPS精确坐标→逆地理编码，失败则IP定位兜底
+async function locateCity() {
+  // 第一步：尝试浏览器GPS定位
+  if (navigator.geolocation) {
+    try {
+      const pos = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject,
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 });
+      });
+      const res = await fetch(API + `/api/regeo?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`);
+      const data = await res.json();
+      if (data.success && data.city) {
+        departureCity = data.city;
+        document.getElementById('cityName').textContent = departureCity;
+        return;
+      }
+    } catch(e) { /* GPS失败，回退到IP定位 */ }
+  }
+  // 第二步：IP定位兜底
+  try {
+    const res = await fetch(API + '/api/locate');
+    const data = await res.json();
+    if (data.success && data.city) {
+      departureCity = data.city;
+      document.getElementById('cityName').textContent = departureCity;
+    } else {
+      document.getElementById('cityName').textContent = '点击编辑';
+    }
+  } catch(e) {
+    document.getElementById('cityName').textContent = '点击编辑';
+  }
+}
+function editCity() {
+  document.getElementById('cityModal').classList.add('show');
+  document.getElementById('cityInput').value = departureCity || '';
+  document.getElementById('cityInput').focus();
+}
+function confirmCity() {
+  const val = document.getElementById('cityInput').value.trim();
+  if (val) {
+    departureCity = val;
+    document.getElementById('cityName').textContent = departureCity;
+  }
+  document.getElementById('cityModal').classList.remove('show');
+}
+function cancelCity() {
+  document.getElementById('cityModal').classList.remove('show');
+}
+locateCity();
+// 用事件监听器绑定编辑按钮（兜底onclick可能被拦截）
+document.getElementById('cityBadge').addEventListener('click', editCity);
 let overviewMap = null;  // 总览页地图实例
 let dayMap = null;       // 行程页弹窗地图实例
 let allMarkers = [];     // 总览页所有标记点
@@ -319,9 +395,20 @@ document.querySelectorAll('#tagGroup .tag').forEach(btn => {
   });
 });
 
-// 日期选择器联动
+// 日期选择器联动，限制从今天开始
 const startEl = document.getElementById('startDate');
 const endEl = document.getElementById('endDate');
+// 获取今天日期（YYYY-MM-DD格式），设置min属性禁止选择过去日期
+const today = new Date();
+const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+startEl.setAttribute('min', todayStr);
+endEl.setAttribute('min', todayStr);
+// 开始日期变更时，结束日期同步min
+startEl.addEventListener('change', function() {
+  endEl.setAttribute('min', this.value);
+  updateDays();
+});
+endEl.addEventListener('change', updateDays);
 function updateDays() {
   const s = startEl.value, e = endEl.value;
   if (s && e) {
@@ -333,8 +420,6 @@ function updateDays() {
   document.getElementById('daysHint').style.display = 'none';
   return 0;
 }
-startEl.addEventListener('change', updateDays);
-endEl.addEventListener('change', updateDays);
 
 // 生成攻略
 let progressTimer = null;
@@ -358,6 +443,7 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
         budget: document.getElementById('budget').value,
         interests: selectedTags,
         start_date: startEl.value, end_date: endEl.value,
+        departure_city: departureCity,
       })
     });
     clearInterval(progressTimer);
@@ -382,7 +468,7 @@ function renderOverview(data){
   // 销毁旧地图
   if (dayMap) { dayMap.destroy(); dayMap = null; }
 
-  document.getElementById('overviewTitle').textContent = data.destination + ' 行程总览';
+  document.getElementById('overviewTitle').textContent = data.destination + data.days + '日游行程总览';
 
   // 按天构建列表 + 收集所有景点坐标
   let allSpots = 0;
@@ -454,6 +540,7 @@ function renderOverview(data){
 
 // 初始化总览页高德地图
 function initOverviewMap(markers) {
+  if (typeof AMap === 'undefined') { console.warn('高德地图 SDK 未加载'); return; }
   const container = document.getElementById('overviewMapContainer');
   if (!container) return;
 
@@ -505,6 +592,7 @@ function initOverviewMap(markers) {
 
 // 点击景点定位图标，聚焦到该景点
 function focusSpot(name, lat, lng) {
+  if (typeof AMap === 'undefined') return;
   if (overviewMap) {
     overviewMap.setCenter([lng, lat]);
     overviewMap.setZoom(15);
@@ -563,7 +651,7 @@ function renderTrip(data){
     const w = day.weather||{};
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      ${w.image ? `<img class="weather-img" src="${w.image}" alt="天气">` : ''}
+      ${w.image ? `<img class="weather-img" src="${w.image}" alt="天气" onerror="this.style.display='none'">` : ''}
       ${renderSlot('上午','morning',day.morning,dayIdx)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx)}
       ${renderSlot('晚上','evening',day.evening,dayIdx)}
@@ -584,6 +672,13 @@ function renderTrip(data){
 
   // 订票信息
   const bk = data.booking_info || {};
+
+  // 交通方式推荐
+  let tHtml = '';
+  if (bk.transport_mode) {
+    tHtml = `<div class="bottom-card"><div class="bottom-title">🚄 推荐交通方式</div><div style="font-size:18px;color:#333;padding:8px 0">${bk.transport_mode}</div></div>`;
+  }
+  document.getElementById('transportCard').innerHTML = tHtml;
 
   let fHtml = '';
   if (bk.flights && bk.flights.length) {
@@ -615,11 +710,11 @@ function renderTrip(data){
   }
   document.getElementById('hotelsCard').innerHTML = hHtml;
 
-  let tHtml = '';
+  let ticketHtml = '';
   if (bk.tickets && bk.tickets.length) {
-    tHtml = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约（需提前预约）</div>';
+    ticketHtml = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约（需提前预约）</div>';
     bk.tickets.forEach(t => {
-      tHtml += `<div class="booking-item ticket-item">
+      ticketHtml += `<div class="booking-item ticket-item">
         <div class="booking-row"><span class="ticket-spot">${t.spot}</span><span class="ticket-price">${t.price}</span></div>
         ${t.need_booking ? `<div class="booking-row"><span class="ticket-booking-warn">⚠ 需提前${t.booking_days}预约</span></div>` : ''}
         <div class="booking-row"><span class="ticket-platform">平台：${t.platform||''}</span></div>
@@ -627,9 +722,9 @@ function renderTrip(data){
         <button class="btn-book warn" onclick="window.open('${t.link}','_blank')">去预约</button>
       </div>`;
     });
-    tHtml += '</div>';
+    ticketHtml += '</div>';
   }
-  document.getElementById('ticketsCard').innerHTML = tHtml;
+  document.getElementById('ticketsCard').innerHTML = ticketHtml;
 
   let btipHtml = '';
   if (bk.booking_tips && bk.booking_tips.length) {
@@ -650,7 +745,7 @@ function renderSlot(title, cls, slot, dayIdx){
   if(!slot) return '';
   return `<div class="time-slot">
     <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${slot.spot}','${slot.location}')">📍</span>` : ''}</div>
-    ${slot.image ? `<img class="spot-img" src="${slot.image}" alt="${slot.spot}">` : ''}
+    ${slot.image ? `<img class="spot-img" src="${slot.image}" alt="${slot.spot}" onerror="this.style.display='none'">` : ''}
     <div class="spot-name">${slot.spot||''}</div>
     <span class="meta-tag">时长：${slot.duration||''}</span>
     ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
@@ -678,6 +773,7 @@ function openDayAmap(dayIdx){
 
   // 初始化弹窗地图
   setTimeout(() => {
+    if (typeof AMap === 'undefined') { console.warn('高德地图 SDK 未加载'); return; }
     const container = document.getElementById('dayMapContainer');
     if (!container) return;
     if (dayMap) { dayMap.destroy(); dayMap = null; }
@@ -731,7 +827,7 @@ function shareTrip(){
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#4A90D9'; ctx.fillRect(0,0,375,80);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(`旅白 · ${tripData.destination}${tripData.days}日游`, 187, 50);
+  ctx.fillText(`旅白行 · ${tripData.destination}${tripData.days}日游`, 187, 50);
   ctx.fillStyle = '#333'; ctx.font = '14px sans-serif'; ctx.textAlign = 'left';
   let y = 110;
   (tripData.itinerary||[]).forEach(day => {
@@ -742,7 +838,7 @@ function shareTrip(){
   ctx.fillStyle = '#666'; ctx.font = '12px sans-serif';
   (tripData.tips||[]).forEach(t => { if(y>480) return; ctx.fillText(`• ${t}`, 20, y); y+=20; });
   const link = canvas.toDataURL('image/png');
-  const a = document.createElement('a'); a.href = link; a.download = `旅白_${tripData.destination}${tripData.days}日游.png`;
+  const a = document.createElement('a'); a.href = link; a.download = `旅白行_${tripData.destination}${tripData.days}日游.png`;
   a.click();
   alert('分享卡片已下载！');
 }
@@ -757,6 +853,42 @@ function goHome(){
 }
 
 renderHistory();
+// 将HTML onclick引用的函数暴露到全局作用域
+window.editCity = editCity;
+window.toggleHistory = toggleHistory;
+window.goToTrip = goToTrip;
+window.goHome = goHome;
+window.shareTrip = shareTrip;
+window.goToOverview = goToOverview;
+window.closeMap = closeMap;
+window.loadHistoryTrip = loadHistoryTrip;
+window.toggleDay = toggleDay;
+window.focusSpot = focusSpot;
+window.openDayAmap = openDayAmap;
+window.openAmapLink = openAmapLink;
+window.confirmCity = confirmCity;
+window.cancelCity = cancelCity;
+})();
+</script>
+<!-- 城市编辑弹窗 -->
+<div class="modal-overlay" id="cityModal">
+  <div class="modal-box">
+    <div class="modal-title">设置出发城市</div>
+    <input class="modal-input" id="cityInput" placeholder="请输入城市名" />
+    <div class="modal-btns">
+      <button class="modal-btn cancel" onclick="cancelCity()">取消</button>
+      <button class="modal-btn ok" onclick="confirmCity()">确定</button>
+    </div>
+  </div>
+</div>
+<script>
+// 异步加载高德地图 SDK，避免阻塞页面渲染
+(function loadAmap() {
+  var s = document.createElement('script');
+  s.src = 'https://webapi.amap.com/maps?v=2.0&key=a0c3b637da468b7b66c5f4dbaa5d676b';
+  s.onerror = function() { console.warn('高德地图 SDK 加载失败，地图功能不可用'); };
+  document.head.appendChild(s);
+})();
 </script>
 </body>
 </html>

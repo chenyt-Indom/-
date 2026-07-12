@@ -11,3 +11,4 @@ class TripRequest(BaseModel):
     interests: List[str] = []
     start_date: str = ""  # 出发日期 YYYY-MM-DD
     end_date: str = ""    # 返程日期
+    departure_city: str = ""  # 出发城市

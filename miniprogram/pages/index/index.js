@@ -22,6 +22,7 @@ Page({
     days: 0,
     budget: '',
     selectedTags: [],
+    departureCity: '',
     loading: false,
     progressText: '',
     progressInterval: null,
@@ -31,6 +32,64 @@ Page({
 
   onShow() {
     this.setData({ history: app.globalData.history });
+  },
+
+  onLoad() {
+    this.locateCity();
+  },
+
+  // 定位：优先GPS坐标→逆地理编码，失败则IP兜底
+  locateCity() {
+    // 第一步：尝试微信GPS定位
+    wx.getLocation({
+      type: 'gcj02',
+      success: (pos) => {
+        wx.request({
+          url: api.BASE_URL + `/api/regeo?lat=${pos.latitude}&lng=${pos.longitude}`,
+          success: (res) => {
+            if (res.data && res.data.success && res.data.city) {
+              this.setData({ departureCity: res.data.city });
+              return;
+            }
+            this.ipLocate();
+          },
+          fail: () => this.ipLocate(),
+        });
+      },
+      fail: () => this.ipLocate(),
+    });
+  },
+
+  // IP定位兜底
+  ipLocate() {
+    wx.request({
+      url: api.BASE_URL + '/api/locate',
+      success: (res) => {
+        if (res.data && res.data.success && res.data.city) {
+          this.setData({ departureCity: res.data.city });
+        } else {
+          this.setData({ departureCity: '点击编辑' });
+        }
+      },
+      fail: () => {
+        this.setData({ departureCity: '点击编辑' });
+      },
+    });
+  },
+
+  // 手动编辑出发城市
+  editCity() {
+    wx.showModal({
+      title: '出发城市',
+      editable: true,
+      placeholderText: '请输入出发城市',
+      content: this.data.departureCity || '',
+      success: (res) => {
+        if (res.confirm && res.content && res.content.trim()) {
+          this.setData({ departureCity: res.content.trim() });
+        }
+      },
+    });
   },
 
   onInput(e) {
@@ -73,6 +132,7 @@ Page({
     api.generateTrip({
       destination, days, budget, interests: selectedTags,
       start_date: startDate, end_date: endDate,
+      departure_city: this.data.departureCity,
     })
       .then(res => {
         stopProgress(this);

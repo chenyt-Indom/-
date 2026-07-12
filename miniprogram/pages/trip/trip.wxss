@@ -68,5 +68,6 @@
 .ticket-note { font-size: 22rpx; color: #999; padding: 4rpx 0; }
 .btn-book { width: 100%; height: 56rpx; line-height: 56rpx; background: #4A90D9; color: #fff; border-radius: 28rpx; font-size: 24rpx; margin-top: 10rpx; border: none; }
 .btn-book.warn { background: #E67E22; }
+.transport-text { font-size: 28rpx; color: #333; padding: 8rpx 0; line-height: 1.6; }
 .btn-share { width: 100%; height: 88rpx; line-height: 88rpx; background: #4A90D9; color: #fff; border-radius: 44rpx; font-size: 28rpx; margin-bottom: 16rpx; border: none; }
 .btn-back { width: 100%; height: 88rpx; line-height: 88rpx; background: #fff; color: #4A90D9; border: 1rpx solid #4A90D9; border-radius: 44rpx; font-size: 28rpx; margin-top: 4rpx; }

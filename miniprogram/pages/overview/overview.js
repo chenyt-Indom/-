@@ -15,7 +15,7 @@ Page({
       wx.showToast({ title: '暂无行程数据', icon: 'none' });
       return;
     }
-    wx.setNavigationBarTitle({ title: `${data.destination}行程总览` });
+    wx.setNavigationBarTitle({ title: `${data.destination}${data.days}日游行程总览` });
 
     const dayList = [];
     let globalOrder = 1;
