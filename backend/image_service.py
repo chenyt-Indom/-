@@ -65,18 +65,45 @@ async def resolve_hotel_image(name: str, area: str) -> str:
 
 
 async def fill_images(trip_data: dict, dest: str):
-    """为行程中的景点和天气补全图片URL"""
+    """为行程中的景点和天气补全图片URL，并解析text_to_image为CDN直链"""
     tasks = []
+    # 收集所有需要设置图片的位置
+    spot_items = []
+    weather_items = []
     for day in trip_data.get("itinerary", []):
         for slot_name in ["morning", "afternoon", "evening"]:
             spot_data = day.get(slot_name)
             if spot_data and spot_data.get("spot"):
+                spot_items.append(spot_data)
                 tasks.append(_fill_spot_image(spot_data, dest))
         w = day.get("weather", {})
         if w:
             w["image"] = weather_image_url(w.get("desc", "晴"))
+            weather_items.append(w)
     if tasks:
         await asyncio.gather(*tasks)
+    # 批量解析text_to_image URL为CDN直链（确保行程页图片直接可用）
+    resolve_tasks = []
+    for item in spot_items:
+        img = item.get("image", "")
+        if IMG_BASE in img:
+            resolve_tasks.append(_resolve_and_set(item, "image", img))
+    for w in weather_items:
+        img = w.get("image", "")
+        if IMG_BASE in img:
+            resolve_tasks.append(_resolve_and_set(w, "image", img))
+    if resolve_tasks:
+        await asyncio.gather(*resolve_tasks)
+
+
+async def _resolve_and_set(item: dict, key: str, url: str):
+    """解析单个text_to_image URL为CDN直链并写回item"""
+    try:
+        resolved = await resolve_image_url(url)
+        if resolved != url:
+            item[key] = resolved
+    except Exception:
+        pass
 
 
 async def _fill_spot_image(spot_data: dict, dest: str):
@@ -91,16 +118,27 @@ async def _fill_spot_image(spot_data: dict, dest: str):
 
 
 async def fill_booking_images(booking_info: dict, dest: str):
-    """为酒店补全门面照片URL"""
+    """为酒店补全门面照片URL，并解析text_to_image为CDN直链"""
     tasks = []
+    hotel_items = []
     for hotel in booking_info.get("hotels", []):
         if hotel.get("name"):
+            hotel_items.append(hotel)
             tasks.append(_fill_hotel_image(hotel, dest))
     for change in booking_info.get("hotel_changes", []):
         if change.get("to_hotel"):
+            hotel_items.append(change)
             tasks.append(_fill_hotel_image(change, dest, "to_hotel", "new_area"))
     if tasks:
         await asyncio.gather(*tasks)
+    # 批量解析text_to_image URL为CDN直链
+    resolve_tasks = []
+    for item in hotel_items:
+        img = item.get("image", "")
+        if IMG_BASE in img:
+            resolve_tasks.append(_resolve_and_set(item, "image", img))
+    if resolve_tasks:
+        await asyncio.gather(*resolve_tasks)
 
 
 async def _fill_hotel_image(item: dict, dest: str, name_key: str = "name", area_key: str = "area"):
