@@ -1,4 +1,4 @@
-<!-- 首页：旅白AI旅行规划 - 输入目的地、天数、预算、兴趣标签 -->
+<!-- 首页：日历式日期选择，输入目的地、预算、兴趣标签 -->
 <view class="container">
   <view class="header">
     <view class="logo">旅白</view>
@@ -14,12 +14,24 @@
     </view>
 
     <view class="form-item">
-      <view class="label">出行天数 <text class="days-value">{{days}} 天</text></view>
-      <view class="slider-row">
-        <slider class="slider" min="1" max="7" step="1" value="{{days}}" 
-          bindchange="onDaysSlider" activeColor="#4A90D9" block-size="22" />
-        <input class="days-input" type="number" maxlength="1" value="{{days}}" 
-          bindinput="onDaysInput" />
+      <view class="label">出行日期</view>
+      <view class="date-row">
+        <picker mode="date" value="{{startDate}}" start="{{today}}" bindchange="onStartDateChange">
+          <view class="date-picker {{startDate ? '' : 'placeholder'}}">
+            <text class="date-icon">📅</text>
+            <text>{{startDate || '出发日期'}}</text>
+          </view>
+        </picker>
+        <text class="date-arrow">→</text>
+        <picker mode="date" value="{{endDate}}" start="{{startDate || today}}" bindchange="onEndDateChange">
+          <view class="date-picker {{endDate ? '' : 'placeholder'}}">
+            <text class="date-icon">📅</text>
+            <text>{{endDate || '返程日期'}}</text>
+          </view>
+        </picker>
+      </view>
+      <view class="days-hint" wx:if="{{days > 0}}">
+        <text>共 <text class="days-num">{{days}}</text> 天行程</text>
       </view>
     </view>
 
@@ -63,7 +75,6 @@
     </button>
   </view>
 
-  <!-- 历史记录 -->
   <view class="history-section" wx:if="{{history.length}}">
     <view class="history-header" bindtap="toggleHistory">
       <text class="history-title">历史记录</text>

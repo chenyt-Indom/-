@@ -7,11 +7,15 @@
 .form-card { background: #fff; border-radius: 24rpx; padding: 36rpx 30rpx; box-shadow: 0 4rpx 24rpx rgba(74, 144, 217, 0.08); border: 1rpx solid #eef4fb; }
 .form-item { margin-bottom: 32rpx; }
 .label { font-size: 28rpx; color: #333; font-weight: 500; margin-bottom: 14rpx; display: block; }
-.days-value { color: #4A90D9; font-size: 32rpx; font-weight: 600; float: right; }
 .input { border: 1rpx solid #e8e8e8; border-radius: 12rpx; padding: 22rpx 24rpx; font-size: 28rpx; background: #f9fafb; color: #333; }
-.slider-row { display: flex; align-items: center; gap: 20rpx; }
-.slider { flex: 1; }
-.days-input { width: 88rpx; height: 72rpx; border: 1rpx solid #e8e8e8; border-radius: 12rpx; text-align: center; font-size: 30rpx; font-weight: 600; color: #4A90D9; background: #f9fafb; }
+/* 日历日期选择器 */
+.date-row { display: flex; align-items: center; gap: 12rpx; }
+.date-picker { flex: 1; border: 1rpx solid #e8e8e8; border-radius: 12rpx; padding: 20rpx 18rpx; font-size: 26rpx; background: #f9fafb; color: #333; display: flex; align-items: center; gap: 8rpx; }
+.date-picker.placeholder { color: #999; }
+.date-icon { font-size: 28rpx; }
+.date-arrow { font-size: 32rpx; color: #4A90D9; font-weight: 600; flex-shrink: 0; }
+.days-hint { text-align: right; margin-top: 10rpx; font-size: 24rpx; color: #666; }
+.days-num { color: #4A90D9; font-size: 32rpx; font-weight: 700; }
 .tag-group { display: flex; flex-wrap: wrap; gap: 16rpx; }
 .tag { padding: 14rpx 28rpx; border-radius: 32rpx; font-size: 26rpx; color: #666; background: #f5f5f5; }
 .tag.active { color: #fff; background: #4A90D9; }
@@ -24,8 +28,6 @@
 .loading-dot:nth-child(3) { animation-delay: 0.4s; }
 .loading-text { color: #fff; font-size: 26rpx; margin-left: 10rpx; white-space: nowrap; }
 @keyframes bounce { to { transform: translateY(-8rpx); opacity: 0.5; } }
-
-/* 历史记录 */
 .history-section { margin-top: 40rpx; }
 .history-header { display: flex; justify-content: space-between; align-items: center; padding: 20rpx 0; border-bottom: 1rpx solid #eee; }
 .history-title { font-size: 28rpx; font-weight: 600; color: #333; }

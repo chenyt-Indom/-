@@ -1,6 +1,6 @@
-<!-- 行程展示页：按天展示卡片，含天气、景点坐标、餐饮、交通，地图按钮跳转高德 -->
+<!-- 行程展示页：卡片详情 + 预约提醒 + 机票/酒店/门票推荐 -->
 <view class="container">
-  <!-- 整体天气概览 -->
+  <!-- 天气概览 -->
   <view class="weather-bar" wx:if="{{tripData.weather && tripData.weather.length}}">
     <scroll-view scroll-x class="weather-scroll">
       <view class="weather-item" wx:for="{{tripData.weather}}" wx:key="date">
@@ -20,7 +20,6 @@
       <view class="day-weather" wx:if="{{item.weather}}">
         <text>{{item.weather.icon}} {{item.weather.desc}} {{item.weather.temp}}</text>
       </view>
-      <!-- 地图按钮 - 点击跳转高德地图 -->
       <view class="map-icon-btn" bindtap="onOpenAmap" data-day="{{dayIdx}}">
         <text class="map-icon">🗺️</text>
         <text class="map-text">高德地图</text>
@@ -30,84 +29,39 @@
     <image class="weather-img" wx:if="{{item.weather && item.weather.image}}" 
       src="{{item.weather.image}}" mode="aspectFill" />
 
-    <!-- 上午 -->
-    <view class="time-slot">
-      <view class="slot-header">
-        <view class="slot-dot morning"></view>
-        <text class="slot-title">上午</text>
-        <text class="map-icon-small" wx:if="{{item.morning.location}}" 
-          bindtap="onOpenAmap" data-day="{{dayIdx}}">📍</text>
+    <!-- 上午/下午/晚上 -->
+    <block wx:for="{{slots}}" wx:for-item="slot" wx:key="name">
+      <view class="time-slot" wx:if="{{item[slot.key]}}">
+        <view class="slot-header">
+          <view class="slot-dot {{slot.key}}"></view>
+          <text class="slot-title">{{slot.label}}</text>
+          <text class="map-icon-small" wx:if="{{item[slot.key].location}}" 
+            bindtap="onOpenAmap" data-day="{{dayIdx}}">📍</text>
+        </view>
+        <image class="spot-img" wx:if="{{item[slot.key].image}}" 
+          src="{{item[slot.key].image}}" mode="aspectFill" />
+        <view class="spot-name">{{item[slot.key].spot}}</view>
+        <view class="spot-meta">
+          <text class="meta-tag">时长：{{item[slot.key].duration}}</text>
+          <text class="meta-tag booking" wx:if="{{item[slot.key].need_booking}}">⚠需预约</text>
+        </view>
+        <view class="spot-coord" wx:if="{{item[slot.key].location}}">
+          <text class="coord-icon">📌</text>
+          <text class="coord-text">坐标：{{item[slot.key].location}}</text>
+        </view>
+        <view class="spot-reason">推荐理由：{{item[slot.key].reason}}</view>
       </view>
-      <image class="spot-img" wx:if="{{item.morning.image}}" 
-        src="{{item.morning.image}}" mode="aspectFill" />
-      <view class="spot-name">{{item.morning.spot}}</view>
-      <view class="spot-meta">
-        <text class="meta-tag">时长：{{item.morning.duration}}</text>
-      </view>
-      <view class="spot-coord" wx:if="{{item.morning.location}}">
-        <text class="coord-icon">📌</text>
-        <text class="coord-text">坐标：{{item.morning.location}}</text>
-      </view>
-      <view class="spot-reason">推荐理由：{{item.morning.reason}}</view>
-    </view>
-
-    <!-- 下午 -->
-    <view class="time-slot">
-      <view class="slot-header">
-        <view class="slot-dot afternoon"></view>
-        <text class="slot-title">下午</text>
-        <text class="map-icon-small" wx:if="{{item.afternoon.location}}" 
-          bindtap="onOpenAmap" data-day="{{dayIdx}}">📍</text>
-      </view>
-      <image class="spot-img" wx:if="{{item.afternoon.image}}" 
-        src="{{item.afternoon.image}}" mode="aspectFill" />
-      <view class="spot-name">{{item.afternoon.spot}}</view>
-      <view class="spot-meta">
-        <text class="meta-tag">时长：{{item.afternoon.duration}}</text>
-      </view>
-      <view class="spot-coord" wx:if="{{item.afternoon.location}}">
-        <text class="coord-icon">📌</text>
-        <text class="coord-text">坐标：{{item.afternoon.location}}</text>
-      </view>
-      <view class="spot-reason">推荐理由：{{item.afternoon.reason}}</view>
-    </view>
-
-    <!-- 晚上 -->
-    <view class="time-slot">
-      <view class="slot-header">
-        <view class="slot-dot evening"></view>
-        <text class="slot-title">晚上</text>
-        <text class="map-icon-small" wx:if="{{item.evening.location}}" 
-          bindtap="onOpenAmap" data-day="{{dayIdx}}">📍</text>
-      </view>
-      <image class="spot-img" wx:if="{{item.evening.image}}" 
-        src="{{item.evening.image}}" mode="aspectFill" />
-      <view class="spot-name">{{item.evening.spot}}</view>
-      <view class="spot-meta">
-        <text class="meta-tag">时长：{{item.evening.duration}}</text>
-      </view>
-      <view class="spot-coord" wx:if="{{item.evening.location}}">
-        <text class="coord-icon">📌</text>
-        <text class="coord-text">坐标：{{item.evening.location}}</text>
-      </view>
-      <view class="spot-reason">推荐理由：{{item.evening.reason}}</view>
-    </view>
+    </block>
 
     <view class="day-footer">
       <view class="footer-row">
-        <text class="footer-icon">🍜</text>
-        <text class="footer-label">午餐：</text>
-        <text class="footer-text">{{item.lunch}}</text>
+        <text class="footer-icon">🍜</text><text class="footer-label">午餐：</text><text class="footer-text">{{item.lunch}}</text>
       </view>
       <view class="footer-row">
-        <text class="footer-icon">🍽️</text>
-        <text class="footer-label">晚餐：</text>
-        <text class="footer-text">{{item.dinner}}</text>
+        <text class="footer-icon">🍽️</text><text class="footer-label">晚餐：</text><text class="footer-text">{{item.dinner}}</text>
       </view>
       <view class="footer-row">
-        <text class="footer-icon">🚗</text>
-        <text class="footer-label">交通：</text>
-        <text class="footer-text">{{item.transport}}</text>
+        <text class="footer-icon">🚗</text><text class="footer-label">交通：</text><text class="footer-text">{{item.transport}}</text>
       </view>
     </view>
   </view>
@@ -123,6 +77,71 @@
     </view>
   </view>
 
+  <!-- 机票/火车票推荐 -->
+  <view class="bottom-card" wx:if="{{booking.flights.length}}">
+    <view class="bottom-title">✈️ 机票/火车票</view>
+    <view class="booking-item" wx:for="{{booking.flights}}" wx:key="type">
+      <view class="booking-row">
+        <text class="booking-type">{{item.type}}</text>
+        <text class="booking-suggest">{{item.suggest}}</text>
+      </view>
+      <view class="booking-row sub">
+        <text class="booking-price">{{item.price}}</text>
+        <text class="booking-note">{{item.note}}</text>
+      </view>
+      <button class="btn-book" bindtap="onBookLink" data-link="{{item.link}}" data-name="{{item.suggest}}">立即订购</button>
+    </view>
+  </view>
+
+  <!-- 酒店推荐 -->
+  <view class="bottom-card" wx:if="{{booking.hotels.length}}">
+    <view class="bottom-title">🏨 酒店推荐</view>
+    <view class="booking-item" wx:for="{{booking.hotels}}" wx:key="name">
+      <view class="booking-row">
+        <text class="booking-hotel-name">{{item.name}}</text>
+      </view>
+      <view class="booking-row sub">
+        <text class="booking-area">{{item.area}}</text>
+        <text class="booking-price">{{item.price}}</text>
+      </view>
+      <view class="booking-reason">{{item.reason}}</view>
+      <view class="booking-row sub" wx:if="{{item.location}}">
+        <text class="coord-text">📌 {{item.location}}</text>
+      </view>
+      <button class="btn-book" bindtap="onBookLink" data-link="{{item.link}}" data-name="{{item.name}}">预订酒店</button>
+    </view>
+  </view>
+
+  <!-- 门票预约提醒 -->
+  <view class="bottom-card" wx:if="{{booking.tickets.length}}">
+    <view class="bottom-title">🎫 门票预约（需提前预约）</view>
+    <view class="booking-item ticket-item" wx:for="{{booking.tickets}}" wx:key="spot">
+      <view class="booking-row">
+        <text class="ticket-spot">{{item.spot}}</text>
+        <text class="ticket-price">{{item.price}}</text>
+      </view>
+      <view class="booking-row sub" wx:if="{{item.need_booking}}">
+        <text class="ticket-booking-warn">⚠ 需提前{{item.booking_days}}预约</text>
+      </view>
+      <view class="booking-row sub">
+        <text class="ticket-platform">平台：{{item.platform}}</text>
+      </view>
+      <view class="ticket-note">{{item.note}}</view>
+      <button class="btn-book warn" bindtap="onBookLink" data-link="{{item.link}}" data-name="{{item.spot}}">去预约</button>
+    </view>
+  </view>
+
+  <!-- 预约贴士 -->
+  <view class="bottom-card" wx:if="{{booking.booking_tips.length}}">
+    <view class="bottom-title">📋 预约贴士</view>
+    <view class="tips-list">
+      <view class="tip-item" wx:for="{{booking.booking_tips}}" wx:key="index">
+        <text class="tip-dot">•</text>
+        <text class="tip-text">{{item}}</text>
+      </view>
+    </view>
+  </view>
+
   <!-- 出行贴士 -->
   <view class="bottom-card" wx:if="{{tripData.tips && tripData.tips.length}}">
     <view class="bottom-title">出行贴士</view>
@@ -134,10 +153,7 @@
     </view>
   </view>
 
-  <!-- 操作按钮 -->
   <button class="btn-share" bindtap="onShare">分享行程</button>
   <button class="btn-back" bindtap="onBack">返回总览地图</button>
-
-  <!-- 隐藏的 canvas 用于分享卡片 -->
   <canvas canvas-id="shareCanvas" style="position:fixed;top:-9999px;left:-9999px;width:375px;height:500px;"></canvas>
 </view>

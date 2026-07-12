@@ -1,7 +1,7 @@
 // API 工具模块：封装与后端通信的请求方法
 const BASE_URL = 'http://localhost:8000';
 
-// 生成旅行攻略，请求体包含目的地、天数、预算、兴趣标签
+// 生成旅行攻略，请求体包含目的地、天数、预算、兴趣标签、日期范围
 function generateTrip(data) {
   return new Promise((resolve, reject) => {
     wx.request({
@@ -12,6 +12,8 @@ function generateTrip(data) {
         days: data.days,
         budget: data.budget,
         interests: data.interests || [],
+        start_date: data.start_date || '',
+        end_date: data.end_date || '',
       },
       success(res) {
         if (res.statusCode === 200) {

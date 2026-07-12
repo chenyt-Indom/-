@@ -17,10 +17,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .label{font-size:20px;color:#333;font-weight:500;margin-bottom:12px;display:block}
 .input{width:100%;border:1px solid #e8e8e8;border-radius:12px;padding:16px 18px;font-size:20px;background:#f9fafb;color:#333;outline:none;transition:border-color .2s}
 .input:focus{border-color:#4A90D9}
-.slider-row{display:flex;align-items:center;gap:16px}
-.slider{flex:1;height:6px;-webkit-appearance:none;appearance:none;background:#e0e0e0;border-radius:3px;outline:none}
-.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:#4A90D9;cursor:pointer}
-.days-input{width:64px;height:52px;border:1px solid #e8e8e8;border-radius:12px;text-align:center;font-size:22px;font-weight:600;color:#4A90D9;background:#f9fafb;outline:none}
+.date-row{display:flex;align-items:center;gap:10px}
+.date-picker{flex:1;border:1px solid #e8e8e8;border-radius:12px;padding:14px 14px;font-size:18px;background:#f9fafb;color:#333;cursor:pointer}
+.date-picker.placeholder{color:#999}
+.date-arrow{font-size:24px;color:#4A90D9;font-weight:600;flex-shrink:0}
+.days-hint{text-align:right;margin-top:8px;font-size:16px;color:#666}
+.days-num{color:#4A90D9;font-size:24px;font-weight:700}
 .tag-group{display:flex;flex-wrap:wrap;gap:12px}
 .tag{padding:10px 22px;border-radius:24px;font-size:18px;color:#666;background:#f5f5f5;cursor:pointer;transition:all .2s;border:none;user-select:none}
 .tag.active{color:#fff;background:#4A90D9}
@@ -38,19 +40,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .overview-container{max-width:420px;margin:0 auto;display:none;flex-direction:column;height:100vh}
 .overview-header{text-align:center;padding:16px;background:#4A90D9;color:#fff}
 .overview-header h2{font-size:22px;font-weight:500}
-.overview-map{flex:1;position:relative;background:#f5f6f8;overflow:hidden}
-.overview-map-inner{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
-.spot-dots{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:20px}
-.spot-dot-item{width:40px;height:40px;border-radius:50%;background:#4A90D9;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:transform .2s}
-.spot-dot-item:hover{transform:scale(1.15)}
-.spot-dot-tooltip{display:none;position:absolute;bottom:48px;left:50%;transform:translateX(-50%);background:#333;color:#fff;font-size:12px;padding:4px 10px;border-radius:6px;white-space:nowrap;z-index:10}
-.spot-dot-item:hover .spot-dot-tooltip{display:block}
-.map-placeholder{text-align:center;color:#999;font-size:16px;margin-top:20px}
-.map-placeholder-icon{font-size:48px;margin-bottom:8px}
-.overview-bottom{background:#fff;padding:20px 30px 32px}
-.spot-summary{text-align:center;margin-bottom:12px;font-size:16px;color:#666}
-.btn-detail{width:100%;height:58px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border-radius:32px;font-size:20px;font-weight:600;cursor:pointer;border:none;margin-bottom:12px}
-.btn-overview-back{width:100%;height:58px;background:#fff;color:#4A90D9;border:1px solid #4A90D9;border-radius:32px;font-size:20px;cursor:pointer}
+.day-list{flex:0 0 42%;background:#fff;overflow-y:auto;padding:0 20px}
+.day-summary{border-bottom:1px solid #f0f0f0}
+.day-summary-header{display:flex;align-items:center;padding:14px 0;cursor:pointer}
+.day-label{background:#4A90D9;color:#fff;font-size:14px;font-weight:600;padding:3px 10px;border-radius:12px;margin-right:10px}
+.day-summary-date{font-size:16px;color:#999;flex:1}
+.day-arrow{font-size:12px;color:#999}
+.day-spots{display:none;padding:0 0 14px 12px}
+.day-spots.show{display:block}
+.day-spot{display:flex;align-items:center;padding:6px 0}
+.spot-num{width:28px;height:28px;border-radius:50%;background:#EEF4FB;color:#4A90D9;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0}
+.spot-info{flex:1}
+.spot-name{font-size:18px;color:#333;font-weight:500;display:block}
+.spot-time{font-size:14px;color:#999}
+.spot-loc-icon{font-size:20px;cursor:pointer;padding:2px}
+.map-panel{flex:1;position:relative;background:#f5f6f8;min-height:0}
+#overviewMapContainer{width:100%;height:100%}
+.map-legend-overview{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;padding:6px 16px;border-radius:16px;font-size:14px;z-index:10;pointer-events:none}
+.overview-bottom{background:#fff;padding:16px 30px 28px}
+.spot-summary{text-align:center;margin-bottom:8px;font-size:16px;color:#666}
+.btn-detail{width:100%;height:52px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border-radius:28px;font-size:20px;font-weight:600;cursor:pointer;border:none;margin-bottom:10px}
+.btn-overview-back{width:100%;height:52px;background:#fff;color:#4A90D9;border:1px solid #4A90D9;border-radius:28px;font-size:20px;cursor:pointer}
 
 /* 行程页 */
 .trip-container{max-width:420px;margin:0 auto;padding:16px 24px 32px;background:#f5f6f8;min-height:100vh;display:none}
@@ -75,7 +85,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .map-pin:hover{opacity:1}
 .spot-img{width:100%;height:200px;border-radius:12px;object-fit:cover;margin-bottom:10px}
 .spot-name{font-size:24px;font-weight:600;color:#222;margin-bottom:6px}
-.meta-tag{font-size:16px;color:#4A90D9;background:#EEF4FB;padding:3px 12px;border-radius:8px}
+.meta-tag{font-size:16px;color:#4A90D9;background:#EEF4FB;padding:3px 12px;border-radius:8px;display:inline-block;margin-right:6px}
+.meta-tag.booking{color:#E67E22;background:#FFF3E0}
 .spot-coord{display:flex;align-items:center;margin-top:6px;font-size:14px;color:#999}
 .spot-coord .coord-icon{margin-right:4px}
 .spot-reason{font-size:18px;color:#888;line-height:1.5;padding-bottom:4px;border-bottom:1px solid #f0f0f0;margin-top:6px}
@@ -89,6 +100,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .budget-grid{display:flex;flex-wrap:wrap;gap:12px}
 .budget-item{flex:1;min-width:28%;text-align:center;background:#f9fafb;border-radius:12px;padding:14px 8px}
 .budget-name{font-size:18px;color:#999;display:block}.budget-value{font-size:22px;color:#4A90D9;font-weight:600;display:block;margin-top:4px}
+/* 订票/酒店/门票 */
+.booking-item{padding:12px 0;border-bottom:1px solid #f5f5f5}
+.booking-item:last-child{border-bottom:none}
+.booking-row{display:flex;align-items:center;padding:3px 0}
+.booking-type{background:#4A90D9;color:#fff;font-size:14px;padding:2px 8px;border-radius:6px;margin-right:8px}
+.booking-suggest{font-size:18px;color:#333;font-weight:500;flex:1}
+.booking-hotel-name{font-size:20px;color:#333;font-weight:600}
+.booking-area{font-size:16px;color:#999;flex:1}
+.booking-price{font-size:18px;color:#E67E22;font-weight:600}
+.booking-note{font-size:16px;color:#999;flex:1}
+.booking-reason{font-size:16px;color:#666;padding:3px 0}
+.ticket-item{background:#FFF8F0;margin:0 -20px;padding:12px 20px;border-radius:0}
+.ticket-spot{font-size:18px;color:#333;font-weight:600;flex:1}
+.ticket-price{font-size:18px;color:#E67E22}
+.ticket-booking-warn{font-size:16px;color:#E74C3C;font-weight:500}
+.ticket-platform{font-size:16px;color:#666}
+.ticket-note{font-size:16px;color:#999;padding:3px 0}
+.btn-book{width:100%;height:42px;background:#4A90D9;color:#fff;border-radius:21px;font-size:18px;margin-top:8px;border:none;cursor:pointer}
+.btn-book.warn{background:#E67E22}
 .tip-item{display:flex;padding:8px 0;font-size:20px}
 .tip-dot{color:#4A90D9;margin-right:10px;line-height:1.5}
 .tip-text{color:#555;line-height:1.5}
@@ -102,7 +132,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .map-dialog-header{padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}
 .map-dialog-title{font-size:20px;font-weight:600;color:#333}
 .map-close{font-size:24px;color:#999;cursor:pointer;border:none;background:none;padding:4px}
-.map-dialog-body{padding:20px}
+.map-dialog-body{padding:0;position:relative}
+#dayMapContainer{width:100%;height:300px}
+.map-spot-list{padding:12px 20px;max-height:200px;overflow-y:auto}
 .map-spot-item{display:flex;align-items:center;padding:12px 0;border-bottom:1px solid #f5f5f5}
 .map-spot-num{width:28px;height:28px;border-radius:50%;background:#4A90D9;color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-right:12px;flex-shrink:0}
 .map-spot-info{flex:1}
@@ -111,7 +143,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .map-spot-loc a{color:#4A90D9;text-decoration:none}
 .map-spot-loc a:hover{text-decoration:underline}
 
-/* 历史记录 */
 .history-section{margin-top:40px}
 .history-header{display:flex;justify-content:space-between;align-items:center;padding:20px 0;border-bottom:1px solid #eee;cursor:pointer}
 .history-title{font-size:20px;font-weight:600;color:#333}
@@ -124,6 +155,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .h-days{font-size:14px;color:#4A90D9;background:#EEF4FB;padding:3px 10px;border-radius:8px}
 .h-time{font-size:14px;color:#999}
 </style>
+<script src="https://webapi.amap.com/maps?v=2.0&key=a0c3b637da468b7b66c5f4dbaa5d676b"></script>
 </head>
 <body>
 
@@ -140,10 +172,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <input class="input" id="destination" placeholder="输入你想去的城市，如：杭州">
     </div>
     <div class="form-item">
-      <label class="label">出行天数</label>
-      <div class="slider-row">
-        <input type="range" class="slider" id="daysSlider" min="1" max="7" value="3">
-        <input type="number" class="days-input" id="daysInput" min="1" max="7" value="3">
+      <label class="label">出行日期</label>
+      <div class="date-row">
+        <input type="date" class="date-picker" id="startDate">
+        <span class="date-arrow">→</span>
+        <input type="date" class="date-picker" id="endDate">
+      </div>
+      <div class="days-hint" id="daysHint" style="display:none">
+        共 <span class="days-num" id="daysNum">0</span> 天行程
       </div>
     </div>
     <div class="form-item">
@@ -182,17 +218,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- 总览地图页 -->
 <div class="overview-container" id="overviewPage">
-  <div class="overview-header"><h2 id="overviewTitle">景点总览</h2></div>
-  <div class="overview-map">
-    <div class="overview-map-inner">
-      <div class="map-placeholder-icon">🗺️</div>
-      <div class="map-placeholder">所有景点已标注如下</div>
-      <div class="spot-dots" id="spotDots"></div>
-      <div class="map-placeholder" style="font-size:14px;color:#4A90D9;">按游览顺序依次编号</div>
-    </div>
+  <div class="overview-header"><h2 id="overviewTitle">行程总览</h2></div>
+  <div class="day-list" id="dayList"></div>
+  <div class="map-panel">
+    <div id="overviewMapContainer"></div>
+    <div class="map-legend-overview" id="spotSummary">所有景点已标注</div>
   </div>
   <div class="overview-bottom">
-    <div class="spot-summary" id="spotSummary"></div>
     <button class="btn-detail" onclick="goToTrip()">查看详情</button>
     <button class="btn-overview-back" onclick="goHome()">返回首页</button>
   </div>
@@ -204,6 +236,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="weather-bar" id="weatherBar"></div>
   <div id="dayCards"></div>
   <div id="budgetCard"></div>
+  <div id="flightsCard"></div>
+  <div id="hotelsCard"></div>
+  <div id="ticketsCard"></div>
+  <div id="bookingTipsCard"></div>
   <div id="tipsCard"></div>
   <button class="btn-share" onclick="shareTrip()">分享行程</button>
   <button class="btn-back" onclick="goToOverview()">返回总览地图</button>
@@ -216,7 +252,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <span class="map-dialog-title" id="mapDialogTitle">景点路线</span>
       <button class="map-close" onclick="closeMap()">×</button>
     </div>
-    <div class="map-dialog-body" id="mapDialogBody"></div>
+    <div class="map-dialog-body">
+    <div id="dayMapContainer"></div>
+    <div class="map-spot-list" id="daySpotList"></div>
+  </div>
   </div>
 </div>
 
@@ -224,11 +263,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 const API = 'http://localhost:8000';
 let selectedTags = [];
 let tripData = null;
+let overviewMap = null;  // 总览页地图实例
+let dayMap = null;       // 行程页弹窗地图实例
+let allMarkers = [];     // 总览页所有标记点
 const PROGRESS_TEXTS = [
   '正在查询目的地信息...',
   '正在获取景点数据...',
   '正在查询天气情况...',
   'AI 正在为你规划行程...',
+  '正在查询机票酒店信息...',
   '正在生成美食推荐...',
   '即将完成，请稍候...',
 ];
@@ -276,16 +319,30 @@ document.querySelectorAll('#tagGroup .tag').forEach(btn => {
   });
 });
 
-const slider = document.getElementById('daysSlider');
-const daysInput = document.getElementById('daysInput');
-slider.addEventListener('input',()=>{ daysInput.value = slider.value; });
-daysInput.addEventListener('input',()=>{ let v=Math.max(1,Math.min(7,parseInt(daysInput.value)||1)); daysInput.value=v; slider.value=v; });
+// 日期选择器联动
+const startEl = document.getElementById('startDate');
+const endEl = document.getElementById('endDate');
+function updateDays() {
+  const s = startEl.value, e = endEl.value;
+  if (s && e) {
+    const days = Math.max(1, Math.ceil((new Date(e) - new Date(s)) / 86400000) + 1);
+    document.getElementById('daysNum').textContent = days;
+    document.getElementById('daysHint').style.display = 'block';
+    return days;
+  }
+  document.getElementById('daysHint').style.display = 'none';
+  return 0;
+}
+startEl.addEventListener('change', updateDays);
+endEl.addEventListener('change', updateDays);
 
 // 生成攻略
 let progressTimer = null;
 document.getElementById('btnGenerate').addEventListener('click', async function(){
   const dest = document.getElementById('destination').value.trim();
+  const days = updateDays();
   if(!dest){ alert('请输入目的地'); return; }
+  if(days < 1){ alert('请选择出行日期'); return; }
   document.getElementById('btnNormal').style.display='none';
   document.getElementById('btnLoading').style.display='flex';
   this.disabled = true;
@@ -296,7 +353,12 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
   try {
     const res = await fetch(API+'/api/generate-trip',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ destination: dest, days: parseInt(slider.value), budget: document.getElementById('budget').value, interests: selectedTags })
+      body: JSON.stringify({
+        destination: dest, days: days,
+        budget: document.getElementById('budget').value,
+        interests: selectedTags,
+        start_date: startEl.value, end_date: endEl.value,
+      })
     });
     clearInterval(progressTimer);
     const data = await res.json();
@@ -310,45 +372,173 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
   }
 });
 
-// 总览地图页
+// 总览页
 function renderOverview(data){
   tripData = data;
   document.getElementById('homePage').style.display='none';
   document.getElementById('tripPage').style.display='none';
   document.getElementById('overviewPage').style.display='flex';
-  document.getElementById('overviewTitle').textContent = data.destination + ' 景点总览';
 
-  // 收集所有景点
-  const allSpots = [];
-  let order = 1;
-  (data.itinerary||[]).forEach(day => {
+  // 销毁旧地图
+  if (dayMap) { dayMap.destroy(); dayMap = null; }
+
+  document.getElementById('overviewTitle').textContent = data.destination + ' 行程总览';
+
+  // 按天构建列表 + 收集所有景点坐标
+  let allSpots = 0;
+  let listHtml = '';
+  allMarkers = [];
+  let globalOrder = 1;
+
+  (data.itinerary||[]).forEach((day, idx) => {
+    const spots = [];
     ['morning','afternoon','evening'].forEach(slot => {
       const s = day[slot];
-      if(s && s.spot){ allSpots.push({ order: order++, name: s.spot, location: s.location||'', day: day.day }); }
+      if(s && s.spot){
+        const [lng, lat] = (s.location||'').split(',').map(Number);
+        if (!isNaN(lng) && !isNaN(lat)) {
+          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: s.location, need_booking: s.need_booking, lng, lat, order: globalOrder });
+          allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
+          globalOrder++;
+        } else {
+          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: '', need_booking: s.need_booking });
+        }
+      }
+    });
+    allSpots += spots.length;
+    listHtml += `<div class="day-summary">
+      <div class="day-summary-header" onclick="toggleDay(${idx})">
+        <span class="day-label">Day ${day.day}</span>
+        <span class="day-summary-date">${day.date||''}</span>
+        <span class="day-arrow" id="dayArrow${idx}">▶</span>
+      </div>
+      <div class="day-spots" id="daySpots${idx}">`;
+    spots.forEach((s, si) => {
+      listHtml += `<div class="day-spot">
+        <span class="spot-num">${s.order||(si+1)}</span>
+        <div class="spot-info"><span class="spot-name">${s.name}${s.need_booking?' ⚠需预约':''}</span><span class="spot-time">${s.time}</span></div>
+        ${s.location ? `<span class="spot-loc-icon" onclick="focusSpot('${s.name}',${s.lat},${s.lng})">📍</span>` : ''}
+      </div>`;
+    });
+    listHtml += `</div></div>`;
+  });
+  document.getElementById('dayList').innerHTML = listHtml;
+  document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个景点已标注`;
+
+  // 收集酒店和门票预约位置
+  const bk = data.booking_info || {};
+  (bk.hotels || []).forEach(h => {
+    if (h.location) {
+      const [lng, lat] = h.location.split(',').map(Number);
+      if (!isNaN(lng) && !isNaN(lat)) {
+        allMarkers.push({ name: h.name, lng, lat, order: globalOrder, day: 0, type: 'hotel' });
+        globalOrder++;
+      }
+    }
+  });
+  (bk.tickets || []).forEach(t => {
+    if (t.location && t.need_booking) {
+      const [lng, lat] = t.location.split(',').map(Number);
+      if (!isNaN(lng) && !isNaN(lat)) {
+        allMarkers.push({ name: t.spot, lng, lat, order: globalOrder, day: 0, type: 'ticket' });
+        globalOrder++;
+      }
+    }
+  });
+  document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个地点已标注（含酒店、需预约景点）`;
+
+  // 初始化高德地图
+  initOverviewMap(allMarkers);
+  window.scrollTo(0,0);
+}
+
+// 初始化总览页高德地图
+function initOverviewMap(markers) {
+  const container = document.getElementById('overviewMapContainer');
+  if (!container) return;
+
+  // 销毁旧地图
+  if (overviewMap) { overviewMap.destroy(); overviewMap = null; }
+
+  // 计算中心点
+  let centerLng = 116.4, centerLat = 39.9;
+  if (markers.length > 0) {
+    centerLng = markers.reduce((s,m) => s + m.lng, 0) / markers.length;
+    centerLat = markers.reduce((s,m) => s + m.lat, 0) / markers.length;
+  }
+
+  overviewMap = new AMap.Map('overviewMapContainer', {
+    center: [centerLng, centerLat],
+    zoom: markers.length > 1 ? 11 : 13,
+    resizeEnable: true,
+  });
+
+  // 添加标记点
+  markers.forEach(m => {
+    let bgColor = '#4A90D9';
+    let label = `${m.order}`;
+    if (m.type === 'hotel') { bgColor = '#E67E22'; label = '🏨'; }
+    else if (m.type === 'ticket') { bgColor = '#E74C3C'; label = '🎫'; }
+    const content = `<div style="background:${bgColor};color:#fff;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;font-weight:700">${label}</div>`;
+    const marker = new AMap.Marker({
+      position: [m.lng, m.lat],
+      content: content,
+      offset: new AMap.Pixel(-11, -11),
+      title: m.type === 'hotel' ? `🏨 ${m.name}` : m.type === 'ticket' ? `🎫 ${m.name}` : `${m.order}. Day${m.day} ${m.name}`,
+    });
+    marker.setMap(overviewMap);
+
+    marker.on('click', () => {
+      const prefix = m.type === 'hotel' ? '🏨 ' : m.type === 'ticket' ? '🎫 需预约 ' : '';
+      const info = new AMap.InfoWindow({
+        content: `<div style="padding:4px 8px;font-size:13px"><b>${prefix}${m.name}</b>${m.day ? '<br>Day'+m.day : ''}</div>`,
+        offset: new AMap.Pixel(0, -30),
+      });
+      info.open(overviewMap, [m.lng, m.lat]);
     });
   });
-  document.getElementById('spotSummary').textContent = `共 ${allSpots.length} 个景点已标注`;
 
-  let dotsHtml = '';
-  allSpots.forEach(s => {
-    dotsHtml += `<div class="spot-dot-item" onclick="openAmapLink('${s.name}','${s.location}')">
-      ${s.order}<span class="spot-dot-tooltip">Day${s.day} ${s.name}</span>
-    </div>`;
-  });
-  document.getElementById('spotDots').innerHTML = dotsHtml;
-  window.scrollTo(0,0);
+  if (markers.length > 1) {
+    overviewMap.setFitView(null, false, [60, 60, 60, 60]);
+  }
+}
+
+// 点击景点定位图标，聚焦到该景点
+function focusSpot(name, lat, lng) {
+  if (overviewMap) {
+    overviewMap.setCenter([lng, lat]);
+    overviewMap.setZoom(15);
+    const info = new AMap.InfoWindow({
+      content: `<div style="padding:4px 8px;font-size:13px"><b>${name}</b></div>`,
+      offset: new AMap.Pixel(0, -30),
+    });
+    info.open(overviewMap, [lng, lat]);
+  }
+}
+
+function toggleDay(idx) {
+  const el = document.getElementById('daySpots'+idx);
+  const arrow = document.getElementById('dayArrow'+idx);
+  if (el.classList.contains('show')) { el.classList.remove('show'); arrow.textContent='▶'; }
+  else { el.classList.add('show'); arrow.textContent='▼'; }
 }
 
 function goToTrip(){
   if(!tripData) return;
+  // 销毁总览地图
+  if (overviewMap) { overviewMap.destroy(); overviewMap = null; }
   document.getElementById('overviewPage').style.display='none';
   document.getElementById('tripPage').style.display='block';
   renderTrip(tripData);
 }
 
 function goToOverview(){
+  // 销毁行程页地图
+  if (dayMap) { dayMap.destroy(); dayMap = null; }
   document.getElementById('tripPage').style.display='none';
   document.getElementById('overviewPage').style.display='flex';
+  // 重新初始化总览地图
+  setTimeout(() => initOverviewMap(allMarkers), 100);
   window.scrollTo(0,0);
 }
 
@@ -385,16 +575,74 @@ function renderTrip(data){
   });
   document.getElementById('dayCards').innerHTML = dHtml;
 
+  // 预算
   let bd = data.budget_breakdown||{};
   let bHtml = '<div class="bottom-card"><div class="bottom-title">预算明细</div><div class="budget-grid">';
   for(let k in bd) bHtml += `<div class="budget-item"><span class="budget-name">${k}</span><span class="budget-value">${bd[k]}</span></div>`;
   bHtml += '</div></div>';
   document.getElementById('budgetCard').innerHTML = bHtml;
 
-  let tHtml = '<div class="bottom-card"><div class="bottom-title">出行贴士</div>';
-  (data.tips||[]).forEach(t=>{ tHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
-  tHtml += '</div>';
-  document.getElementById('tipsCard').innerHTML = tHtml;
+  // 订票信息
+  const bk = data.booking_info || {};
+
+  let fHtml = '';
+  if (bk.flights && bk.flights.length) {
+    fHtml = '<div class="bottom-card"><div class="bottom-title">✈️ 机票/火车票</div>';
+    bk.flights.forEach(f => {
+      fHtml += `<div class="booking-item">
+        <div class="booking-row"><span class="booking-type">${f.type}</span><span class="booking-suggest">${f.suggest}</span></div>
+        <div class="booking-row"><span class="booking-price">${f.price}</span><span class="booking-note">${f.note||''}</span></div>
+        <button class="btn-book" onclick="window.open('${f.link}','_blank')">立即订购</button>
+      </div>`;
+    });
+    fHtml += '</div>';
+  }
+  document.getElementById('flightsCard').innerHTML = fHtml;
+
+  let hHtml = '';
+  if (bk.hotels && bk.hotels.length) {
+    hHtml = '<div class="bottom-card"><div class="bottom-title">🏨 酒店推荐</div>';
+    bk.hotels.forEach(h => {
+      hHtml += `<div class="booking-item">
+        <div class="booking-row"><span class="booking-hotel-name">${h.name}</span></div>
+        <div class="booking-row"><span class="booking-area">${h.area||''}</span><span class="booking-price">${h.price}</span></div>
+        <div class="booking-reason">${h.reason||''}</div>
+        ${h.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${h.location}</div>` : ''}
+        <button class="btn-book" onclick="window.open('${h.link}','_blank')">预订酒店</button>
+      </div>`;
+    });
+    hHtml += '</div>';
+  }
+  document.getElementById('hotelsCard').innerHTML = hHtml;
+
+  let tHtml = '';
+  if (bk.tickets && bk.tickets.length) {
+    tHtml = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约（需提前预约）</div>';
+    bk.tickets.forEach(t => {
+      tHtml += `<div class="booking-item ticket-item">
+        <div class="booking-row"><span class="ticket-spot">${t.spot}</span><span class="ticket-price">${t.price}</span></div>
+        ${t.need_booking ? `<div class="booking-row"><span class="ticket-booking-warn">⚠ 需提前${t.booking_days}预约</span></div>` : ''}
+        <div class="booking-row"><span class="ticket-platform">平台：${t.platform||''}</span></div>
+        <div class="ticket-note">${t.note||''}</div>
+        <button class="btn-book warn" onclick="window.open('${t.link}','_blank')">去预约</button>
+      </div>`;
+    });
+    tHtml += '</div>';
+  }
+  document.getElementById('ticketsCard').innerHTML = tHtml;
+
+  let btipHtml = '';
+  if (bk.booking_tips && bk.booking_tips.length) {
+    btipHtml = '<div class="bottom-card"><div class="bottom-title">📋 预约贴士</div>';
+    bk.booking_tips.forEach(t => { btipHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
+    btipHtml += '</div>';
+  }
+  document.getElementById('bookingTipsCard').innerHTML = btipHtml;
+
+  let tipHtml = '<div class="bottom-card"><div class="bottom-title">出行贴士</div>';
+  (data.tips||[]).forEach(t=>{ tipHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
+  tipHtml += '</div>';
+  document.getElementById('tipsCard').innerHTML = tipHtml;
   window.scrollTo(0,0);
 }
 
@@ -405,6 +653,7 @@ function renderSlot(title, cls, slot, dayIdx){
     ${slot.image ? `<img class="spot-img" src="${slot.image}" alt="${slot.spot}">` : ''}
     <div class="spot-name">${slot.spot||''}</div>
     <span class="meta-tag">时长：${slot.duration||''}</span>
+    ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
     ${slot.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>坐标：${slot.location}</div>` : ''}
     <div class="spot-reason">推荐理由：${slot.reason||''}</div>
   </div>`;
@@ -417,25 +666,63 @@ function openDayAmap(dayIdx){
   const spots = [];
   ['morning','afternoon','evening'].forEach(slot => {
     const s = day[slot];
-    if(s && s.spot && s.location){ spots.push({ name: s.spot, location: s.location }); }
+    if(s && s.spot && s.location){
+      const [lng, lat] = s.location.split(',').map(Number);
+      if (!isNaN(lng) && !isNaN(lat)) spots.push({ name: s.spot, location: s.location, lng, lat });
+    }
   });
   if(spots.length === 0) { alert('该天暂无景点坐标'); return; }
-  if(spots.length === 1) {
-    const [lng, lat] = spots[0].location.split(',');
-    window.open(`https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(spots[0].name)}&coordinate=gaode&callnative=1`, '_blank');
-    return;
-  }
-  document.getElementById('mapDialogTitle').textContent = (day.date||'')+' 景点路线';
+
+  document.getElementById('mapDialogTitle').textContent = (day.date||'Day'+day.day)+' 景点路线';
+  document.getElementById('mapOverlay').classList.add('show');
+
+  // 初始化弹窗地图
+  setTimeout(() => {
+    const container = document.getElementById('dayMapContainer');
+    if (!container) return;
+    if (dayMap) { dayMap.destroy(); dayMap = null; }
+
+    const centerLng = spots.reduce((s,m) => s + m.lng, 0) / spots.length;
+    const centerLat = spots.reduce((s,m) => s + m.lat, 0) / spots.length;
+
+    dayMap = new AMap.Map('dayMapContainer', {
+      center: [centerLng, centerLat],
+      zoom: spots.length > 1 ? 12 : 14,
+      resizeEnable: true,
+    });
+
+    spots.forEach((s, i) => {
+      const content = `<div style="background:#4A90D9;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700">${i+1}</div>`;
+      const marker = new AMap.Marker({
+        position: [s.lng, s.lat],
+        content: content,
+        offset: new AMap.Pixel(-12, -12),
+        title: s.name,
+      });
+      marker.setMap(dayMap);
+      marker.on('click', () => {
+        const info = new AMap.InfoWindow({
+          content: `<div style="padding:4px 8px;font-size:13px"><b>${i+1}. ${s.name}</b></div>`,
+          offset: new AMap.Pixel(0, -32),
+        });
+        info.open(dayMap, [s.lng, s.lat]);
+      });
+    });
+
+    if (spots.length > 1) dayMap.setFitView(null, false, [40, 40, 40, 40]);
+  }, 200);
+
+  // 构建景点列表
   let html = '';
   spots.forEach((s, i) => {
-    const [lng, lat] = s.location.split(',');
-    html += `<div class="map-spot-item"><span class="map-spot-num">${i+1}</span><div class="map-spot-info"><span class="map-spot-name">${s.name}</span><span class="map-spot-loc">坐标：${s.location} <a href="https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(s.name)}&coordinate=gaode&callnative=1" target="_blank">🗺️打开高德</a></span></div></div>`;
+    html += `<div class="map-spot-item"><span class="map-spot-num">${i+1}</span><div class="map-spot-info"><span class="map-spot-name">${s.name}</span><span class="map-spot-loc">坐标：${s.location}</span></div></div>`;
   });
-  html += '<div style="margin-top:12px;color:#999;font-size:14px;text-align:center">点击 🗺️打开高德 可跳转到高德地图查看具体位置</div>';
-  document.getElementById('mapDialogBody').innerHTML = html;
-  document.getElementById('mapOverlay').classList.add('show');
+  document.getElementById('daySpotList').innerHTML = html;
 }
-function closeMap(){ document.getElementById('mapOverlay').classList.remove('show'); }
+function closeMap(){
+  if (dayMap) { dayMap.destroy(); dayMap = null; }
+  document.getElementById('mapOverlay').classList.remove('show');
+}
 
 function shareTrip(){
   if(!tripData) return;
@@ -461,6 +748,8 @@ function shareTrip(){
 }
 
 function goHome(){
+  if (overviewMap) { overviewMap.destroy(); overviewMap = null; }
+  if (dayMap) { dayMap.destroy(); dayMap = null; }
   document.getElementById('homePage').style.display='block';
   document.getElementById('overviewPage').style.display='none';
   document.getElementById('tripPage').style.display='none';

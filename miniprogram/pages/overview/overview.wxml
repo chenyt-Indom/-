@@ -1,6 +1,28 @@
-<!-- 总览地图页：所有景点标注 + 查看详情按钮 -->
+<!-- 总览页：上方列表视图(Day1/Day2...)，下方真实高德地图标注所有景点 -->
 <view class="container">
-  <view class="map-wrapper">
+  <!-- 列表视图：按天展示行程概要 -->
+  <scroll-view scroll-y class="list-panel" wx:if="{{hasData}}">
+    <view class="day-summary" wx:for="{{dayList}}" wx:key="day">
+      <view class="day-header" bindtap="onDayToggle" data-day="{{item.day}}">
+        <view class="day-label">Day {{item.day}}</view>
+        <view class="day-summary-date">{{item.date}}</view>
+        <text class="day-arrow">{{item.expanded ? '▼' : '▶'}}</text>
+      </view>
+      <view class="day-spots" wx:if="{{item.expanded}}">
+        <view class="day-spot" wx:for="{{item.spots}}" wx:key="name" wx:for-item="s">
+          <text class="spot-num">{{s.order}}</text>
+          <view class="spot-info">
+            <text class="spot-name">{{s.name}}</text>
+            <text class="spot-time">{{s.time}}</text>
+          </view>
+          <text class="spot-loc-icon" wx:if="{{s.location}}" bindtap="onSpotLocate" data-lat="{{s.lat}}" data-lng="{{s.lng}}" data-name="{{s.name}}">📍</text>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 地图视图：真实高德地图标注 -->
+  <view class="map-panel">
     <map
       id="overviewMap"
       class="overview-map"
@@ -13,14 +35,12 @@
       enable-zoom="{{true}}"
     />
     <view class="map-legend">
-      <text class="legend-text">所有景点按游览顺序编号</text>
+      <text class="legend-text">{{markers.length}} 个景点已标注</text>
     </view>
   </view>
 
+  <!-- 底部按钮 -->
   <view class="bottom-bar">
-    <view class="spot-summary" wx:if="{{hasData}}">
-      <text class="summary-text">共 {{markers.length}} 个景点已标注</text>
-    </view>
     <button class="btn-detail" bindtap="onViewDetail">查看详情</button>
     <button class="btn-back" bindtap="onBack">返回首页</button>
   </view>

@@ -18,3 +18,4 @@ Thumbs.db
 # Env
 .env
 *.env.local
+start_server.bat

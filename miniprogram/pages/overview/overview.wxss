@@ -1,11 +1,25 @@
-/* 总览地图页样式 */
-.container { width: 100%; height: 100vh; display: flex; flex-direction: column; }
-.map-wrapper { flex: 1; position: relative; }
+/* 总览页：列表 + 地图双视图 */
+.container { width: 100%; height: 100vh; display: flex; flex-direction: column; background: #f5f6f8; }
+/* 列表面板 */
+.list-panel { flex: 0 0 45%; background: #fff; padding: 0 24rpx; }
+.day-summary { margin-bottom: 4rpx; border-bottom: 1rpx solid #f0f0f0; }
+.day-header { display: flex; align-items: center; padding: 20rpx 0; }
+.day-label { background: #4A90D9; color: #fff; font-size: 22rpx; font-weight: 600; padding: 4rpx 14rpx; border-radius: 16rpx; margin-right: 12rpx; }
+.day-summary-date { font-size: 24rpx; color: #999; flex: 1; }
+.day-arrow { font-size: 20rpx; color: #999; }
+.day-spots { padding: 0 0 16rpx 16rpx; }
+.day-spot { display: flex; align-items: center; padding: 10rpx 0; }
+.spot-num { width: 36rpx; height: 36rpx; border-radius: 50%; background: #EEF4FB; color: #4A90D9; font-size: 20rpx; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-right: 12rpx; flex-shrink: 0; }
+.spot-info { flex: 1; }
+.spot-name { font-size: 26rpx; color: #333; font-weight: 500; display: block; }
+.spot-time { font-size: 22rpx; color: #999; }
+.spot-loc-icon { font-size: 28rpx; padding: 4rpx; flex-shrink: 0; }
+/* 地图面板 */
+.map-panel { flex: 1; position: relative; }
 .overview-map { width: 100%; height: 100%; }
-.map-legend { position: absolute; top: 20rpx; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 10rpx 24rpx; border-radius: 24rpx; }
+.map-legend { position: absolute; top: 16rpx; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 8rpx 20rpx; border-radius: 20rpx; }
 .legend-text { color: #fff; font-size: 22rpx; }
-.bottom-bar { padding: 20rpx 30rpx 40rpx; background: #fff; }
-.spot-summary { text-align: center; margin-bottom: 16rpx; }
-.summary-text { font-size: 26rpx; color: #666; }
-.btn-detail { width: 100%; height: 88rpx; line-height: 88rpx; background: linear-gradient(135deg, #4A90D9, #357ABD); color: #fff; border-radius: 44rpx; font-size: 30rpx; font-weight: 600; margin-bottom: 16rpx; border: none; }
-.btn-back { width: 100%; height: 88rpx; line-height: 88rpx; background: #fff; color: #4A90D9; border: 1rpx solid #4A90D9; border-radius: 44rpx; font-size: 28rpx; }
+/* 底部按钮 */
+.bottom-bar { padding: 16rpx 30rpx 32rpx; background: #fff; }
+.btn-detail { width: 100%; height: 80rpx; line-height: 80rpx; background: linear-gradient(135deg, #4A90D9, #357ABD); color: #fff; border-radius: 40rpx; font-size: 28rpx; font-weight: 600; margin-bottom: 12rpx; border: none; }
+.btn-back { width: 100%; height: 80rpx; line-height: 80rpx; background: #fff; color: #4A90D9; border: 1rpx solid #4A90D9; border-radius: 40rpx; font-size: 26rpx; }
