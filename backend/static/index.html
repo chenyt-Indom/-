@@ -529,6 +529,15 @@ function switchBudgetType(type) {
   });
 }
 
+// 生成图片兜底URL（确保img标签始终有src，避免onerror不触发）
+function getFallbackImgUrl(name, type) {
+  const dest = tripData ? tripData.destination : '';
+  const prompt = type === 'weather'
+    ? encodeURIComponent('weather landscape ' + name + ', photorealistic, 4K')
+    : encodeURIComponent(name + ' ' + dest + ', travel photography, realistic, 4K');
+  return 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + prompt + '&image_size=landscape_16_9';
+}
+
 // 图片加载失败时的DOM替换兜底（100%可靠，不依赖任何外部资源）
 function imgFallback(img, type, name, onClickFn) {
   // 如果src为空或无效，直接触发API搜索
@@ -889,59 +898,42 @@ function renderOverview(data){
   let globalOrder = 1;
 
   (data.itinerary||[]).forEach((day, idx) => {
-    const w = day.weather||{};
     const spots = [];
     ['morning','afternoon','evening'].forEach(slot => {
       const s = day[slot];
       if(s && s.spot){
         const [lng, lat] = (s.location||'').split(',').map(Number);
-        const spotInfo = { name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: s.location, need_booking: s.need_booking, lng: isNaN(lng)?0:lng, lat: isNaN(lat)?0:lat, order: globalOrder, image: s.image||'', reason: s.reason||'', duration: s.duration||'', route_detail: s.route_detail||'' };
         if (!isNaN(lng) && !isNaN(lat)) {
+          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: s.location, need_booking: s.need_booking, lng, lat, order: globalOrder });
           allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
+          globalOrder++;
+        } else {
+          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: '', need_booking: s.need_booking });
         }
-        spots.push(spotInfo);
-        globalOrder++;
       }
     });
     allSpots += spots.length;
-    // 天气缩略图 + 标题行
     listHtml += `<div class="day-summary">
       <div class="day-summary-header" onclick="toggleDay(${idx})">
-        ${w.image ? `<img class="ov-weather-thumb" src="${w.image}" alt="天气" onerror="this.style.display='none'" onclick="event.stopPropagation();showWeatherHourly(${idx})">` : ''}
         <span class="day-label">Day ${day.day}</span>
-        <span class="day-summary-date">${day.date||''} ${w.desc||''} ${w.temp||''}</span>
+        <span class="day-summary-date">${day.date||''}</span>
         <span class="day-arrow" id="dayArrow${idx}">▶</span>
       </div>
       <div class="day-spots" id="daySpots${idx}">`;
     spots.forEach((s, si) => {
-      const escName = s.name.replace(/'/g,"\\'");
-      const escReason = (s.reason||'').replace(/'/g,"\\'");
-      const escRoute = (s.route_detail||'').replace(/'/g,"\\'");
       listHtml += `<div class="day-spot">
         <span class="spot-num">${s.order||(si+1)}</span>
-        ${s.image ? `<img class="ov-spot-thumb" src="${s.image}" alt="${escName}" onerror="this.style.display='none'" onclick="event.stopPropagation();showSpotDetailFromOverview('${escName}','${s.image.replace(/'/g,"\\'")}','${escReason}','${s.location||''}','${s.duration||''}',${s.need_booking||false},'${escRoute}','${s.time}',${idx},${si})">` : ''}
         <div class="spot-info"><span class="spot-name">${s.name}${s.need_booking?' ⚠需预约':''}</span><span class="spot-time">${s.time}</span></div>
-        ${s.location ? `<span class="spot-loc-icon" onclick="focusSpot('${escName}',${s.lat},${s.lng})">📍</span>` : ''}
+        ${s.location ? `<span class="spot-loc-icon" onclick="focusSpot('${s.name}',${s.lat},${s.lng})">📍</span>` : ''}
       </div>`;
     });
     listHtml += `</div></div>`;
   });
-  // 酒店图片展示
-  const bk = data.booking_info || {};
-  if (bk.hotels && bk.hotels.length) {
-    listHtml += '<div class="ov-hotel-section"><div class="ov-hotel-title">🏨 推荐酒店</div>';
-    bk.hotels.forEach((h, hi) => {
-      if (h.image) {
-        const escName = (h.name||'').replace(/'/g,"\\'");
-        listHtml += `<img class="ov-hotel-img" src="${h.image}" alt="${escName}" onerror="imgFallback(this,'hotel','${escName}')" onclick="showHotelDetailFromOverview('${escName}','${(h.image||'').replace(/'/g,"\\'")}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">`;
-      }
-    });
-    listHtml += '</div>';
-  }
   document.getElementById('dayList').innerHTML = listHtml;
   document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个景点已标注`;
 
   // 收集酒店和门票预约位置到地图
+  const bk = data.booking_info || {};
   (bk.hotels || []).forEach(h => {
     if (h.location) {
       const [lng, lat] = h.location.split(',').map(Number);
@@ -1142,9 +1134,10 @@ function renderTrip(data){
   let dHtml = '';
   (data.itinerary||[]).forEach((day,dayIdx)=>{
     const w = day.weather||{};
+    const wImg = w.image || getFallbackImgUrl(w.desc||'晴', 'weather');
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      <img class="weather-img" src="${w.image||''}" alt="天气" onerror="imgFallback(this,'weather','天气',this.onclick)" onclick="showWeatherHourly(${dayIdx})">
+      <img class="weather-img" src="${wImg}" alt="天气" onerror="imgFallback(this,'weather','天气',this.onclick)" onclick="showWeatherHourly(${dayIdx})">
       ${renderSlot('上午','morning',day.morning,dayIdx,0)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
       ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
@@ -1191,12 +1184,13 @@ function renderTrip(data){
   if (bk.hotels && bk.hotels.length) {
     hHtml = '<div class="bottom-card"><div class="bottom-title">🏨 酒店推荐</div>';
     bk.hotels.forEach((h, hotelIdx) => {
+      const hImg = h.image || getFallbackImgUrl(h.name||'酒店', 'hotel');
       hHtml += `<div class="booking-item">
         <div class="booking-row"><span class="booking-hotel-name">${h.name}</span></div>
         <div class="booking-row"><span class="booking-area">${h.area||''}</span><span class="booking-price">${h.price}</span></div>
         <div class="booking-reason">${h.reason||''}</div>
         ${h.stay_days ? `<div class="booking-reason" style="color:#4A90D9">📅 ${h.stay_days}入住</div>` : ''}
-        <img class="hotel-img" src="${h.image||''}" alt="${h.name}" onerror="imgFallback(this,'hotel','${(h.name||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(h.name||'').replace(/'/g,"\\'")}','${h.image||''}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">
+        <img class="hotel-img" src="${hImg}" alt="${h.name}" onerror="imgFallback(this,'hotel','${(h.name||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(h.name||'').replace(/'/g,"\\'")}','${hImg}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">
         ${h.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${h.location}</div>` : ''}
         <div class="btn-book-row">
           <button class="btn-book" onclick="window.open('${h.link}','_blank')">预订酒店</button>
@@ -1208,9 +1202,10 @@ function renderTrip(data){
     if (bk.hotel_changes && bk.hotel_changes.length) {
       hHtml += '<div style="margin-top:16px"><div class="bottom-title" style="border-left-color:#E67E22">🔄 换酒店建议</div>';
       bk.hotel_changes.forEach(ch => {
+        const chImg = ch.image || getFallbackImgUrl(ch.to_hotel||'酒店', 'hotel');
         hHtml += `<div class="hotel-change-card">
           <div class="hotel-change-title">Day ${ch.change_day} 换酒店</div>
-          <img class="hotel-img" src="${ch.image||''}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${(ch.to_hotel||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(ch.to_hotel||'').replace(/'/g,"\\'")}','${ch.image||''}','${(ch.reason||'').replace(/'/g,"\\'")}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')">
+          <img class="hotel-img" src="${chImg}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${(ch.to_hotel||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(ch.to_hotel||'').replace(/'/g,"\\'")}','${chImg}','${(ch.reason||'').replace(/'/g,"\\'")}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')">
           <div class="hotel-change-row">🏨 <b>${ch.from_hotel}</b> → <b>${ch.to_hotel}</b></div>
           <div class="hotel-change-row">📍 ${ch.new_area||''} | ${ch.price||''}</div>
           <div class="hotel-change-row">💡 ${ch.reason||''}</div>
@@ -1273,10 +1268,14 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
       timeRange = `${startTime} - ${endTime}`;
     }
   }
+  // 确保图片URL不为空，为空时生成text_to_image兜底URL
+  const spotName = slot.spot||'';
+  const imgUrl = slot.image || getFallbackImgUrl(spotName, 'spot');
+  const escName = spotName.replace(/'/g,"\\'");
   return `<div class="time-slot">
-    <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${slot.spot.replace(/'/g,"\\'")}','${slot.location}')">📍</span>` : ''}</div>
-    <img class="spot-img" src="${slot.image||''}" alt="${slot.spot}" onerror="imgFallback(this,'spot','${slot.spot.replace(/'/g,"\\'")}',this.onclick)" onclick="showSpotDetail('${slot.spot.replace(/'/g,"\\'")}','${slot.image||''}','${(slot.reason||'').replace(/'/g,"\\'")}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${(slot.route_detail||'').replace(/'/g,"\\'")}','${timeRange}',${dayIdx},${slotIdx})">
-    <div class="spot-name">${slot.spot||''}</div>
+    <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${escName}','${slot.location}')">📍</span>` : ''}</div>
+    <img class="spot-img" src="${imgUrl}" alt="${escName}" onerror="imgFallback(this,'spot','${escName}',this.onclick)" onclick="showSpotDetail('${escName}','${imgUrl}','${(slot.reason||'').replace(/'/g,"\\'")}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${(slot.route_detail||'').replace(/'/g,"\\'")}','${timeRange}',${dayIdx},${slotIdx})">
+    <div class="spot-name">${spotName}</div>
     ${timeRange ? `<div class="spot-time-range"><span class="sr-icon">🕐</span>${timeRange}</div>` : `<span class="meta-tag">时长：${slot.duration||''}</span>`}
     ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
     ${slot.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>坐标：${slot.location}</div>` : ''}
