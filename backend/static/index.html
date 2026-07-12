@@ -244,6 +244,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .spot-img{cursor:pointer}
 .weather-img{cursor:pointer}
 
+/* 图片加载失败时的占位卡片 */
+.img-fallback{display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:12px;margin-bottom:10px;text-align:center}
+.img-fallback .fb-icon{font-size:48px;margin-bottom:6px}
+.img-fallback .fb-name{font-size:16px;font-weight:600;color:#fff;padding:0 12px;line-height:1.4}
+.img-fallback .fb-hint{font-size:12px;color:rgba(255,255,255,.5);margin-top:4px}
+
 /* route_detail 路线详情 */
 .route-detail{font-size:15px;color:#4A90D9;background:#EEF4FB;padding:8px 12px;border-radius:8px;margin-top:6px;line-height:1.5}
 .route-detail .route-icon{margin-right:4px}
@@ -442,6 +448,23 @@ function switchBudgetType(type) {
   document.querySelectorAll('#budgetTypeRow .budget-type-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.type === type);
   });
+}
+
+// 图片加载失败时的DOM替换兜底（100%可靠，不依赖任何外部资源）
+function imgFallback(img, type, name, onClickFn) {
+  // type: 'spot'=蓝色景点, 'hotel'=橙色酒店, 'weather'=青色天气
+  const colors = {
+    spot:   { bg: 'linear-gradient(135deg, #4A90D9, #6DB3F2)', icon: '🏛️', w: '100%', h: '200px' },
+    hotel:  { bg: 'linear-gradient(135deg, #E67E22, #F0A04B)', icon: '🏨', w: '100%', h: '160px' },
+    weather:{ bg: 'linear-gradient(135deg, #5B9BD5, #7EC8E3)', icon: '🌤️', w: '100%', h: '150px' },
+  };
+  const c = colors[type] || colors.spot;
+  const div = document.createElement('div');
+  div.className = 'img-fallback';
+  div.style.cssText = `width:${c.w};height:${c.h};background:${c.bg};cursor:pointer`;
+  div.innerHTML = `<span class="fb-icon">${c.icon}</span><span class="fb-name">${name||''}</span><span class="fb-hint">点击查看详情</span>`;
+  if (onClickFn) div.onclick = onClickFn;
+  img.parentNode.replaceChild(div, img);
 }
 
 // 二维码分享
@@ -872,7 +895,7 @@ function renderTrip(data){
     const w = day.weather||{};
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      ${w.image ? `<img class="weather-img" src="${w.image}" alt="天气" data-fallback="${w.fallback||''}" onerror="if(this.src!==this.getAttribute('data-fallback'))this.src=this.getAttribute('data-fallback')" onclick="showWeatherHourly(${dayIdx})">` : ''}
+      ${w.image ? `<img class="weather-img" src="${w.image}" alt="天气" onerror="imgFallback(this,'weather','天气',this.onclick)" onclick="showWeatherHourly(${dayIdx})">` : ''}
       ${renderSlot('上午','morning',day.morning,dayIdx)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx)}
       ${renderSlot('晚上','evening',day.evening,dayIdx)}
@@ -924,7 +947,7 @@ function renderTrip(data){
         <div class="booking-row"><span class="booking-area">${h.area||''}</span><span class="booking-price">${h.price}</span></div>
         <div class="booking-reason">${h.reason||''}</div>
         ${h.stay_days ? `<div class="booking-reason" style="color:#4A90D9">📅 ${h.stay_days}入住</div>` : ''}
-        ${h.image ? `<img class="hotel-img" src="${h.image}" alt="${h.name}" data-fallback="${h.fallback||''}" onerror="if(this.src!==this.getAttribute('data-fallback'))this.src=this.getAttribute('data-fallback')" onclick="showHotelDetail('${(h.name||'').replace(/'/g,"\\'")}','${h.image}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">` : ''}
+        ${h.image ? `<img class="hotel-img" src="${h.image}" alt="${h.name}" onerror="imgFallback(this,'hotel','${(h.name||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(h.name||'').replace(/'/g,"\\'")}','${h.image}','${(h.reason||'').replace(/'/g,"\\'")}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')">` : ''}
         ${h.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${h.location}</div>` : ''}
         <div class="btn-book-row">
           <button class="btn-book" onclick="window.open('${h.link}','_blank')">预订酒店</button>
@@ -938,7 +961,7 @@ function renderTrip(data){
       bk.hotel_changes.forEach(ch => {
         hHtml += `<div class="hotel-change-card">
           <div class="hotel-change-title">Day ${ch.change_day} 换酒店</div>
-          ${ch.image ? `<img class="hotel-img" src="${ch.image}" alt="${ch.to_hotel}" data-fallback="${ch.fallback||''}" onerror="if(this.src!==this.getAttribute('data-fallback'))this.src=this.getAttribute('data-fallback')" onclick="showHotelDetail('${(ch.to_hotel||'').replace(/'/g,"\\'")}','${ch.image}','${(ch.reason||'').replace(/'/g,"\\'")}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')">` : ''}
+          ${ch.image ? `<img class="hotel-img" src="${ch.image}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${(ch.to_hotel||'').replace(/'/g,"\\'")}',this.onclick)" onclick="showHotelDetail('${(ch.to_hotel||'').replace(/'/g,"\\'")}','${ch.image}','${(ch.reason||'').replace(/'/g,"\\'")}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')">` : ''}
           <div class="hotel-change-row">🏨 <b>${ch.from_hotel}</b> → <b>${ch.to_hotel}</b></div>
           <div class="hotel-change-row">📍 ${ch.new_area||''} | ${ch.price||''}</div>
           <div class="hotel-change-row">💡 ${ch.reason||''}</div>
@@ -987,7 +1010,7 @@ function renderSlot(title, cls, slot, dayIdx){
   if(!slot) return '';
   return `<div class="time-slot">
     <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${slot.spot}','${slot.location}')">📍</span>` : ''}</div>
-    ${slot.image ? `<img class="spot-img" src="${slot.image}" alt="${slot.spot}" data-fallback="${slot.fallback||''}" onerror="if(this.src!==this.getAttribute('data-fallback'))this.src=this.getAttribute('data-fallback')" onclick="showSpotDetail('${slot.spot.replace(/'/g,"\\'")}','${slot.image}','${(slot.reason||'').replace(/'/g,"\\'")}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${(slot.route_detail||'').replace(/'/g,"\\'")}')">` : ''}
+    ${slot.image ? `<img class="spot-img" src="${slot.image}" alt="${slot.spot}" onerror="imgFallback(this,'spot','${slot.spot.replace(/'/g,"\\'")}',this.onclick)" onclick="showSpotDetail('${slot.spot.replace(/'/g,"\\'")}','${slot.image}','${(slot.reason||'').replace(/'/g,"\\'")}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${(slot.route_detail||'').replace(/'/g,"\\'")}')">` : ''}
     <div class="spot-name">${slot.spot||''}</div>
     <span class="meta-tag">时长：${slot.duration||''}</span>
     ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
@@ -1197,7 +1220,7 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
   }
   // 渲染卡片
   let html = '';
-  if (image) html += `<img class="detail-img" src="${image}" alt="${name}" onerror="this.src='https://placehold.co/800x450/4A90D9/white?text=${encodeURIComponent(name)}'">`;
+  if (image) html += `<img class="detail-img" src="${image}" alt="${name}" onerror="imgFallback(this,'spot','${name.replace(/'/g,"\\'")}')">`;
   html += `<div class="detail-body">
     <div class="detail-title">${name}</div>
     <div class="detail-meta">
@@ -1229,7 +1252,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
     content = reason || `${name}位于${dest}${area}，地理位置优越。`;
   }
   let html = '';
-  if (image) html += `<img class="detail-img" src="${image}" alt="${name}" onerror="this.src='https://placehold.co/800x450/E67E22/white?text=${encodeURIComponent(name)}'">`;
+  if (image) html += `<img class="detail-img" src="${image}" alt="${name}" onerror="imgFallback(this,'hotel','${name.replace(/'/g,"\\'")}')">`;
   html += `<div class="detail-body">
     <div class="detail-title">🏨 ${name}</div>
     <div class="detail-meta">
@@ -1383,6 +1406,7 @@ window.updatePeopleHint = updatePeopleHint;
 window.updatePace = updatePace;
 window.showQR = showQR;
 window.closeQR = closeQR;
+window.imgFallback = imgFallback;
 })();
 </script>
 <!-- 城市编辑弹窗 -->
