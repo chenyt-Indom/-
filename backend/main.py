@@ -10,7 +10,7 @@ from models import TripRequest
 from config import AMAP_KEY, DEEPSEEK_KEY, AMAP_REGEO_URL
 from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coordinates
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt
-from image_service import fill_images, fill_booking_images
+from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
 from feichangzhun_service import judge_transport, search_flights
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
@@ -325,6 +325,19 @@ async def refresh_saved_trip(city: str, days: int):
 async def spot_images(query: str, limit: int = 5):
     """搜索景点/酒店真实图片（Wikimedia Commons + DeepSeek辅助筛选）"""
     return await search_images(query, limit)
+
+
+@app.get("/api/resolve-image")
+async def resolve_image(name: str, city: str = "", type: str = "spot"):
+    """解析图片URL为CDN直链（用于详情页预加载），返回最终可用的图片URL"""
+    try:
+        if type == "hotel":
+            url = await resolve_hotel_image(name, city)
+        else:
+            url = await resolve_spot_image(name, city)
+        return {"success": True, "url": url}
+    except Exception as e:
+        return {"success": False, "url": "", "error": str(e)}
 
 
 if __name__ == "__main__":
