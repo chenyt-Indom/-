@@ -1,0 +1,44 @@
+/* 行程展示页样式 */
+.container {
+  padding: 30rpx;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 36rpx 30rpx;
+  margin-bottom: 30rpx;
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.06);
+}
+
+.card-title {
+  font-size: 38rpx;
+  font-weight: bold;
+  color: #4A90D9;
+  text-align: center;
+}
+
+.divider {
+  height: 2rpx;
+  background: #eee;
+  margin: 20rpx 0 24rpx 0;
+}
+
+.card-content {
+  font-size: 28rpx;
+  line-height: 1.9;
+  color: #333;
+}
+
+.trip-text {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.btn-back {
+  background: #fff;
+  color: #4A90D9;
+  border: 1rpx solid #4A90D9;
+  border-radius: 50rpx;
+  font-size: 28rpx;
+}

@@ -1,0 +1,12 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/trip/trip"
+  ],
+  "window": {
+    "navigationBarTitleText": "AI旅行攻略",
+    "navigationBarBackgroundColor": "#4A90D9",
+    "navigationBarTextStyle": "white"
+  },
+  "sitemapLocation": "sitemap.json"
+}

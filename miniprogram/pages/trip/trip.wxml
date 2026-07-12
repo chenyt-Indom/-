@@ -1,0 +1,12 @@
+<!-- 行程展示页：显示 AI 生成的旅行攻略文字结果 -->
+<view class="container">
+  <view class="card">
+    <view class="card-title">你的旅行攻略</view>
+    <view class="divider"></view>
+    <view class="card-content">
+      <text class="trip-text" selectable="true">{{tripContent}}</text>
+    </view>
+  </view>
+
+  <button class="btn-back" bindtap="onBack">返回首页，重新生成</button>
+</view>

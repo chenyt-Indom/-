@@ -1,0 +1,32 @@
+<!-- 首页：输入出发地、预算、兴趣爱好，点击生成攻略 -->
+<view class="container">
+  <view class="header">
+    <view class="title">AI旅行攻略生成器</view>
+    <view class="subtitle">输入你的需求，AI 为你规划完美行程</view>
+  </view>
+
+  <view class="form-card">
+    <view class="form-item">
+      <text class="label">出发地</text>
+      <input class="input" placeholder="请输入出发城市，如：北京"
+        bindinput="onInput" data-field="origin" value="{{origin}}" />
+    </view>
+
+    <view class="form-item">
+      <text class="label">预算</text>
+      <input class="input" placeholder="如：3000元、中等预算"
+        bindinput="onInput" data-field="budget" value="{{budget}}" />
+    </view>
+
+    <view class="form-item">
+      <text class="label">兴趣爱好</text>
+      <textarea class="textarea" placeholder="如：美食、历史文化、自然风光、户外运动..."
+        bindinput="onInput" data-field="interests" value="{{interests}}" />
+    </view>
+
+    <button class="btn-generate" bindtap="onGenerate"
+      loading="{{loading}}" disabled="{{loading}}">
+      {{loading ? 'AI 正在规划中...' : '生成攻略'}}
+    </button>
+  </view>
+</view>

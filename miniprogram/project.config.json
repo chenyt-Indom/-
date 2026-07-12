@@ -1,0 +1,26 @@
+{
+  "rules": {
+    "*.rules": [
+      {
+        "enable": true,
+        "domain": {
+          "request": ["http://localhost:8000"],
+          "uploadFile": [],
+          "downloadFile": [],
+          "udp": [],
+          "tcp": []
+        }
+      }
+    ]
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": true,
+    "minified": true
+  },
+  "appid": "your-appid-here",
+  "projectname": "ai-travel-planner",
+  "description": "AI旅行攻略生成器",
+  "condition": {}
+}

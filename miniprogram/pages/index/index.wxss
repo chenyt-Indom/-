@@ -1,0 +1,68 @@
+/* 首页样式 */
+.container {
+  padding: 40rpx 30rpx;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 40rpx;
+}
+
+.title {
+  font-size: 44rpx;
+  font-weight: bold;
+  color: #4A90D9;
+  margin-bottom: 12rpx;
+}
+
+.subtitle {
+  font-size: 26rpx;
+  color: #999;
+}
+
+.form-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.06);
+}
+
+.form-item {
+  margin-bottom: 28rpx;
+}
+
+.label {
+  font-size: 30rpx;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 10rpx;
+  color: #333;
+}
+
+.input {
+  border: 1rpx solid #e0e0e0;
+  border-radius: 10rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  background: #fafafa;
+}
+
+.textarea {
+  border: 1rpx solid #e0e0e0;
+  border-radius: 10rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  min-height: 140rpx;
+  background: #fafafa;
+}
+
+.btn-generate {
+  background: linear-gradient(135deg, #4A90D9, #357ABD);
+  color: #fff;
+  border-radius: 50rpx;
+  font-size: 32rpx;
+  font-weight: 500;
+  margin-top: 10rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+}
