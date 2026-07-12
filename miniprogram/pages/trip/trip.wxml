@@ -1,12 +1,143 @@
-<!-- 行程展示页：显示 AI 生成的旅行攻略文字结果 -->
+<!-- 行程展示页：按天展示卡片，含天气、景点坐标、餐饮、交通，地图按钮跳转高德 -->
 <view class="container">
-  <view class="card">
-    <view class="card-title">你的旅行攻略</view>
-    <view class="divider"></view>
-    <view class="card-content">
-      <text class="trip-text" selectable="true">{{tripContent}}</text>
+  <!-- 整体天气概览 -->
+  <view class="weather-bar" wx:if="{{tripData.weather && tripData.weather.length}}">
+    <scroll-view scroll-x class="weather-scroll">
+      <view class="weather-item" wx:for="{{tripData.weather}}" wx:key="date">
+        <text class="w-icon">{{item.icon}}</text>
+        <text class="w-date">{{item.date}}</text>
+        <text class="w-desc">{{item.weather}}</text>
+        <text class="w-temp">{{item.temp}}</text>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 按天行程卡片 -->
+  <view class="day-card" wx:for="{{tripData.itinerary}}" wx:key="day" wx:for-index="dayIdx">
+    <view class="card-header">
+      <view class="day-badge">Day {{item.day}}</view>
+      <view class="day-date">{{item.date}}</view>
+      <view class="day-weather" wx:if="{{item.weather}}">
+        <text>{{item.weather.icon}} {{item.weather.desc}} {{item.weather.temp}}</text>
+      </view>
+      <!-- 地图按钮 - 点击跳转高德地图 -->
+      <view class="map-icon-btn" bindtap="onOpenAmap" data-day="{{dayIdx}}">
+        <text class="map-icon">🗺️</text>
+        <text class="map-text">高德地图</text>
+      </view>
+    </view>
+
+    <image class="weather-img" wx:if="{{item.weather && item.weather.image}}" 
+      src="{{item.weather.image}}" mode="aspectFill" />
+
+    <!-- 上午 -->
+    <view class="time-slot">
+      <view class="slot-header">
+        <view class="slot-dot morning"></view>
+        <text class="slot-title">上午</text>
+        <text class="map-icon-small" wx:if="{{item.morning.location}}" 
+          bindtap="onOpenAmap" data-day="{{dayIdx}}">📍</text>
+      </view>
+      <image class="spot-img" wx:if="{{item.morning.image}}" 
+        src="{{item.morning.image}}" mode="aspectFill" />
+      <view class="spot-name">{{item.morning.spot}}</view>
+      <view class="spot-meta">
+        <text class="meta-tag">时长：{{item.morning.duration}}</text>
+      </view>
+      <view class="spot-coord" wx:if="{{item.morning.location}}">
+        <text class="coord-icon">📌</text>
+        <text class="coord-text">坐标：{{item.morning.location}}</text>
+      </view>
+      <view class="spot-reason">推荐理由：{{item.morning.reason}}</view>
+    </view>
+
+    <!-- 下午 -->
+    <view class="time-slot">
+      <view class="slot-header">
+        <view class="slot-dot afternoon"></view>
+        <text class="slot-title">下午</text>
+        <text class="map-icon-small" wx:if="{{item.afternoon.location}}" 
+          bindtap="onOpenAmap" data-day="{{dayIdx}}">📍</text>
+      </view>
+      <image class="spot-img" wx:if="{{item.afternoon.image}}" 
+        src="{{item.afternoon.image}}" mode="aspectFill" />
+      <view class="spot-name">{{item.afternoon.spot}}</view>
+      <view class="spot-meta">
+        <text class="meta-tag">时长：{{item.afternoon.duration}}</text>
+      </view>
+      <view class="spot-coord" wx:if="{{item.afternoon.location}}">
+        <text class="coord-icon">📌</text>
+        <text class="coord-text">坐标：{{item.afternoon.location}}</text>
+      </view>
+      <view class="spot-reason">推荐理由：{{item.afternoon.reason}}</view>
+    </view>
+
+    <!-- 晚上 -->
+    <view class="time-slot">
+      <view class="slot-header">
+        <view class="slot-dot evening"></view>
+        <text class="slot-title">晚上</text>
+        <text class="map-icon-small" wx:if="{{item.evening.location}}" 
+          bindtap="onOpenAmap" data-day="{{dayIdx}}">📍</text>
+      </view>
+      <image class="spot-img" wx:if="{{item.evening.image}}" 
+        src="{{item.evening.image}}" mode="aspectFill" />
+      <view class="spot-name">{{item.evening.spot}}</view>
+      <view class="spot-meta">
+        <text class="meta-tag">时长：{{item.evening.duration}}</text>
+      </view>
+      <view class="spot-coord" wx:if="{{item.evening.location}}">
+        <text class="coord-icon">📌</text>
+        <text class="coord-text">坐标：{{item.evening.location}}</text>
+      </view>
+      <view class="spot-reason">推荐理由：{{item.evening.reason}}</view>
+    </view>
+
+    <view class="day-footer">
+      <view class="footer-row">
+        <text class="footer-icon">🍜</text>
+        <text class="footer-label">午餐：</text>
+        <text class="footer-text">{{item.lunch}}</text>
+      </view>
+      <view class="footer-row">
+        <text class="footer-icon">🍽️</text>
+        <text class="footer-label">晚餐：</text>
+        <text class="footer-text">{{item.dinner}}</text>
+      </view>
+      <view class="footer-row">
+        <text class="footer-icon">🚗</text>
+        <text class="footer-label">交通：</text>
+        <text class="footer-text">{{item.transport}}</text>
+      </view>
     </view>
   </view>
 
-  <button class="btn-back" bindtap="onBack">返回首页，重新生成</button>
+  <!-- 预算明细 -->
+  <view class="bottom-card" wx:if="{{tripData.budget_breakdown}}">
+    <view class="bottom-title">预算明细</view>
+    <view class="budget-grid">
+      <view class="budget-item" wx:for="{{budgetList}}" wx:key="name">
+        <text class="budget-name">{{item.name}}</text>
+        <text class="budget-value">{{item.value}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 出行贴士 -->
+  <view class="bottom-card" wx:if="{{tripData.tips && tripData.tips.length}}">
+    <view class="bottom-title">出行贴士</view>
+    <view class="tips-list">
+      <view class="tip-item" wx:for="{{tripData.tips}}" wx:key="index">
+        <text class="tip-dot">•</text>
+        <text class="tip-text">{{item}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 操作按钮 -->
+  <button class="btn-share" bindtap="onShare">分享行程</button>
+  <button class="btn-back" bindtap="onBack">返回总览地图</button>
+
+  <!-- 隐藏的 canvas 用于分享卡片 -->
+  <canvas canvas-id="shareCanvas" style="position:fixed;top:-9999px;left:-9999px;width:375px;height:500px;"></canvas>
 </view>

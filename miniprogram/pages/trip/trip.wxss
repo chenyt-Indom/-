@@ -1,44 +1,51 @@
-/* 行程展示页样式 */
-.container {
-  padding: 30rpx;
-}
-
-.card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 36rpx 30rpx;
-  margin-bottom: 30rpx;
-  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.06);
-}
-
-.card-title {
-  font-size: 38rpx;
-  font-weight: bold;
-  color: #4A90D9;
-  text-align: center;
-}
-
-.divider {
-  height: 2rpx;
-  background: #eee;
-  margin: 20rpx 0 24rpx 0;
-}
-
-.card-content {
-  font-size: 28rpx;
-  line-height: 1.9;
-  color: #333;
-}
-
-.trip-text {
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.btn-back {
-  background: #fff;
-  color: #4A90D9;
-  border: 1rpx solid #4A90D9;
-  border-radius: 50rpx;
-  font-size: 28rpx;
-}
+/* 行程展示页样式 - 干净简洁，卡片圆角12px，轻微阴影 */
+.container { padding: 20rpx 30rpx 40rpx; background: #f5f6f8; min-height: 100vh; }
+.weather-bar { background: #fff; border-radius: 12px; padding: 20rpx 0; margin-bottom: 24rpx; box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04); }
+.weather-scroll { white-space: nowrap; padding: 0 16rpx; }
+.weather-item { display: inline-flex; flex-direction: column; align-items: center; padding: 0 24rpx; min-width: 120rpx; }
+.w-icon { font-size: 36rpx; }
+.w-date { font-size: 22rpx; color: #999; margin-top: 4rpx; }
+.w-desc { font-size: 24rpx; color: #333; font-weight: 500; }
+.w-temp { font-size: 22rpx; color: #4A90D9; }
+.day-card { background: #fff; border-radius: 12px; padding: 0 0 24rpx 0; margin-bottom: 24rpx; box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04); overflow: hidden; }
+.card-header { padding: 24rpx 24rpx 0 24rpx; display: flex; align-items: center; flex-wrap: wrap; gap: 12rpx; }
+.day-badge { background: #4A90D9; color: #fff; font-size: 24rpx; font-weight: 600; padding: 6rpx 18rpx; border-radius: 20rpx; }
+.day-date { font-size: 24rpx; color: #999; }
+.day-weather { font-size: 24rpx; color: #666; margin-left: auto; }
+.map-icon-btn { display: flex; align-items: center; gap: 4rpx; padding: 6rpx 14rpx; background: #EEF4FB; border-radius: 16rpx; }
+.map-icon { font-size: 22rpx; }
+.map-text { font-size: 20rpx; color: #4A90D9; font-weight: 500; }
+.weather-img { width: 100%; height: 200rpx; margin-top: 16rpx; }
+.time-slot { padding: 20rpx 24rpx 0 24rpx; position: relative; }
+.slot-header { display: flex; align-items: center; margin-bottom: 12rpx; }
+.slot-dot { width: 10rpx; height: 10rpx; border-radius: 50%; margin-right: 10rpx; }
+.slot-dot.morning { background: #F5A623; }
+.slot-dot.afternoon { background: #4A90D9; }
+.slot-dot.evening { background: #7B68EE; }
+.slot-title { font-size: 28rpx; font-weight: 600; color: #333; flex: 1; }
+.map-icon-small { font-size: 24rpx; padding: 4rpx; }
+.spot-img { width: 100%; height: 280rpx; border-radius: 12px; margin-bottom: 12rpx; }
+.spot-name { font-size: 30rpx; font-weight: 600; color: #222; margin-bottom: 6rpx; }
+.spot-meta { margin-bottom: 6rpx; }
+.meta-tag { font-size: 22rpx; color: #4A90D9; background: #EEF4FB; padding: 4rpx 14rpx; border-radius: 8rpx; }
+.spot-reason { font-size: 24rpx; color: #888; line-height: 1.5; padding-bottom: 4rpx; border-bottom: 1rpx solid #f0f0f0; }
+.spot-coord { display: flex; align-items: center; margin-top: 8rpx; }
+.coord-icon { font-size: 22rpx; margin-right: 6rpx; }
+.coord-text { font-size: 22rpx; color: #999; }
+.day-footer { padding: 16rpx 24rpx 0 24rpx; }
+.footer-row { display: flex; align-items: center; padding: 8rpx 0; }
+.footer-icon { font-size: 28rpx; margin-right: 8rpx; }
+.footer-label { font-size: 24rpx; color: #666; font-weight: 500; min-width: 80rpx; }
+.footer-text { font-size: 24rpx; color: #333; flex: 1; }
+.bottom-card { background: #fff; border-radius: 12px; padding: 24rpx; margin-bottom: 20rpx; box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04); }
+.bottom-title { font-size: 30rpx; font-weight: 600; color: #333; margin-bottom: 16rpx; padding-left: 12rpx; border-left: 6rpx solid #4A90D9; }
+.budget-grid { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.budget-item { flex: 1; min-width: 28%; text-align: center; background: #f9fafb; border-radius: 12px; padding: 16rpx 10rpx; }
+.budget-name { font-size: 24rpx; color: #999; display: block; }
+.budget-value { font-size: 28rpx; color: #4A90D9; font-weight: 600; display: block; margin-top: 4rpx; }
+.tips-list { padding: 0 8rpx; }
+.tip-item { display: flex; padding: 10rpx 0; }
+.tip-dot { color: #4A90D9; font-size: 28rpx; margin-right: 10rpx; line-height: 1.5; }
+.tip-text { font-size: 26rpx; color: #555; line-height: 1.5; flex: 1; }
+.btn-share { width: 100%; height: 88rpx; line-height: 88rpx; background: #4A90D9; color: #fff; border-radius: 44rpx; font-size: 28rpx; margin-bottom: 16rpx; border: none; }
+.btn-back { width: 100%; height: 88rpx; line-height: 88rpx; background: #fff; color: #4A90D9; border: 1rpx solid #4A90D9; border-radius: 44rpx; font-size: 28rpx; margin-top: 4rpx; }

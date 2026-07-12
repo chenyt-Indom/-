@@ -1,0 +1,27 @@
+<!-- 总览地图页：所有景点标注 + 查看详情按钮 -->
+<view class="container">
+  <view class="map-wrapper">
+    <map
+      id="overviewMap"
+      class="overview-map"
+      latitude="{{latitude}}"
+      longitude="{{longitude}}"
+      scale="{{scale}}"
+      markers="{{markers}}"
+      show-location="{{true}}"
+      enable-scroll="{{true}}"
+      enable-zoom="{{true}}"
+    />
+    <view class="map-legend">
+      <text class="legend-text">所有景点按游览顺序编号</text>
+    </view>
+  </view>
+
+  <view class="bottom-bar">
+    <view class="spot-summary" wx:if="{{hasData}}">
+      <text class="summary-text">共 {{markers.length}} 个景点已标注</text>
+    </view>
+    <button class="btn-detail" bindtap="onViewDetail">查看详情</button>
+    <button class="btn-back" bindtap="onBack">返回首页</button>
+  </view>
+</view>

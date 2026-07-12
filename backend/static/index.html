@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>旅白 AI 旅行规划</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;min-height:100vh;color:#333}
+.container{max-width:420px;margin:0 auto;padding:40px 24px 32px}
+.header{text-align:center;margin-bottom:40px}
+.logo{font-size:48px;font-weight:900;color:#4A90D9;letter-spacing:6px}
+.title{font-size:28px;color:#333;font-weight:500;margin-top:8px}
+.subtitle{font-size:18px;color:#999;margin-top:10px}
+.form-card{background:#fff;border-radius:24px;padding:28px 24px;box-shadow:0 4px 24px rgba(74,144,217,0.08);border:1px solid #eef4fb}
+.form-item{margin-bottom:24px}
+.label{font-size:20px;color:#333;font-weight:500;margin-bottom:12px;display:block}
+.input{width:100%;border:1px solid #e8e8e8;border-radius:12px;padding:16px 18px;font-size:20px;background:#f9fafb;color:#333;outline:none;transition:border-color .2s}
+.input:focus{border-color:#4A90D9}
+.slider-row{display:flex;align-items:center;gap:16px}
+.slider{flex:1;height:6px;-webkit-appearance:none;appearance:none;background:#e0e0e0;border-radius:3px;outline:none}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:#4A90D9;cursor:pointer}
+.days-input{width:64px;height:52px;border:1px solid #e8e8e8;border-radius:12px;text-align:center;font-size:22px;font-weight:600;color:#4A90D9;background:#f9fafb;outline:none}
+.tag-group{display:flex;flex-wrap:wrap;gap:12px}
+.tag{padding:10px 22px;border-radius:24px;font-size:18px;color:#666;background:#f5f5f5;cursor:pointer;transition:all .2s;border:none;user-select:none}
+.tag.active{color:#fff;background:#4A90D9}
+.btn-generate{width:100%;height:72px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border-radius:40px;font-size:24px;font-weight:600;margin-top:16px;border:none;cursor:pointer;transition:opacity .2s}
+.btn-generate:disabled{opacity:.7;cursor:not-allowed}
+.btn-content{display:flex;align-items:center;justify-content:center;height:100%}
+.btn-content.loading{gap:8px}
+.loading-dot{width:10px;height:10px;border-radius:50%;background:#fff;animation:bounce .6s infinite alternate}
+.loading-dot:nth-child(2){animation-delay:.2s}
+.loading-dot:nth-child(3){animation-delay:.4s}
+.loading-text{color:#fff;font-size:18px;margin-left:8px;transition:opacity .3s}
+@keyframes bounce{to{transform:translateY(-6px);opacity:.5}}
+
+/* 总览地图页 */
+.overview-container{max-width:420px;margin:0 auto;display:none;flex-direction:column;height:100vh}
+.overview-header{text-align:center;padding:16px;background:#4A90D9;color:#fff}
+.overview-header h2{font-size:22px;font-weight:500}
+.overview-map{flex:1;position:relative;background:#f5f6f8;overflow:hidden}
+.overview-map-inner{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.spot-dots{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:20px}
+.spot-dot-item{width:40px;height:40px;border-radius:50%;background:#4A90D9;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:transform .2s}
+.spot-dot-item:hover{transform:scale(1.15)}
+.spot-dot-tooltip{display:none;position:absolute;bottom:48px;left:50%;transform:translateX(-50%);background:#333;color:#fff;font-size:12px;padding:4px 10px;border-radius:6px;white-space:nowrap;z-index:10}
+.spot-dot-item:hover .spot-dot-tooltip{display:block}
+.map-placeholder{text-align:center;color:#999;font-size:16px;margin-top:20px}
+.map-placeholder-icon{font-size:48px;margin-bottom:8px}
+.overview-bottom{background:#fff;padding:20px 30px 32px}
+.spot-summary{text-align:center;margin-bottom:12px;font-size:16px;color:#666}
+.btn-detail{width:100%;height:58px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border-radius:32px;font-size:20px;font-weight:600;cursor:pointer;border:none;margin-bottom:12px}
+.btn-overview-back{width:100%;height:58px;background:#fff;color:#4A90D9;border:1px solid #4A90D9;border-radius:32px;font-size:20px;cursor:pointer}
+
+/* 行程页 */
+.trip-container{max-width:420px;margin:0 auto;padding:16px 24px 32px;background:#f5f6f8;min-height:100vh;display:none}
+.trip-header{text-align:center;padding:20px 0;margin-bottom:16px}
+.trip-header h2{font-size:24px;color:#4A90D9}
+.weather-bar{background:#fff;border-radius:12px;padding:16px 0;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04);display:flex;overflow-x:auto}
+.weather-item{display:flex;flex-direction:column;align-items:center;padding:0 20px;min-width:100px;flex-shrink:0}
+.w-icon{font-size:28px}.w-date{font-size:16px;color:#999;margin-top:4px}.w-desc{font-size:18px;color:#333;font-weight:500}.w-temp{font-size:16px;color:#4A90D9}
+.day-card{background:#fff;border-radius:12px;padding:0 0 20px 0;margin-bottom:20px;box-shadow:0 2px 12px rgba(0,0,0,.04);overflow:hidden}
+.card-header{padding:20px 20px 0 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.day-badge{background:#4A90D9;color:#fff;font-size:18px;font-weight:600;padding:4px 14px;border-radius:16px}
+.day-date{font-size:18px;color:#999}
+.day-weather{font-size:18px;color:#666;margin-left:auto}
+.map-btn{display:flex;align-items:center;gap:4px;padding:6px 14px;background:#EEF4FB;border-radius:16px;cursor:pointer;border:none;font-size:15px;color:#4A90D9;font-weight:500}
+.weather-img{width:100%;height:150px;object-fit:cover;margin-top:12px}
+.time-slot{padding:16px 20px 0 20px}
+.slot-header{display:flex;align-items:center;margin-bottom:10px}
+.slot-dot{width:8px;height:8px;border-radius:50%;margin-right:8px}
+.slot-dot.morning{background:#F5A623}.slot-dot.afternoon{background:#4A90D9}.slot-dot.evening{background:#7B68EE}
+.slot-title{font-size:22px;font-weight:600;color:#333;flex:1}
+.map-pin{font-size:18px;cursor:pointer;padding:4px;opacity:.7;transition:opacity .2s}
+.map-pin:hover{opacity:1}
+.spot-img{width:100%;height:200px;border-radius:12px;object-fit:cover;margin-bottom:10px}
+.spot-name{font-size:24px;font-weight:600;color:#222;margin-bottom:6px}
+.meta-tag{font-size:16px;color:#4A90D9;background:#EEF4FB;padding:3px 12px;border-radius:8px}
+.spot-coord{display:flex;align-items:center;margin-top:6px;font-size:14px;color:#999}
+.spot-coord .coord-icon{margin-right:4px}
+.spot-reason{font-size:18px;color:#888;line-height:1.5;padding-bottom:4px;border-bottom:1px solid #f0f0f0;margin-top:6px}
+.day-footer{padding:12px 20px 0 20px}
+.footer-row{display:flex;align-items:center;padding:6px 0;font-size:18px}
+.footer-icon{font-size:20px;margin-right:8px}
+.footer-label{color:#666;font-weight:500;min-width:60px}
+.footer-text{color:#333}
+.bottom-card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+.bottom-title{font-size:24px;font-weight:600;color:#333;margin-bottom:14px;padding-left:12px;border-left:4px solid #4A90D9}
+.budget-grid{display:flex;flex-wrap:wrap;gap:12px}
+.budget-item{flex:1;min-width:28%;text-align:center;background:#f9fafb;border-radius:12px;padding:14px 8px}
+.budget-name{font-size:18px;color:#999;display:block}.budget-value{font-size:22px;color:#4A90D9;font-weight:600;display:block;margin-top:4px}
+.tip-item{display:flex;padding:8px 0;font-size:20px}
+.tip-dot{color:#4A90D9;margin-right:10px;line-height:1.5}
+.tip-text{color:#555;line-height:1.5}
+.btn-share{width:100%;height:66px;background:#4A90D9;color:#fff;border-radius:40px;font-size:22px;cursor:pointer;margin-bottom:12px;border:none}
+.btn-back{width:100%;height:66px;background:#fff;color:#4A90D9;border:1px solid #4A90D9;border-radius:40px;font-size:22px;cursor:pointer;margin-top:4px}
+
+/* 地图弹窗 */
+.map-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;justify-content:center;align-items:center}
+.map-overlay.show{display:flex}
+.map-dialog{background:#fff;border-radius:16px;width:90%;max-width:400px;max-height:80vh;overflow:hidden}
+.map-dialog-header{padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}
+.map-dialog-title{font-size:20px;font-weight:600;color:#333}
+.map-close{font-size:24px;color:#999;cursor:pointer;border:none;background:none;padding:4px}
+.map-dialog-body{padding:20px}
+.map-spot-item{display:flex;align-items:center;padding:12px 0;border-bottom:1px solid #f5f5f5}
+.map-spot-num{width:28px;height:28px;border-radius:50%;background:#4A90D9;color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-right:12px;flex-shrink:0}
+.map-spot-info{flex:1}
+.map-spot-name{font-size:18px;font-weight:500;color:#333}
+.map-spot-loc{font-size:14px;color:#999;margin-top:2px}
+.map-spot-loc a{color:#4A90D9;text-decoration:none}
+.map-spot-loc a:hover{text-decoration:underline}
+
+/* 历史记录 */
+.history-section{margin-top:40px}
+.history-header{display:flex;justify-content:space-between;align-items:center;padding:20px 0;border-bottom:1px solid #eee;cursor:pointer}
+.history-title{font-size:20px;font-weight:600;color:#333}
+.history-arrow{font-size:16px;color:#4A90D9}
+.history-list{padding-top:10px;display:none}
+.history-list.show{display:block}
+.history-item{display:flex;justify-content:space-between;align-items:center;padding:16px 12px;border-bottom:1px solid #f5f5f5;cursor:pointer}
+.h-left{display:flex;align-items:center;gap:10px}
+.h-dest{font-size:18px;color:#333;font-weight:500}
+.h-days{font-size:14px;color:#4A90D9;background:#EEF4FB;padding:3px 10px;border-radius:8px}
+.h-time{font-size:14px;color:#999}
+</style>
+</head>
+<body>
+
+<!-- 首页 -->
+<div class="container" id="homePage">
+  <div class="header">
+    <div class="logo">旅白</div>
+    <div class="title">AI 旅行规划</div>
+    <div class="subtitle">输入你的需求，AI 为你规划完美行程</div>
+  </div>
+  <div class="form-card">
+    <div class="form-item">
+      <label class="label">目的地</label>
+      <input class="input" id="destination" placeholder="输入你想去的城市，如：杭州">
+    </div>
+    <div class="form-item">
+      <label class="label">出行天数</label>
+      <div class="slider-row">
+        <input type="range" class="slider" id="daysSlider" min="1" max="7" value="3">
+        <input type="number" class="days-input" id="daysInput" min="1" max="7" value="3">
+      </div>
+    </div>
+    <div class="form-item">
+      <label class="label">预算</label>
+      <input class="input" id="budget" placeholder="如：3000元、中等预算">
+    </div>
+    <div class="form-item">
+      <label class="label">兴趣爱好（多选）</label>
+      <div class="tag-group" id="tagGroup">
+        <button class="tag" data-tag="美食">美食</button>
+        <button class="tag" data-tag="人文">人文</button>
+        <button class="tag" data-tag="户外">户外</button>
+        <button class="tag" data-tag="亲子">亲子</button>
+        <button class="tag" data-tag="摄影">摄影</button>
+        <button class="tag" data-tag="购物">购物</button>
+        <button class="tag" data-tag="自然">自然</button>
+        <button class="tag" data-tag="网红">网红</button>
+      </div>
+    </div>
+    <button class="btn-generate" id="btnGenerate">
+      <div class="btn-content" id="btnNormal">一键生成攻略</div>
+      <div class="btn-content loading" id="btnLoading" style="display:none">
+        <div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>
+        <span class="loading-text" id="progressText">AI 正在规划中...</span>
+      </div>
+    </button>
+  </div>
+  <div class="history-section" id="historySection" style="display:none">
+    <div class="history-header" onclick="toggleHistory()">
+      <span class="history-title">历史记录</span>
+      <span class="history-arrow" id="historyArrow">展开</span>
+    </div>
+    <div class="history-list" id="historyList"></div>
+  </div>
+</div>
+
+<!-- 总览地图页 -->
+<div class="overview-container" id="overviewPage">
+  <div class="overview-header"><h2 id="overviewTitle">景点总览</h2></div>
+  <div class="overview-map">
+    <div class="overview-map-inner">
+      <div class="map-placeholder-icon">🗺️</div>
+      <div class="map-placeholder">所有景点已标注如下</div>
+      <div class="spot-dots" id="spotDots"></div>
+      <div class="map-placeholder" style="font-size:14px;color:#4A90D9;">按游览顺序依次编号</div>
+    </div>
+  </div>
+  <div class="overview-bottom">
+    <div class="spot-summary" id="spotSummary"></div>
+    <button class="btn-detail" onclick="goToTrip()">查看详情</button>
+    <button class="btn-overview-back" onclick="goHome()">返回首页</button>
+  </div>
+</div>
+
+<!-- 行程详情页 -->
+<div class="trip-container" id="tripPage">
+  <div class="trip-header"><h2 id="tripTitle"></h2></div>
+  <div class="weather-bar" id="weatherBar"></div>
+  <div id="dayCards"></div>
+  <div id="budgetCard"></div>
+  <div id="tipsCard"></div>
+  <button class="btn-share" onclick="shareTrip()">分享行程</button>
+  <button class="btn-back" onclick="goToOverview()">返回总览地图</button>
+</div>
+
+<!-- 地图弹窗 -->
+<div class="map-overlay" id="mapOverlay">
+  <div class="map-dialog">
+    <div class="map-dialog-header">
+      <span class="map-dialog-title" id="mapDialogTitle">景点路线</span>
+      <button class="map-close" onclick="closeMap()">×</button>
+    </div>
+    <div class="map-dialog-body" id="mapDialogBody"></div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+let selectedTags = [];
+let tripData = null;
+const PROGRESS_TEXTS = [
+  '正在查询目的地信息...',
+  '正在获取景点数据...',
+  '正在查询天气情况...',
+  'AI 正在为你规划行程...',
+  '正在生成美食推荐...',
+  '即将完成，请稍候...',
+];
+
+function loadHistory() { try { return JSON.parse(localStorage.getItem('trip_history')||'[]'); } catch(e){ return []; } }
+function saveToHistory(data) {
+  let history = loadHistory();
+  const idx = history.findIndex(h => h.destination===data.destination && h.days===data.days);
+  const record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data };
+  if(idx>-1) history[idx]=record; else history.unshift(record);
+  if(history.length>20) history.pop();
+  localStorage.setItem('trip_history', JSON.stringify(history));
+  renderHistory();
+}
+function renderHistory() {
+  const history = loadHistory();
+  const sec = document.getElementById('historySection');
+  if(history.length===0){ sec.style.display='none'; return; }
+  sec.style.display='block';
+  let html = '';
+  history.forEach(h => {
+    html += `<div class="history-item" onclick="loadHistoryTrip(${h.id})"><div class="h-left"><span class="h-dest">${h.destination}</span><span class="h-days">${h.days}日游</span></div><span class="h-time">${h.time}</span></div>`;
+  });
+  document.getElementById('historyList').innerHTML = html;
+}
+function toggleHistory() {
+  const list = document.getElementById('historyList');
+  const arrow = document.getElementById('historyArrow');
+  if(list.classList.contains('show')){ list.classList.remove('show'); arrow.textContent='展开'; }
+  else { list.classList.add('show'); arrow.textContent='收起'; }
+}
+function loadHistoryTrip(id) {
+  const history = loadHistory();
+  const record = history.find(h => h.id===id);
+  if(record && record.data) { tripData = record.data; renderOverview(record.data); }
+}
+
+// 标签点击
+document.querySelectorAll('#tagGroup .tag').forEach(btn => {
+  btn.addEventListener('click', function(){
+    const tag = this.dataset.tag;
+    const idx = selectedTags.indexOf(tag);
+    if(idx > -1){ selectedTags.splice(idx,1); this.classList.remove('active'); }
+    else { selectedTags.push(tag); this.classList.add('active'); }
+  });
+});
+
+const slider = document.getElementById('daysSlider');
+const daysInput = document.getElementById('daysInput');
+slider.addEventListener('input',()=>{ daysInput.value = slider.value; });
+daysInput.addEventListener('input',()=>{ let v=Math.max(1,Math.min(7,parseInt(daysInput.value)||1)); daysInput.value=v; slider.value=v; });
+
+// 生成攻略
+let progressTimer = null;
+document.getElementById('btnGenerate').addEventListener('click', async function(){
+  const dest = document.getElementById('destination').value.trim();
+  if(!dest){ alert('请输入目的地'); return; }
+  document.getElementById('btnNormal').style.display='none';
+  document.getElementById('btnLoading').style.display='flex';
+  this.disabled = true;
+  let idx = 0;
+  const progEl = document.getElementById('progressText');
+  progEl.textContent = PROGRESS_TEXTS[0];
+  progressTimer = setInterval(() => { idx=(idx+1)%PROGRESS_TEXTS.length; progEl.textContent=PROGRESS_TEXTS[idx]; }, 2000);
+  try {
+    const res = await fetch(API+'/api/generate-trip',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ destination: dest, days: parseInt(slider.value), budget: document.getElementById('budget').value, interests: selectedTags })
+    });
+    clearInterval(progressTimer);
+    const data = await res.json();
+    if(data.success) { tripData = data.data; saveToHistory(data.data); renderOverview(data.data); }
+    else { alert('攻略生成失败，请检查网络后重试\n'+(data.error||'')); }
+  } catch(e){ clearInterval(progressTimer); alert('攻略生成失败，请检查网络后重试'); }
+  finally {
+    document.getElementById('btnNormal').style.display='flex';
+    document.getElementById('btnLoading').style.display='none';
+    this.disabled = false;
+  }
+});
+
+// 总览地图页
+function renderOverview(data){
+  tripData = data;
+  document.getElementById('homePage').style.display='none';
+  document.getElementById('tripPage').style.display='none';
+  document.getElementById('overviewPage').style.display='flex';
+  document.getElementById('overviewTitle').textContent = data.destination + ' 景点总览';
+
+  // 收集所有景点
+  const allSpots = [];
+  let order = 1;
+  (data.itinerary||[]).forEach(day => {
+    ['morning','afternoon','evening'].forEach(slot => {
+      const s = day[slot];
+      if(s && s.spot){ allSpots.push({ order: order++, name: s.spot, location: s.location||'', day: day.day }); }
+    });
+  });
+  document.getElementById('spotSummary').textContent = `共 ${allSpots.length} 个景点已标注`;
+
+  let dotsHtml = '';
+  allSpots.forEach(s => {
+    dotsHtml += `<div class="spot-dot-item" onclick="openAmapLink('${s.name}','${s.location}')">
+      ${s.order}<span class="spot-dot-tooltip">Day${s.day} ${s.name}</span>
+    </div>`;
+  });
+  document.getElementById('spotDots').innerHTML = dotsHtml;
+  window.scrollTo(0,0);
+}
+
+function goToTrip(){
+  if(!tripData) return;
+  document.getElementById('overviewPage').style.display='none';
+  document.getElementById('tripPage').style.display='block';
+  renderTrip(tripData);
+}
+
+function goToOverview(){
+  document.getElementById('tripPage').style.display='none';
+  document.getElementById('overviewPage').style.display='flex';
+  window.scrollTo(0,0);
+}
+
+function openAmapLink(name, location){
+  if(!location) return;
+  const [lng, lat] = location.split(',');
+  const uri = `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name)}&coordinate=gaode&callnative=1`;
+  window.open(uri, '_blank');
+}
+
+function renderTrip(data){
+  tripData = data;
+  document.getElementById('tripTitle').textContent = data.destination + data.days + '日游';
+  let wHtml = '';
+  (data.weather||[]).forEach(w=>{
+    wHtml += `<div class="weather-item"><span class="w-icon">${w.icon||'☀️'}</span><span class="w-date">${w.date}</span><span class="w-desc">${w.weather}</span><span class="w-temp">${w.temp}</span></div>`;
+  });
+  document.getElementById('weatherBar').innerHTML = wHtml;
+
+  let dHtml = '';
+  (data.itinerary||[]).forEach((day,dayIdx)=>{
+    const w = day.weather||{};
+    dHtml += `<div class="day-card">
+      <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
+      ${w.image ? `<img class="weather-img" src="${w.image}" alt="天气">` : ''}
+      ${renderSlot('上午','morning',day.morning,dayIdx)}
+      ${renderSlot('下午','afternoon',day.afternoon,dayIdx)}
+      ${renderSlot('晚上','evening',day.evening,dayIdx)}
+      <div class="day-footer">
+        <div class="footer-row"><span class="footer-icon">🍜</span><span class="footer-label">午餐：</span><span class="footer-text">${day.lunch||''}</span></div>
+        <div class="footer-row"><span class="footer-icon">🍽️</span><span class="footer-label">晚餐：</span><span class="footer-text">${day.dinner||''}</span></div>
+        <div class="footer-row"><span class="footer-icon">🚗</span><span class="footer-label">交通：</span><span class="footer-text">${day.transport||''}</span></div>
+      </div></div>`;
+  });
+  document.getElementById('dayCards').innerHTML = dHtml;
+
+  let bd = data.budget_breakdown||{};
+  let bHtml = '<div class="bottom-card"><div class="bottom-title">预算明细</div><div class="budget-grid">';
+  for(let k in bd) bHtml += `<div class="budget-item"><span class="budget-name">${k}</span><span class="budget-value">${bd[k]}</span></div>`;
+  bHtml += '</div></div>';
+  document.getElementById('budgetCard').innerHTML = bHtml;
+
+  let tHtml = '<div class="bottom-card"><div class="bottom-title">出行贴士</div>';
+  (data.tips||[]).forEach(t=>{ tHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
+  tHtml += '</div>';
+  document.getElementById('tipsCard').innerHTML = tHtml;
+  window.scrollTo(0,0);
+}
+
+function renderSlot(title, cls, slot, dayIdx){
+  if(!slot) return '';
+  return `<div class="time-slot">
+    <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${slot.spot}','${slot.location}')">📍</span>` : ''}</div>
+    ${slot.image ? `<img class="spot-img" src="${slot.image}" alt="${slot.spot}">` : ''}
+    <div class="spot-name">${slot.spot||''}</div>
+    <span class="meta-tag">时长：${slot.duration||''}</span>
+    ${slot.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>坐标：${slot.location}</div>` : ''}
+    <div class="spot-reason">推荐理由：${slot.reason||''}</div>
+  </div>`;
+}
+
+function openDayAmap(dayIdx){
+  if(!tripData || !tripData.itinerary) return;
+  const day = tripData.itinerary[dayIdx];
+  if(!day) return;
+  const spots = [];
+  ['morning','afternoon','evening'].forEach(slot => {
+    const s = day[slot];
+    if(s && s.spot && s.location){ spots.push({ name: s.spot, location: s.location }); }
+  });
+  if(spots.length === 0) { alert('该天暂无景点坐标'); return; }
+  if(spots.length === 1) {
+    const [lng, lat] = spots[0].location.split(',');
+    window.open(`https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(spots[0].name)}&coordinate=gaode&callnative=1`, '_blank');
+    return;
+  }
+  document.getElementById('mapDialogTitle').textContent = (day.date||'')+' 景点路线';
+  let html = '';
+  spots.forEach((s, i) => {
+    const [lng, lat] = s.location.split(',');
+    html += `<div class="map-spot-item"><span class="map-spot-num">${i+1}</span><div class="map-spot-info"><span class="map-spot-name">${s.name}</span><span class="map-spot-loc">坐标：${s.location} <a href="https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(s.name)}&coordinate=gaode&callnative=1" target="_blank">🗺️打开高德</a></span></div></div>`;
+  });
+  html += '<div style="margin-top:12px;color:#999;font-size:14px;text-align:center">点击 🗺️打开高德 可跳转到高德地图查看具体位置</div>';
+  document.getElementById('mapDialogBody').innerHTML = html;
+  document.getElementById('mapOverlay').classList.add('show');
+}
+function closeMap(){ document.getElementById('mapOverlay').classList.remove('show'); }
+
+function shareTrip(){
+  if(!tripData) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = 375; canvas.height = 500;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#4A90D9'; ctx.fillRect(0,0,375,80);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`旅白 · ${tripData.destination}${tripData.days}日游`, 187, 50);
+  ctx.fillStyle = '#333'; ctx.font = '14px sans-serif'; ctx.textAlign = 'left';
+  let y = 110;
+  (tripData.itinerary||[]).forEach(day => {
+    if(y>440) return;
+    ctx.fillText(`Day${day.day} | ${day.morning?.spot||''} → ${day.afternoon?.spot||''}`, 20, y);
+    y += 24;
+  });
+  ctx.fillStyle = '#666'; ctx.font = '12px sans-serif';
+  (tripData.tips||[]).forEach(t => { if(y>480) return; ctx.fillText(`• ${t}`, 20, y); y+=20; });
+  const link = canvas.toDataURL('image/png');
+  const a = document.createElement('a'); a.href = link; a.download = `旅白_${tripData.destination}${tripData.days}日游.png`;
+  a.click();
+  alert('分享卡片已下载！');
+}
+
+function goHome(){
+  document.getElementById('homePage').style.display='block';
+  document.getElementById('overviewPage').style.display='none';
+  document.getElementById('tripPage').style.display='none';
+  window.scrollTo(0,0);
+}
+
+renderHistory();
+</script>
+</body>
+</html>

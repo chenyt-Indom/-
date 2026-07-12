@@ -1,68 +1,38 @@
-/* 首页样式 */
-.container {
-  padding: 40rpx 30rpx;
-}
+/* 首页样式 - 白色背景 + 蓝色主题 */
+.container { padding: 60rpx 30rpx 40rpx; background: #fff; min-height: 100vh; }
+.header { text-align: center; margin-bottom: 50rpx; }
+.logo { font-size: 60rpx; font-weight: 900; color: #4A90D9; letter-spacing: 8rpx; }
+.title { font-size: 36rpx; color: #333; font-weight: 500; margin-top: 10rpx; }
+.subtitle { font-size: 24rpx; color: #999; margin-top: 12rpx; }
+.form-card { background: #fff; border-radius: 24rpx; padding: 36rpx 30rpx; box-shadow: 0 4rpx 24rpx rgba(74, 144, 217, 0.08); border: 1rpx solid #eef4fb; }
+.form-item { margin-bottom: 32rpx; }
+.label { font-size: 28rpx; color: #333; font-weight: 500; margin-bottom: 14rpx; display: block; }
+.days-value { color: #4A90D9; font-size: 32rpx; font-weight: 600; float: right; }
+.input { border: 1rpx solid #e8e8e8; border-radius: 12rpx; padding: 22rpx 24rpx; font-size: 28rpx; background: #f9fafb; color: #333; }
+.slider-row { display: flex; align-items: center; gap: 20rpx; }
+.slider { flex: 1; }
+.days-input { width: 88rpx; height: 72rpx; border: 1rpx solid #e8e8e8; border-radius: 12rpx; text-align: center; font-size: 30rpx; font-weight: 600; color: #4A90D9; background: #f9fafb; }
+.tag-group { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.tag { padding: 14rpx 28rpx; border-radius: 32rpx; font-size: 26rpx; color: #666; background: #f5f5f5; }
+.tag.active { color: #fff; background: #4A90D9; }
+.btn-generate { width: 100%; height: 96rpx; line-height: 96rpx; background: linear-gradient(135deg, #4A90D9, #357ABD); color: #fff; border-radius: 48rpx; font-size: 32rpx; font-weight: 600; margin-top: 20rpx; border: none; padding: 0; }
+.btn-generate[disabled] { background: linear-gradient(135deg, #7AB4E8, #5A9AD5); }
+.btn-content { display: flex; align-items: center; justify-content: center; height: 96rpx; }
+.btn-content.loading { gap: 10rpx; }
+.loading-dot { width: 12rpx; height: 12rpx; border-radius: 50%; background: #fff; animation: bounce 0.6s infinite alternate; }
+.loading-dot:nth-child(2) { animation-delay: 0.2s; }
+.loading-dot:nth-child(3) { animation-delay: 0.4s; }
+.loading-text { color: #fff; font-size: 26rpx; margin-left: 10rpx; white-space: nowrap; }
+@keyframes bounce { to { transform: translateY(-8rpx); opacity: 0.5; } }
 
-.header {
-  text-align: center;
-  margin-bottom: 40rpx;
-}
-
-.title {
-  font-size: 44rpx;
-  font-weight: bold;
-  color: #4A90D9;
-  margin-bottom: 12rpx;
-}
-
-.subtitle {
-  font-size: 26rpx;
-  color: #999;
-}
-
-.form-card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 30rpx;
-  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.06);
-}
-
-.form-item {
-  margin-bottom: 28rpx;
-}
-
-.label {
-  font-size: 30rpx;
-  font-weight: 500;
-  display: block;
-  margin-bottom: 10rpx;
-  color: #333;
-}
-
-.input {
-  border: 1rpx solid #e0e0e0;
-  border-radius: 10rpx;
-  padding: 20rpx 24rpx;
-  font-size: 28rpx;
-  background: #fafafa;
-}
-
-.textarea {
-  border: 1rpx solid #e0e0e0;
-  border-radius: 10rpx;
-  padding: 20rpx 24rpx;
-  font-size: 28rpx;
-  min-height: 140rpx;
-  background: #fafafa;
-}
-
-.btn-generate {
-  background: linear-gradient(135deg, #4A90D9, #357ABD);
-  color: #fff;
-  border-radius: 50rpx;
-  font-size: 32rpx;
-  font-weight: 500;
-  margin-top: 10rpx;
-  height: 88rpx;
-  line-height: 88rpx;
-}
+/* 历史记录 */
+.history-section { margin-top: 40rpx; }
+.history-header { display: flex; justify-content: space-between; align-items: center; padding: 20rpx 0; border-bottom: 1rpx solid #eee; }
+.history-title { font-size: 28rpx; font-weight: 600; color: #333; }
+.history-arrow { font-size: 24rpx; color: #4A90D9; }
+.history-list { padding-top: 10rpx; }
+.history-item { display: flex; justify-content: space-between; align-items: center; padding: 24rpx 16rpx; border-bottom: 1rpx solid #f5f5f5; }
+.h-left { display: flex; align-items: center; gap: 12rpx; }
+.h-dest { font-size: 28rpx; color: #333; font-weight: 500; }
+.h-days { font-size: 22rpx; color: #4A90D9; background: #EEF4FB; padding: 4rpx 12rpx; border-radius: 8rpx; }
+.h-time { font-size: 22rpx; color: #999; }

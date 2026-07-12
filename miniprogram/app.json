@@ -1,12 +1,19 @@
 {
   "pages": [
     "pages/index/index",
-    "pages/trip/trip"
+    "pages/overview/overview",
+    "pages/trip/trip",
+    "pages/map/map"
   ],
   "window": {
-    "navigationBarTitleText": "AI旅行攻略",
+    "navigationBarTitleText": "旅白",
     "navigationBarBackgroundColor": "#4A90D9",
     "navigationBarTextStyle": "white"
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "需要获取你的位置信息用于地图导航"
+    }
   },
   "sitemapLocation": "sitemap.json"
 }

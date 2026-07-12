@@ -1,32 +1,83 @@
-<!-- 首页：输入出发地、预算、兴趣爱好，点击生成攻略 -->
+<!-- 首页：旅白AI旅行规划 - 输入目的地、天数、预算、兴趣标签 -->
 <view class="container">
   <view class="header">
-    <view class="title">AI旅行攻略生成器</view>
+    <view class="logo">旅白</view>
+    <view class="title">AI 旅行规划</view>
     <view class="subtitle">输入你的需求，AI 为你规划完美行程</view>
   </view>
 
   <view class="form-card">
     <view class="form-item">
-      <text class="label">出发地</text>
-      <input class="input" placeholder="请输入出发城市，如：北京"
-        bindinput="onInput" data-field="origin" value="{{origin}}" />
+      <view class="label">目的地</view>
+      <input class="input" placeholder="输入你想去的城市，如：杭州" 
+        bindinput="onInput" data-field="destination" value="{{destination}}" />
     </view>
 
     <view class="form-item">
-      <text class="label">预算</text>
-      <input class="input" placeholder="如：3000元、中等预算"
+      <view class="label">出行天数 <text class="days-value">{{days}} 天</text></view>
+      <view class="slider-row">
+        <slider class="slider" min="1" max="7" step="1" value="{{days}}" 
+          bindchange="onDaysSlider" activeColor="#4A90D9" block-size="22" />
+        <input class="days-input" type="number" maxlength="1" value="{{days}}" 
+          bindinput="onDaysInput" />
+      </view>
+    </view>
+
+    <view class="form-item">
+      <view class="label">预算</view>
+      <input class="input" placeholder="如：3000元、中等预算" 
         bindinput="onInput" data-field="budget" value="{{budget}}" />
     </view>
 
     <view class="form-item">
-      <text class="label">兴趣爱好</text>
-      <textarea class="textarea" placeholder="如：美食、历史文化、自然风光、户外运动..."
-        bindinput="onInput" data-field="interests" value="{{interests}}" />
+      <view class="label">兴趣爱好（多选）</view>
+      <view class="tag-group">
+        <view class="tag {{selectedTags.indexOf('美食') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="美食">美食</view>
+        <view class="tag {{selectedTags.indexOf('人文') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="人文">人文</view>
+        <view class="tag {{selectedTags.indexOf('户外') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="户外">户外</view>
+        <view class="tag {{selectedTags.indexOf('亲子') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="亲子">亲子</view>
+        <view class="tag {{selectedTags.indexOf('摄影') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="摄影">摄影</view>
+        <view class="tag {{selectedTags.indexOf('购物') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="购物">购物</view>
+        <view class="tag {{selectedTags.indexOf('自然') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="自然">自然</view>
+        <view class="tag {{selectedTags.indexOf('网红') > -1 ? 'active' : ''}}" 
+          bindtap="onTagTap" data-tag="网红">网红</view>
+      </view>
     </view>
 
     <button class="btn-generate" bindtap="onGenerate"
       loading="{{loading}}" disabled="{{loading}}">
-      {{loading ? 'AI 正在规划中...' : '生成攻略'}}
+      <view class="btn-content" wx:if="{{!loading}}">一键生成攻略</view>
+      <view class="btn-content loading" wx:if="{{loading}}">
+        <view class="loading-dot"></view>
+        <view class="loading-dot"></view>
+        <view class="loading-dot"></view>
+        <text class="loading-text">{{progressText || 'AI 正在规划中...'}}</text>
+      </view>
     </button>
+  </view>
+
+  <!-- 历史记录 -->
+  <view class="history-section" wx:if="{{history.length}}">
+    <view class="history-header" bindtap="toggleHistory">
+      <text class="history-title">历史记录</text>
+      <text class="history-arrow">{{showHistory ? '收起' : '展开'}}</text>
+    </view>
+    <view class="history-list" wx:if="{{showHistory}}">
+      <view class="history-item" wx:for="{{history}}" wx:key="id"
+        bindtap="onHistoryTap" data-id="{{item.id}}">
+        <view class="h-left">
+          <text class="h-dest">{{item.destination}}</text>
+          <text class="h-days">{{item.days}}日游</text>
+        </view>
+        <text class="h-time">{{item.time}}</text>
+      </view>
+    </view>
   </view>
 </view>

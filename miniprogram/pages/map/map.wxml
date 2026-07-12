@@ -1,0 +1,19 @@
+<!-- 地图页：小程序原生 map 组件，标注景点按游览顺序编号 -->
+<view class="map-container">
+  <map
+    id="tripMap"
+    class="trip-map"
+    latitude="{{latitude}}"
+    longitude="{{longitude}}"
+    scale="{{scale}}"
+    markers="{{markers}}"
+    polyline="{{polyline}}"
+    bindmarkertap="onMarkerTap"
+    show-location="{{true}}"
+    enable-scroll="{{true}}"
+    enable-zoom="{{true}}"
+  />
+  <view class="map-legend">
+    <text class="legend-text">按游览顺序 1→2→3 依次标注</text>
+  </view>
+</view>
