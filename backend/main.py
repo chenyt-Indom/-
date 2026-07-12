@@ -11,6 +11,7 @@ from config import AMAP_KEY, DEEPSEEK_KEY, AMAP_REGEO_URL
 from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coordinates
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt
 from image_service import fill_images, fill_booking_images
+from image_search_service import search_images
 from feichangzhun_service import judge_transport, search_flights
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
@@ -211,10 +212,10 @@ async def generate_trip(req: TripRequest):
             if ticket.get("spot") and not ticket.get("location"):
                 ticket["location"] = await amap_geocode(ticket["spot"], dest)
 
-        # 7. 为景点和天气生成图片 URL
-        fill_images(trip_data, dest)
-        # 为酒店生成门面图片
-        fill_booking_images(booking_info, dest)
+        # 7. 为景点和天气获取真实图片URL（Wikimedia Commons优先）
+        await fill_images(trip_data, dest)
+        # 为酒店获取真实门面图片
+        await fill_booking_images(booking_info, dest)
 
         trip_data["booking_info"] = booking_info
         return {"success": True, "data": trip_data}
@@ -318,6 +319,12 @@ async def refresh_saved_trip(city: str, days: int):
                 "updated_at": __import__("datetime").datetime.now().isoformat()}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@app.get("/api/spot-images")
+async def spot_images(query: str, limit: int = 5):
+    """搜索景点/酒店真实图片（Wikimedia Commons + DeepSeek辅助筛选）"""
+    return await search_images(query, limit)
 
 
 if __name__ == "__main__":

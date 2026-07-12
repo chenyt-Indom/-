@@ -493,7 +493,26 @@ function switchBudgetType(type) {
 
 // 图片加载失败时的DOM替换兜底（100%可靠，不依赖任何外部资源）
 function imgFallback(img, type, name, onClickFn) {
-  // type: 'spot'=蓝色景点, 'hotel'=橙色酒店, 'weather'=青色天气
+  // 先尝试通过API搜索真实图片
+  const dest = tripData ? tripData.destination : '';
+  const query = name + (dest ? ' ' + dest : '');
+  img.style.opacity = '0.5';
+  fetch(API + '/api/spot-images?query=' + encodeURIComponent(query) + '&limit=3')
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.images && data.images.length > 0) {
+        // 找到了真实图片，替换src
+        img.src = data.images[0].url;
+        img.style.opacity = '1';
+        img.onerror = function() { showGradientFallback(img, type, name, onClickFn); };
+        return;
+      }
+      showGradientFallback(img, type, name, onClickFn);
+    })
+    .catch(() => showGradientFallback(img, type, name, onClickFn));
+}
+
+function showGradientFallback(img, type, name, onClickFn) {
   const colors = {
     spot:   { bg: 'linear-gradient(135deg, #4A90D9, #6DB3F2)', icon: '🏛️', w: '100%', h: '200px' },
     hotel:  { bg: 'linear-gradient(135deg, #E67E22, #F0A04B)', icon: '🏨', w: '100%', h: '160px' },
@@ -505,7 +524,7 @@ function imgFallback(img, type, name, onClickFn) {
   div.style.cssText = `width:${c.w};height:${c.h};background:${c.bg};cursor:pointer`;
   div.innerHTML = `<span class="fb-icon">${c.icon}</span><span class="fb-name">${name||''}</span><span class="fb-hint">点击查看详情</span>`;
   if (onClickFn) div.onclick = onClickFn;
-  img.parentNode.replaceChild(div, img);
+  if (img && img.parentNode) img.parentNode.replaceChild(div, img);
 }
 
 // 二维码分享
@@ -1338,6 +1357,17 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
     try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
   }
   const fetchPromises = [];
+  // 搜索真实图片（并行）
+  let realImage = image;
+  fetchPromises.push((async () => {
+    try {
+      const res = await fetch(API + '/api/spot-images?query=' + encodeURIComponent(name + ' ' + dest) + '&limit=1');
+      const data = await res.json();
+      if (data.success && data.images && data.images.length > 0) {
+        realImage = data.images[0].url;
+      }
+    } catch(e) {}
+  })());
   if (!fromCache) {
     fetchPromises.push((async () => {
       try {
@@ -1385,7 +1415,7 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
     }
   }
   await Promise.all(fetchPromises);
-  renderDetailCard(card, 'spot', {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, dest, reason, routeInfo});
+  renderDetailCard(card, 'spot', {name, image: realImage, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, dest, reason, routeInfo});
 }
 
 // 酒店详情卡片（localStorage缓存 + 重新生成按钮）
@@ -1398,6 +1428,15 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
   document.getElementById('detailOverlay').classList.add('show');
   let content = '';
   let fromCache = false;
+  let realImage = image;
+  // 搜索真实图片
+  try {
+    const res = await fetch(API + '/api/spot-images?query=' + encodeURIComponent(name + ' ' + dest + ' hotel') + '&limit=1');
+    const data = await res.json();
+    if (data.success && data.images && data.images.length > 0) {
+      realImage = data.images[0].url;
+    }
+  } catch(e) {}
   if (cached) {
     try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
   }
@@ -1412,7 +1451,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
       content = reason || `${name}位于${dest}${area}，地理位置优越。`;
     }
   }
-  renderDetailCard(card, 'hotel', {name, image, area, price, stay_days, location, content, cacheKey, fromCache, dest, reason});
+  renderDetailCard(card, 'hotel', {name, image: realImage, area, price, stay_days, location, content, cacheKey, fromCache, dest, reason});
 }
 
 // 统一渲染详情卡片

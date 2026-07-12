@@ -1,24 +1,8 @@
-"""图片生成服务：使用 text_to_image API 生成真实风格照片，失败时用SVG兜底"""
+"""图片服务：Wikimedia Commons真实图片 + text_to_image API 兜底"""
+import asyncio
 import urllib.parse
-import base64
+from image_search_service import get_best_spot_image, get_best_hotel_image
 from config import IMG_BASE
-
-
-def _svg_fallback(name: str, icon: str = "🏛️", color: str = "#4A90D9") -> str:
-    """生成SVG占位图Data URI，100%可靠，不依赖外部API"""
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
-  <defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-    <stop offset="0%" style="stop-color:{color};stop-opacity:0.8"/>
-    <stop offset="100%" style="stop-color:{color};stop-opacity:0.3"/>
-  </linearGradient></defs>
-  <rect width="800" height="450" fill="url(#bg)"/>
-  <rect width="800" height="450" fill="rgba(0,0,0,0.15)"/>
-  <text x="400" y="180" text-anchor="middle" font-size="80" fill="white">{icon}</text>
-  <text x="400" y="270" text-anchor="middle" font-size="36" fill="white" font-weight="bold">{name[:12]}</text>
-  <text x="400" y="310" text-anchor="middle" font-size="18" fill="rgba(255,255,255,0.7)">点击查看详情</text>
-</svg>'''
-    b64 = base64.b64encode(svg.encode('utf-8')).decode('utf-8')
-    return f"data:image/svg+xml;base64,{b64}"
 
 
 def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
@@ -40,39 +24,58 @@ def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
     return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size={size}"
 
 
-def attraction_image_url(name: str, city: str) -> str:
-    """生成景点真实照片URL，旅行地标摄影风格"""
-    prompt = f"{name} {city}, famous landmark, travel photography, realistic, 4K, no people"
-    return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size=landscape_16_9"
-
-
-def hotel_image_url(name: str, area: str) -> str:
-    """生成酒店门面真实照片URL"""
-    prompt = f"{name} hotel facade, {area}, luxury hotel exterior, travel photography, realistic, 4K, architectural"
-    return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size=landscape_16_9"
-
-
-def fill_images(trip_data: dict, dest: str):
-    """为行程中的景点和天气补全照片URL，含SVG兜底fallback"""
+async def fill_images(trip_data: dict, dest: str):
+    """为行程中的景点和天气补全真实照片URL（Wikimedia优先，text_to_image兜底）"""
+    tasks = []
     for day in trip_data.get("itinerary", []):
-        for slot in ["morning", "afternoon", "evening"]:
-            spot_data = day.get(slot)
+        for slot_name in ["morning", "afternoon", "evening"]:
+            spot_data = day.get(slot_name)
             if spot_data and spot_data.get("spot"):
-                spot_data["image"] = attraction_image_url(spot_data["spot"], dest)
-                spot_data["fallback"] = _svg_fallback(spot_data["spot"], "🏛️", "#4A90D9")
+                tasks.append(_fill_spot_image(spot_data, dest))
         w = day.get("weather", {})
         if w:
             w["image"] = weather_image_url(w.get("desc", "晴"))
-            w["fallback"] = _svg_fallback(w.get("desc", "晴"), "🌤️", "#5B9BD5")
+    if tasks:
+        await asyncio.gather(*tasks)
 
 
-def fill_booking_images(booking_info: dict, dest: str):
-    """为酒店和门票景点补全照片URL，含SVG兜底fallback"""
+async def _fill_spot_image(spot_data: dict, dest: str):
+    """为单个景点补全真实图片URL"""
+    name = spot_data.get("spot", "")
+    if not name:
+        return
+    try:
+        spot_data["image"] = await get_best_spot_image(name, dest)
+    except Exception:
+        spot_data["image"] = _text_to_image_fallback(f"{name} {dest} landmark")
+
+
+async def fill_booking_images(booking_info: dict, dest: str):
+    """为酒店补全真实门面照片URL（Wikimedia优先，text_to_image兜底）"""
+    tasks = []
     for hotel in booking_info.get("hotels", []):
         if hotel.get("name"):
-            hotel["image"] = hotel_image_url(hotel["name"], hotel.get("area", dest))
-            hotel["fallback"] = _svg_fallback(hotel["name"], "🏨", "#E67E22")
+            tasks.append(_fill_hotel_image(hotel, dest))
     for change in booking_info.get("hotel_changes", []):
         if change.get("to_hotel"):
-            change["image"] = hotel_image_url(change["to_hotel"], change.get("new_area", dest))
-            change["fallback"] = _svg_fallback(change["to_hotel"], "🏨", "#E67E22")
+            tasks.append(_fill_hotel_image(change, dest, "to_hotel", "new_area"))
+    if tasks:
+        await asyncio.gather(*tasks)
+
+
+async def _fill_hotel_image(item: dict, dest: str, name_key: str = "name", area_key: str = "area"):
+    """为单个酒店补全真实图片URL"""
+    name = item.get(name_key, "")
+    area = item.get(area_key, dest)
+    if not name:
+        return
+    try:
+        item["image"] = await get_best_hotel_image(name, area)
+    except Exception:
+        item["image"] = _text_to_image_fallback(f"{name} hotel {area} facade")
+
+
+def _text_to_image_fallback(query: str) -> str:
+    """text_to_image API 兜底"""
+    prompt = f"{query}, travel photography, realistic, 4K, architectural"
+    return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size=landscape_16_9"
