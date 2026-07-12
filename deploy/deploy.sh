@@ -1,10 +1,10 @@
 #!/bin/bash
-# 旅白行 AI 旅行规划 - 一键部署脚本
+# 行旅白 AI 旅行规划 - 一键部署脚本
 # 域名: lvbaixing.top
 # 使用方法: chmod +x deploy.sh && sudo bash deploy.sh
 set -e
 
-echo "=== 旅白行 AI 旅行规划 部署脚本 ==="
+echo "=== 行旅白 AI 旅行规划 部署脚本 ==="
 
 # 1. 创建目录
 echo "[1/6] 创建项目目录..."

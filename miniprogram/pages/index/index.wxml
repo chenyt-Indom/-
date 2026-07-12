@@ -1,7 +1,7 @@
 <!-- 首页：日历式日期选择，输入目的地、预算、兴趣标签 -->
 <view class="container">
   <view class="header">
-    <view class="logo">旅白行</view>
+    <view class="logo">行旅白</view>
     <view class="title">AI 旅行规划</view>
     <view class="subtitle">输入你的需求，AI 为你规划完美行程</view>
     <view class="city-badge" bindtap="editCity">

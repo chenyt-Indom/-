@@ -1,4 +1,4 @@
-"""旅白行 AI 旅行规划 - FastAPI 后端"""
+"""行旅白 AI 旅行规划 - FastAPI 后端"""
 import os
 import json
 import httpx
@@ -10,10 +10,11 @@ from models import TripRequest
 from config import AMAP_KEY, DEEPSEEK_KEY, AMAP_REGEO_URL
 from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coordinates
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt
-from image_service import fill_images
+from image_service import fill_images, fill_booking_images
 from feichangzhun_service import judge_transport, search_flights
+from weather_detail_service import get_hourly_weather, check_weather_alerts
 
-app = FastAPI(title="旅白行 AI 旅行规划")
+app = FastAPI(title="行旅白 AI 旅行规划")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
@@ -114,7 +115,8 @@ async def generate_trip(req: TripRequest):
                 all_pois.extend(r)
 
         # 2. 调用 DeepSeek 生成行程
-        prompt = build_trip_prompt(dest, days, req.budget, req.interests, all_pois, weather_data, start_date, end_date)
+        prompt = build_trip_prompt(dest, days, req.budget, req.interests, all_pois, weather_data,
+                                   start_date, end_date, req.travelers, req.budget_type, req.pace)
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
             raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -160,12 +162,17 @@ async def generate_trip(req: TripRequest):
         for hotel in booking_info.get("hotels", []):
             if hotel.get("name") and not hotel.get("location"):
                 hotel["location"] = await amap_geocode(hotel["name"], dest)
+        for change in booking_info.get("hotel_changes", []):
+            if change.get("to_hotel") and not change.get("location"):
+                change["location"] = await amap_geocode(change["to_hotel"], dest)
         for ticket in booking_info.get("tickets", []):
             if ticket.get("spot") and not ticket.get("location"):
                 ticket["location"] = await amap_geocode(ticket["spot"], dest)
 
         # 7. 为景点和天气生成图片 URL
         fill_images(trip_data, dest)
+        # 为酒店生成门面图片
+        fill_booking_images(booking_info, dest)
 
         trip_data["booking_info"] = booking_info
         return {"success": True, "data": trip_data}
@@ -173,6 +180,19 @@ async def generate_trip(req: TripRequest):
         import traceback
         traceback.print_exc()
         return {"success": False, "error": f"服务异常：{str(e)}"}
+
+
+@app.get("/api/weather-hourly")
+async def weather_hourly(city: str, date: str):
+    """获取指定日期的逐时天气估算"""
+    return await get_hourly_weather(city, date)
+
+
+@app.get("/api/weather-alerts")
+async def weather_alerts(city: str):
+    """获取极端天气预警"""
+    return await check_weather_alerts(city)
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -28,6 +28,12 @@ def attraction_image_url(name: str, city: str) -> str:
     return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size=landscape_16_9"
 
 
+def hotel_image_url(name: str, area: str) -> str:
+    """生成酒店门面真实照片URL"""
+    prompt = f"{name} hotel facade, {area}, luxury hotel exterior, travel photography, realistic, 4K, architectural"
+    return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size=landscape_16_9"
+
+
 def fill_images(trip_data: dict, dest: str):
     """为行程中的景点和天气补全照片URL"""
     for day in trip_data.get("itinerary", []):
@@ -38,3 +44,13 @@ def fill_images(trip_data: dict, dest: str):
         w = day.get("weather", {})
         if w:
             w["image"] = weather_image_url(w.get("desc", "晴"))
+
+
+def fill_booking_images(booking_info: dict, dest: str):
+    """为酒店和门票景点补全照片URL"""
+    for hotel in booking_info.get("hotels", []):
+        if hotel.get("name"):
+            hotel["image"] = hotel_image_url(hotel["name"], hotel.get("area", dest))
+    for change in booking_info.get("hotel_changes", []):
+        if change.get("to_hotel"):
+            change["image"] = hotel_image_url(change["to_hotel"], change.get("new_area", dest))

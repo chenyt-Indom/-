@@ -6,7 +6,7 @@
     "pages/map/map"
   ],
   "window": {
-    "navigationBarTitleText": "旅白行",
+    "navigationBarTitleText": "行旅白",
     "navigationBarBackgroundColor": "#4A90D9",
     "navigationBarTextStyle": "white"
   },

@@ -1,7 +1,7 @@
-// 旅白行 AI 旅行规划 - 小程序入口
+// 行旅白 AI 旅行规划 - 小程序入口
 App({
   onLaunch() {
-    console.log('旅白行 AI 旅行规划启动');
+    console.log('行旅白 AI 旅行规划启动');
     // 加载历史记录
     const history = wx.getStorageSync('trip_history') || [];
     this.globalData.history = history;

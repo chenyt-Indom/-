@@ -26,8 +26,9 @@ async def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 
 
 
 def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
-                      poi_data: list, weather_data: list, start_date: str, end_date: str) -> str:
-    """构建行程生成提示词，包含POI数据、天气和JSON格式要求"""
+                      poi_data: list, weather_data: list, start_date: str, end_date: str,
+                      travelers: int = 1, budget_type: str = "total", pace: str = "moderate") -> str:
+    """构建行程生成提示词，包含POI数据、天气、人数、预算类型、节奏和JSON格式要求"""
     interest_str = "、".join(interests) if interests else "综合体验"
     poi_str = "\n".join([
         f"- {p['name']}（{p.get('type','景点')}，坐标：{p.get('location','')}）"
@@ -39,11 +40,37 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     ]) if weather_data else "（请根据常识判断）"
     date_info = f"\n【出行日期】{start_date} 至 {end_date}（共{days}天）" if start_date else ""
 
+    # 人数描述
+    people_info = ""
+    if travelers > 1:
+        people_info = f"\n【旅行人数】{travelers}人"
+        if travelers <= 2:
+            people_info += "（情侣/密友出行，安排浪漫私密体验）"
+        elif travelers <= 4:
+            people_info += "（家庭/小团体出行，注意协调口味和节奏）"
+        elif travelers <= 8:
+            people_info += "（中型团体，需考虑分组活动和拼车拼桌）"
+        else:
+            people_info += "（大型团体，优先安排大巴接送、团餐预订、分批游览）"
+
+    # 预算类型
+    budget_info = f"\n【预算】{budget}"
+    if budget_type == "aa":
+        budget_info += f"（此为AA制每人预算，实际总预算=每人预算×{travelers}人={budget}×{travelers}，请以总预算为准规划但不在输出中显示计算过程）"
+
+    # 节奏描述
+    pace_map = {
+        "relaxed": "休闲节奏：每天安排1-2个核心景点，留足休息和自由探索时间，上午10点后出发，下午有充足歇脚时间，适合度假式慢旅行",
+        "moderate": "适中节奏：每天安排2-3个景点，早上9点出发，合理分配时间，兼顾游览和休息",
+        "fast": "快速节奏：每天安排3-4个景点，早上8点前出发，充分利用时间，适合打卡式高效旅行"
+    }
+    pace_info = f"\n【游玩节奏】{pace_map.get(pace, pace_map['moderate'])}"
+    pace_info += "\n【重要】游玩节奏优先于所有其他因素！请严格按照此节奏安排每天行程，人数影响为次要考虑。"
+
     return f"""你是一个资深旅行规划师。请根据以下真实数据，生成一份 {days} 天的{dest}行程。
 
 【目的地】{dest}
-【天数】{days}天{date_info}
-【预算】{budget}
+【天数】{days}天{date_info}{people_info}{budget_info}{pace_info}
 【兴趣】{interest_str}
 
 【高德 POI 真实数据（含坐标）】
@@ -66,9 +93,9 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
       "day": 1,
       "date": "日期",
       "weather": {{"desc": "天气", "temp": "温度", "icon": "emoji"}},
-      "morning": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false}},
-      "afternoon": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false}},
-      "evening": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false}},
+      "morning": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": ""}},
+      "afternoon": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": ""}},
+      "evening": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": ""}},
       "lunch": "午餐推荐",
       "dinner": "晚餐推荐",
       "transport": "交通建议"
@@ -83,7 +110,13 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 2. need_booking 标记需要提前预约的景点（如故宫、莫高窟、迪士尼等热门景点设为true）
 3. 结合天气预报合理安排室内外活动
 4. 上午/下午各安排1-2个景点，晚上安排1个
-5. 只输出JSON，不要markdown代码块"""
+5. 【重要】每天安排的景点不能重复出现！整个行程中每个独立景点只能出现一次
+6. 【多日大型景区例外】如果遇到大型景区需要多日游玩（如张家界国家森林公园、黄山风景区、九寨沟、稻城亚丁等），可以连续多天安排，但必须：
+   - 在 route_detail 字段中注明每天的游玩路线（如"南门进→金鞭溪→袁家界→百龙天梯"）
+   - 每天的入口/出口和游玩区域必须不同，确保路线不重复
+   - 连续天数不超过3天
+7. route_detail 字段：对于多日游玩的景区，填写具体游玩路线；对于普通单日景点，留空即可
+8. 只输出JSON，不要markdown代码块"""
 
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
@@ -135,7 +168,10 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
     {{"type": "去程/返程", "suggest": "推荐航班/车次", "price": "参考价格", "link": "航班/火车票链接", "note": "说明"}}
   ],
   "hotels": [
-    {{"name": "酒店名", "area": "推荐区域", "price": "参考价格/晚", "reason": "推荐理由", "location": "坐标", "link": "https://hotels.ctrip.com/", "note": "说明"}}
+    {{"name": "酒店名", "area": "推荐区域", "price": "参考价格/晚", "reason": "推荐理由", "location": "坐标", "link": "https://hotels.ctrip.com/", "note": "说明", "stay_days": "Day1-Day3"}}
+  ],
+  "hotel_changes": [
+    {{"from_hotel": "原酒店", "to_hotel": "新酒店", "change_day": "第几天换", "reason": "换酒店原因（景点集中在不同区域等）", "new_area": "新区域", "price": "参考价格/晚", "location": "坐标", "link": "https://hotels.ctrip.com/"}}
   ],
   "tickets": [
     {{"spot": "景点名", "price": "门票价格", "need_booking": true, "booking_days": "提前N天", "platform": "预约平台", "link": "https://www.ctrip.com/", "note": "预约说明", "location": "坐标"}}
@@ -151,4 +187,6 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 4. transport_mode字段：说明推荐的交通工具及理由
 5. 酒店推荐位置方便、性价比高的，给出具体名称和位置坐标
 6. 门票中 need_booking=true 的景点必须说明提前几天预约
-7. 只输出JSON，不要markdown代码块"""
+7. 【换酒店推荐】分析行程中景点的地理分布，如果不同天的景点集中在不同区域（如Day1-3在城东，Day4-5在城西），建议中途换酒店减少通勤时间，在 hotel_changes 中列出换酒店建议
+8. hotels 中 stay_days 字段注明该酒店适合入住的日期范围
+9. 只输出JSON，不要markdown代码块"""
