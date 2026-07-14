@@ -23,10 +23,24 @@ def run(cmd, wait=1):
         print(f'  OUT: {out[:300]}')
     return out
 
-nginx_conf = '''server {
+nginx_conf = r'''# HTTP → HTTPS 重定向
+server {
     listen 80;
     listen [::]:80;
     server_name lvbaixing.top www.lvbaixing.top 139.199.69.88;
+    return 301 https://$host$request_uri;
+}
+
+# HTTPS 主服务
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name lvbaixing.top www.lvbaixing.top 139.199.69.88;
+
+    ssl_certificate /etc/letsencrypt/live/lvbaixing.top/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/lvbaixing.top/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
 
     client_max_body_size 10M;
 
@@ -35,12 +49,14 @@ nginx_conf = '''server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 120s;
     }
 
     location /app/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location / {
