@@ -630,6 +630,39 @@ function switchBudgetType(type) {
 
 // 生成图片兜底URL（确保img标签始终有src，避免onerror不触发）
 function getFallbackImgUrl(name, type) {
+  // 天气图片优先用本地图片
+  if (type === 'weather') {
+    var weatherMap = {
+      '晴':'晴','少云':'少云','晴间多云':'晴间多云','多云':'多云','阴':'阴','阴天':'阴天',
+      '阵雨':'阵雨','雷阵雨':'雷阵雨','雷阵雨伴有冰雹':'雷阵雨伴有冰雹',
+      '小雨':'小雨','中雨':'中雨','大雨':'大雨','暴雨':'暴雨','大暴雨':'大暴雨','特大暴雨':'特大暴雨',
+      '冻雨':'冻雨','雨':'雨','雨夹雪':'雨夹雪',
+      '小雪':'小雪','中雪':'中雪','大雪':'大雪','暴雪':'暴雪','雪':'雪',
+      '雾':'雾','霾':'霾','浮尘':'浮尘','扬沙':'扬沙','沙尘暴':'沙尘暴','强沙尘暴':'强沙尘暴',
+      '大风':'大风','台风':'台风','热带风暴':'热带风暴','风':'风','热':'热','冷':'冷'
+    };
+    var key = weatherMap[name];
+    if (!key) {
+      // 处理"X转Y"组合天气：优先匹配最具视觉冲击力的天气
+      if (name.indexOf('转') >= 0) {
+        var parts = name.split('转');
+        var strongOrder = ['特大暴雨','大暴雨','暴雨','暴雪','大雪','雷阵雨','雷阵雨伴有冰雹','大雨','中雨','中雪','小雨','小雪','台风','热带风暴','沙尘暴','强沙尘暴','扬沙','浮尘','霾','雾','冻雨','雨夹雪','雨','雪','阴','多云','晴','风','大风','热','冷'];
+        for (var si = 0; si < strongOrder.length; si++) {
+          for (var pi = 0; pi < parts.length; pi++) {
+            if (parts[pi].indexOf(strongOrder[si]) >= 0) {
+              key = weatherMap[strongOrder[si]];
+              if (key) return '/app/weather/' + encodeURIComponent(key) + '.jpg';
+            }
+          }
+        }
+      }
+      // 模糊匹配
+      for (var k in weatherMap) { 
+        if (name.indexOf(k)>=0 || k.indexOf(name)>=0) { key = weatherMap[k]; break; } 
+      }
+    }
+    if (key) return '/app/weather/' + encodeURIComponent(key) + '.jpg';
+  }
   const dest = tripData ? tripData.destination : '';
   const prompt = type === 'weather'
     ? encodeURIComponent('weather landscape ' + name + ', photorealistic, 4K')
@@ -1250,8 +1283,10 @@ function renderTrip(data){
     transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
     transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + '</b></div>';
     transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
-    transHtml += '<div>预计到达：' + (dt.arrival_time||'') + ' | 耗时：' + (dt.duration||'') + '</div>';
+    var arrivalLabel = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
+    transHtml += '<div>' + arrivalLabel + '<b>' + (dt.arrival_time||'') + '</b> | 耗时：' + (dt.duration||'') + '</div>';
     transHtml += '<div>预估费用：' + (dt.cost||'') + '</div>';
+    if (dt.station_to_hotel) transHtml += '<div>🏨 到酒店：' + dt.station_to_hotel + '</div>';
     transHtml += '<div style="color:#E67E22">⚠️ ' + (dt.note||'') + '</div>';
     transHtml += '</div></div>';
   }
@@ -1262,8 +1297,10 @@ function renderTrip(data){
     transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
     transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + '</b></div>';
     transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
-    transHtml += '<div>预计到达：' + (rt.arrival_time||'') + ' | 耗时：' + (rt.duration||'') + '</div>';
+    var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');
+    transHtml += '<div>' + rtArrivalLabel + '<b>' + (rt.arrival_time||'') + '</b> | 耗时：' + (rt.duration||'') + '</div>';
     transHtml += '<div>预估费用：' + (rt.cost||'') + '</div>';
+    if (rt.station_to_hotel) transHtml += '<div>🏨 到酒店/家：' + rt.station_to_hotel + '</div>';
     transHtml += '<div style="color:#E67E22">⚠️ ' + (rt.note||'') + '</div>';
     transHtml += '</div></div>';
   }
@@ -2219,37 +2256,65 @@ function weatherImgFallback(img, desc) {
     return;
   }
   _weatherImgFallbackCount[desc] = (_weatherImgFallbackCount[desc] || 0) + 1;
-  // 第一级：尝试用不同prompt重新生成
-  var altDesc = desc.replace('转', ' ');
-  var url1 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' weather landscape, photorealistic, 4K') + '&image_size=landscape_16_9';
-  img.src = url1;
-  // 设置8秒超时
-  var timeoutId = setTimeout(function() {
-    if (!img.complete || img.naturalWidth === 0) {
-      // 第二级：尝试portrait_4_3尺寸
+  // 第一级：尝试本地图片（如果原始URL不是本地的）
+  var localUrl = getFallbackImgUrl(desc, 'weather');
+  if (localUrl && localUrl.indexOf('/app/weather/') >= 0 && img.src.indexOf('/app/weather/') < 0) {
+    img.src = localUrl;
+    // 设置8秒超时检测本地图片加载
+    var timeoutId = setTimeout(function() {
+      if (!img.complete || img.naturalWidth === 0) {
+        // 本地图片加载失败，回退到API
+        var altDesc = desc.replace('转', ' ');
+        var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' weather landscape, photorealistic, 4K') + '&image_size=landscape_16_9';
+        img.src = url2;
+        img.onerror = function() {
+          showGradientFallback(img, 'weather', desc);
+        };
+        setTimeout(function() {
+          if (!img.complete || img.naturalWidth === 0) {
+            showGradientFallback(img, 'weather', desc);
+          }
+        }, 5000);
+      }
+    }, 8000);
+    img.onerror = function() {
+      clearTimeout(timeoutId);
+      // 本地图片失败，回退到API
+      var altDesc = desc.replace('转', ' ');
       var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
       img.src = url2;
       img.onerror = function() {
         showGradientFallback(img, 'weather', desc);
       };
-      // 再给5秒
-      setTimeout(function() {
-        if (!img.complete || img.naturalWidth === 0) {
-          showGradientFallback(img, 'weather', desc);
-        }
-      }, 5000);
-    }
-  }, 8000);
-  img.onerror = function() {
-    clearTimeout(timeoutId);
-    // 第二级：尝试portrait_4_3尺寸
-    var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
-    img.src = url2;
-    img.onerror = function() {
-      // 第三级：显示渐变占位卡
-      showGradientFallback(img, 'weather', desc);
     };
-  };
+  } else {
+    // 已经是本地图片或本地无匹配，直接回退到API
+    var altDesc = desc.replace('转', ' ');
+    var url1 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' weather landscape, photorealistic, 4K') + '&image_size=landscape_16_9';
+    img.src = url1;
+    var timeoutId = setTimeout(function() {
+      if (!img.complete || img.naturalWidth === 0) {
+        var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
+        img.src = url2;
+        img.onerror = function() {
+          showGradientFallback(img, 'weather', desc);
+        };
+        setTimeout(function() {
+          if (!img.complete || img.naturalWidth === 0) {
+            showGradientFallback(img, 'weather', desc);
+          }
+        }, 5000);
+      }
+    }, 8000);
+    img.onerror = function() {
+      clearTimeout(timeoutId);
+      var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
+      img.src = url2;
+      img.onerror = function() {
+        showGradientFallback(img, 'weather', desc);
+      };
+    };
+  }
 }
 
 // 启动天气图片加载超时检测（渲染后调用）
@@ -2258,7 +2323,20 @@ function startWeatherImgTimeout() {
     document.querySelectorAll('.weather-img').forEach(function(img) {
       if (!img.complete || img.naturalWidth === 0) {
         var desc = img.alt || '天气';
-        showGradientFallback(img, 'weather', desc);
+        // 先尝试本地图片
+        var localUrl = getFallbackImgUrl(desc, 'weather');
+        if (localUrl && localUrl.indexOf('/app/weather/') >= 0 && img.src.indexOf('/app/weather/') < 0) {
+          img.src = localUrl;
+          img.onerror = function() { showGradientFallback(img, 'weather', desc); };
+          // 再给5秒
+          setTimeout(function() {
+            if (!img.complete || img.naturalWidth === 0) {
+              showGradientFallback(img, 'weather', desc);
+            }
+          }, 5000);
+        } else {
+          showGradientFallback(img, 'weather', desc);
+        }
       }
     });
   }, 10000);

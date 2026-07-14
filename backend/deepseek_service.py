@@ -63,7 +63,24 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                 if transport_info.get("to_station"):
                     ts = transport_info["to_station"]
                     transport_section += f"\n【前往机场/车站】驾车约{ts.get('drive_min',0)}分钟，公交约{ts.get('transit_min',0)}分钟，{ts.get('advice','')}"
-            transport_section += "\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。出发时间不能太紧凑，必须留足前往机场/车站的时间（飞机至少提前2小时，火车至少提前1小时）"
+                if transport_info.get("from_station"):
+                    fs = transport_info["from_station"]
+                    transport_section += f"\n【到达后交通】从机场/车站到酒店，驾车约{fs.get('drive_min',30)}分钟，公交约{fs.get('transit_min',45)}分钟"
+                if transport_info.get("flight_query_text"):
+                    transport_section += f"\n{transport_info['flight_query_text']}"
+            transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。"
+            transport_section += """
+【重要-出发时间灵活规则】
+1. 出发时间不固定，需根据当天航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上出发
+2. 如果选择飞机：需先查询当天所有直飞航班，选择最合适的时间段（考虑票价、时长、到达时间）
+3. 如果选择火车：需查询当天高铁/动车班次，优先选择耗时短、到达时间合理的车次
+4. 到达时间规划：如果下午到达，当天可安排1个晚间景点；如果傍晚/晚上到达，当天仅安排入住酒店
+5. 跨天到达处理：如果航班/火车在次日凌晨到达，需在departure_transport中标注"次日XX:XX到达"，并规划好到达后的交通和住宿
+6. 必须计算从机场/车站到酒店的交通方式、时间和费用（打车/地铁/机场大巴），在departure_transport的note中说明
+7. 预留充足缓冲：飞机起飞前2小时到达机场，火车发车前1小时到达车站，加上从住处到机场/车站的时间
+8. 返程同理：最后一天需根据返程航班/车次时间倒推最晚出发时间，确保不误机/误车
+9. 如果出发当天没有合适的航班/车次，可考虑提前一天出发，并在第一天安排轻松的活动"""
+            transport_section += "\n【跨天到达示例】如选择晚上20:00航班，飞行2小时，22:00到达机场，打车30分钟到酒店，则第一天行程为：上午准备出发→下午前往机场→晚上航班→到达后入住酒店，不安排游览。"
 
     # 人数描述
     people_info = ""
@@ -121,20 +138,24 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
   "end_date": "{end_date}",
   "departure_transport": {{
     "type": "出发交通方式（高铁/飞机/自驾/大巴）",
-    "departure_time": "建议出发时间（如8:00，留足缓冲）",
+    "departure_time": "建议出发时间（如8:00，留足缓冲，也可以是14:00、20:00等任意时刻）",
     "station": "出发站/机场名称",
-    "arrival_time": "预计到达目的地时间",
+    "arrival_time": "预计到达目的地时间（跨天到达标注"次日XX:XX"）",
     "duration": "交通耗时",
     "cost": "预估费用",
-    "note": "注意事项（如提前多久到站、中转信息）"
+    "cross_day": false,
+    "station_to_hotel": "从机场/车站到酒店的方式和时间（如：打车30分钟约50元，或地铁X号线转X号线约45分钟）",
+    "note": "注意事项（如提前多久到站、中转信息、是否有合适的航班/车次）"
   }},
   "return_transport": {{
     "type": "返程交通方式",
-    "departure_time": "建议出发时间",
+    "departure_time": "建议出发时间（根据最后一天游玩安排倒推）",
     "station": "出发站/机场名称",
-    "arrival_time": "预计到达时间",
+    "arrival_time": "预计到达时间（跨天到达标注"次日XX:XX"）",
     "duration": "交通耗时",
     "cost": "预估费用",
+    "cross_day": false,
+    "station_to_hotel": "从酒店到机场/车站的方式和时间",
     "note": "注意事项"
   }},
   "weather": [
@@ -169,7 +190,7 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
    - route_detail 字段中描述当天的具体游览路线（如"南门进→金鞭溪→袁家界→百龙天梯→东门出"）
    - recommended_routes 字段中提供2-3条该景点的经典游览路线方案供用户参考（每条路线一句话描述，如"经典一日游：南门进→金鞭溪→袁家界→天子山→东门出（约6小时）"）
    - 普通景点 recommended_routes 设为空数组 []
-9. 【出发/返程】departure_transport和return_transport必须认真填写，出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站，自驾需预留堵车时间
+9. 【出发/返程】departure_transport和return_transport必须认真填写，出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站，自驾需预留堵车时间。出发时间可以是任意时刻（上午/下午/晚上），根据实际航班/车次时刻表决定。如果下午到达，第一天可安排1个晚间景点；如果晚上到达，仅安排入住酒店。跨天到达必须标注"次日XX:XX"并设置cross_day=true。station_to_hotel字段必须填写从机场/车站到酒店的具体交通方式和时间。
 10. 【时间格式】所有时间必须使用24小时制（如9:00、14:30），绝对禁止出现>23:59的时间（如26:00）。如果活动跨天，请使用"次日8:00"等格式表示。每天上午/下午/晚上的景点安排间隔至少1小时，避免时间冲突
 11. 只输出JSON，不要markdown代码块"""
 
@@ -278,8 +299,10 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             if transport_info:
                 ti = transport_info.get("transport", {})
                 transport_section += f"\n【交通建议】{ti.get('mode','')} - {ti.get('reason','')}"
-                transport_section += "\n【交通选择原则】根据距离选择：≤5km步行，≤30km公交/地铁/打车，≤100km地铁/城际，≤300km高铁/动车，≤800km高铁优先，>800km飞机/高铁"
-            transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。出发时间不能太紧凑，必须留足前往机场/车站的时间（飞机至少提前2小时，火车至少提前1小时）"
+            transport_section += f"""
+【交通选择原则】根据距离选择：≤5km步行，≤30km公交/地铁/打车，≤100km地铁/城际，≤300km高铁/动车，≤800km高铁优先，>800km飞机/高铁
+第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。
+【出发时间灵活】出发时间不固定，根据航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上。下午到达可安排晚间景点，晚上到达仅入住酒店。跨天到达需标注"次日XX:XX"并规划好到达后交通。需预留充足缓冲时间（飞机提前2小时到机场，火车提前1小时到站）。"""
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 

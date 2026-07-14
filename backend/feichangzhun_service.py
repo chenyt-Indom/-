@@ -1,5 +1,6 @@
-"""飞常准航空服务：城市IATA代码映射 + 航班查询集成"""
+"""飞常准航空服务：城市IATA代码映射 + 航班查询 + 真实票务搜索"""
 import httpx
+import asyncio
 
 # 中国主要城市名 → IATA城市代码映射
 CITY_TO_IATA = {
@@ -25,11 +26,42 @@ AIRPORT_TO_IATA = {
     "西安咸阳": "XIY", "昆明长水": "KMG", "长沙黄花": "CSX",
 }
 
+# 中国主要城市→主要火车站名映射
+CITY_TO_STATION = {
+    "北京": "北京南站/北京西站", "上海": "上海虹桥站/上海站", "广州": "广州南站",
+    "深圳": "深圳北站", "杭州": "杭州东站", "成都": "成都东站",
+    "重庆": "重庆北站", "南京": "南京南站", "武汉": "武汉站",
+    "西安": "西安北站", "青岛": "青岛北站", "大连": "大连北站",
+    "厦门": "厦门北站", "昆明": "昆明南站", "长沙": "长沙南站",
+    "郑州": "郑州东站", "天津": "天津站/天津西站", "哈尔滨": "哈尔滨西站",
+    "沈阳": "沈阳北站", "福州": "福州南站", "合肥": "合肥南站",
+    "南宁": "南宁东站", "贵阳": "贵阳北站", "海口": "海口东站",
+    "拉萨": "拉萨站", "乌鲁木齐": "乌鲁木齐站", "兰州": "兰州西站",
+    "呼和浩特": "呼和浩特东站", "银川": "银川站", "西宁": "西宁站",
+    "南昌": "南昌西站", "济南": "济南西站", "太原": "太原南站",
+    "石家庄": "石家庄站", "长春": "长春西站", "珠海": "珠海站",
+}
+
 
 def get_iata(city: str) -> str:
     """将中文城市名转换为IATA城市代码"""
     clean = city.replace("市", "").replace("省", "").strip()
     return CITY_TO_IATA.get(clean, "")
+
+
+def get_station(city: str) -> str:
+    """获取城市主要火车站名"""
+    clean = city.replace("市", "").replace("省", "").strip()
+    return CITY_TO_STATION.get(clean, f"{clean}站")
+
+
+def get_airport(city: str) -> str:
+    """获取城市主要机场名"""
+    clean = city.replace("市", "").replace("省", "").strip()
+    for key, code in AIRPORT_TO_IATA.items():
+        if clean in key:
+            return key
+    return f"{clean}机场"
 
 
 def judge_transport(departure_city: str, dest_city: str) -> dict:
@@ -92,3 +124,35 @@ async def search_flights(dep_city: str, arr_city: str, date: str) -> dict:
     result["query"] = {"depcity": dep_iata, "arrcity": arr_iata, "date": date}
     result["success"] = True
     return result
+
+
+def build_flight_query_text(dep_city: str, arr_city: str, date: str) -> str:
+    """构建航班/火车票查询描述文本，供AI参考并使用飞常准MCP查询"""
+    dep_iata = get_iata(dep_city)
+    arr_iata = get_iata(arr_city)
+    dep_station = get_station(dep_city)
+    arr_station = get_station(arr_city)
+    dep_airport = get_airport(dep_city)
+    arr_airport = get_airport(arr_city)
+
+    return f"""【真实票务查询指引】
+  出发城市：{dep_city}（IATA:{dep_iata}，机场：{dep_airport}，火车站：{dep_station}）
+  目的城市：{arr_city}（IATA:{arr_iata}，机场：{arr_airport}，火车站：{arr_station}）
+  查询日期：{date}
+  
+  请使用飞常准MCP工具 searchFlightsByDepArr 查询出发日期{date}从{dep_city}({dep_iata})到{arr_city}({arr_iata})的所有直飞航班，
+  然后根据实际航班时刻表确定最佳出发时间。
+  
+  航班查询链接：https://flights.ctrip.com/booking/{dep_city}-{arr_city}-day-1.html
+  火车票查询链接：https://trains.ctrip.com/booking/{dep_city}-{arr_city}-day-1.html
+  
+  票务决策规则：
+  1. 出发时间可以是任意时刻（上午、下午、晚上均可），根据实际票务情况决定
+  2. 优先选择有票且价格合理的航班/车次，不要假设特定时间有票
+  3. 如果选择飞机，需在起飞前至少2小时到达机场，加上从住处到机场的时间
+  4. 如果选择火车，需在发车前至少1小时到达车站，加上从住处到车站的时间
+  5. 到达目的地后，必须计算从机场/车站到酒店的交通方式和时间（打车约多久、地铁怎么坐）
+  6. 跨天到达处理：如果航班/火车在次日凌晨到达（如23:00起飞次日1:00到），需在departure_transport中标注"次日XX:XX到达"
+  7. 下午到达：当天可安排1个晚间轻松景点；晚上到达：当天仅安排入住酒店，不游览
+  8. 请给出具体的航班号/车次、出发时间、到达时间、票价等信息
+  9. 返程票同样需要查询，根据最后一天游玩安排倒推合理的返程时间"""
