@@ -88,8 +88,13 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                         transport_section += "\n可选火车/高铁："
                         for t in schedule["trains"]:
                             transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
-                    transport_section += "\n【强制要求】出发交通的duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'），不可只写耗时。必须从以上班次中选择一个合适的。"
-                    transport_section += "\n返程如果走相同路线，也必须从以上班次中反向选择合适时间的班次。"
+                    transport_section += "\n【强制要求-班次严格匹配】你必须从以上列出的真实班次中选择一个，并且严格使用该班次的全部信息！"
+                    transport_section += "\n  ① flight_number字段：必须填写所选班次的航班号/车次号（如CA1501、G1），禁止编造"
+                    transport_section += "\n  ② departure_time字段：必须填写所选班次的出发时间（如07:30），与上面列出的时间一致"
+                    transport_section += "\n  ③ arrival_time字段：必须填写所选班次的到达时间（如09:40），与上面列出的时间一致"
+                    transport_section += "\n  ④ duration字段：必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'或'CA1501 2h10min'），不可只写耗时"
+                    transport_section += "\n  ⑤ 以上4个字段必须来自同一个班次，不可交叉混用！如果选择的班次是早上8:00出发，departure_time就必须是8:00，不能改成其他时间"
+                    transport_section += "\n  ⑥ 返程如果走相同路线，也必须从以上班次中反向选择合适时间的班次，同样严格匹配"
             transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。"
             transport_section += """
 【重要-出发时间灵活规则】
@@ -359,7 +364,7 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                 transport_section += "\n可选火车/高铁："
                 for t in schedule["trains"]:
                     transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
-            transport_section += "\n【强制要求】duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'），flight_number必须从以上班次中选择。"
+            transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！"
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 

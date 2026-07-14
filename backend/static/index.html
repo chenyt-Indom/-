@@ -930,8 +930,8 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
     clearInterval(progressTimer);
     const data = await res.json();
     if(data.success) { tripData = data.data; saveToHistory(data.data); await showLoadingAndPreload(data.data); }
-    else { alert('攻略生成失败，请检查网络后重试\n'+(data.error||'')); }
-  } catch(e){ clearInterval(progressTimer); alert('攻略生成失败，请检查网络后重试'); }
+    else { alert('攻略生成失败，请检查网络后重试\n'+(data.error||'')); enableControls(); }
+  } catch(e){ clearInterval(progressTimer); alert('攻略生成失败，请检查网络后重试'); enableControls(); }
   finally {
     document.getElementById('btnNormal').style.display='flex';
     document.getElementById('btnLoading').style.display='none';
@@ -1360,7 +1360,7 @@ function renderTrip(data){
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
     if (dt.flight_number) transHtml += '<div>航班/车次：<b style="color:#4A90D9;font-size:20px">' + dt.flight_number + '</b></div>';
-    transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + '</b></div>';
+    transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + (dt.flight_number ? '（' + dt.flight_number + '）' : '') + '</b></div>';
     transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
     var arrivalLabel = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
     transHtml += '<div>' + arrivalLabel + '<b>' + (dt.arrival_time||'') + '</b> | 耗时：' + (dt.duration||'') + '</div>';
@@ -1375,7 +1375,7 @@ function renderTrip(data){
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
     if (rt.flight_number) transHtml += '<div>航班/车次：<b style="color:#4A90D9;font-size:20px">' + rt.flight_number + '</b></div>';
-    transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + '</b></div>';
+    transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + (rt.flight_number ? '（' + rt.flight_number + '）' : '') + '</b></div>';
     transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
     var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');
     transHtml += '<div>' + rtArrivalLabel + '<b>' + (rt.arrival_time||'') + '</b> | 耗时：' + (rt.duration||'') + '</div>';
