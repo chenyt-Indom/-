@@ -43,24 +43,96 @@ CITY_TO_STATION = {
 }
 
 
-def get_iata(city: str) -> str:
-    """将中文城市名转换为IATA城市代码"""
+# 小城市→最近交通枢纽城市映射（用于无机场/高铁站的城市就近乘车/乘机）
+CITY_NEARBY_HUB = {
+    "张家界": "长沙", "黄山": "合肥", "丽江": "昆明", "大理": "昆明",
+    "九寨沟": "成都", "峨眉山": "成都", "乐山": "成都", "武夷山": "福州",
+    "庐山": "南昌", "敦煌": "兰州", "漠河": "哈尔滨", "西双版纳": "昆明",
+    "秦皇岛": "北京", "承德": "北京", "保定": "石家庄", "唐山": "天津",
+    "镇江": "南京", "扬州": "南京", "无锡": "上海", "常州": "南京",
+    "绍兴": "杭州", "嘉兴": "上海", "湖州": "杭州", "舟山": "宁波",
+    "泉州": "厦门", "漳州": "厦门", "潮州": "汕头", "湛江": "广州",
+    "黄冈": "武汉", "宜昌": "武汉", "襄阳": "武汉", "岳阳": "长沙",
+    "开封": "郑州", "洛阳": "郑州", "咸阳": "西安", "延安": "西安",
+    "大同": "太原", "包头": "呼和浩特", "自贡": "成都", "绵阳": "成都",
+    "曲靖": "昆明", "遵义": "贵阳", "柳州": "南宁", "桂林": "南宁",
+    "九江": "南昌", "赣州": "南昌", "芜湖": "合肥", "蚌埠": "合肥",
+    "焦作": "郑州", "平顶山": "郑州", "绵阳": "成都", "德阳": "成都",
+    "江门": "广州", "惠州": "深圳", "中山": "广州", "东莞": "深圳",
+    "日照": "青岛", "威海": "青岛", "烟台": "青岛", "潍坊": "济南",
+    "许昌": "郑州", "新乡": "郑州", "安阳": "郑州", "信阳": "武汉",
+    "黄石": "武汉", "荆州": "武汉", "荆门": "武汉", "十堰": "武汉",
+    "鄂尔多斯": "呼和浩特", "呼伦贝尔": "哈尔滨", "赤峰": "北京",
+    "延边": "长春", "通化": "沈阳", "丹东": "沈阳", "锦州": "沈阳",
+    "营口": "大连", "鞍山": "沈阳", "抚顺": "沈阳", "本溪": "沈阳",
+    "德宏": "昆明", "普洱": "昆明", "临沧": "昆明", "保山": "昆明",
+    "金昌": "兰州", "武威": "兰州", "张掖": "兰州", "嘉峪关": "兰州",
+    "天水": "兰州", "白银": "兰州", "定西": "兰州", "陇南": "兰州",
+    "铜川": "西安", "宝鸡": "西安", "渭南": "西安", "汉中": "西安",
+    "商洛": "西安", "安康": "西安", "榆林": "西安", "运城": "西安",
+    "邢台": "石家庄", "邯郸": "石家庄", "衡水": "石家庄", "沧州": "天津",
+    "威海": "青岛", "日照": "青岛", "临沂": "济南", "枣庄": "徐州",
+    "济宁": "济南", "泰安": "济南", "聊城": "济南", "德州": "济南",
+    "滨州": "济南", "东营": "济南", "菏泽": "济南", "莱芜": "济南",
+    "百色": "南宁", "河池": "南宁", "崇左": "南宁", "来宾": "南宁",
+    "贺州": "广州", "梧州": "广州", "贵港": "南宁", "玉林": "南宁",
+    "钦州": "南宁", "防城港": "南宁", "北海": "南宁", "鄂州": "武汉",
+}
+
+
+def get_nearest_hub(city: str) -> dict:
+    """获取最近的有机场/高铁站的交通枢纽城市"""
     clean = city.replace("市", "").replace("省", "").strip()
-    return CITY_TO_IATA.get(clean, "")
+    hub = CITY_NEARBY_HUB.get(clean, "")
+    if not hub:
+        return {"has_hub": False, "hub_city": "", "note": ""}
+    hub_station = get_station(hub)
+    hub_airport = get_airport(hub)
+    hub_iata = get_iata(hub)
+    return {
+        "has_hub": True, "hub_city": hub,
+        "hub_station": hub_station, "hub_airport": hub_airport,
+        "hub_iata": hub_iata,
+        "note": f"{clean}暂无大型机场/高铁站，建议前往邻近城市{hub}乘车/乘机（{hub_station}、{hub_airport}）"
+    }
+
+
+def get_iata(city: str) -> str:
+    """将中文城市名转换为IATA城市代码，无机场时返回最近枢纽的代码"""
+    clean = city.replace("市", "").replace("省", "").strip()
+    code = CITY_TO_IATA.get(clean, "")
+    if code:
+        return code
+    hub = CITY_NEARBY_HUB.get(clean, "")
+    if hub:
+        return CITY_TO_IATA.get(hub, "")
+    return ""
 
 
 def get_station(city: str) -> str:
-    """获取城市主要火车站名"""
+    """获取城市主要火车站名，无高铁站时返回最近枢纽的站名"""
     clean = city.replace("市", "").replace("省", "").strip()
-    return CITY_TO_STATION.get(clean, f"{clean}站")
+    station = CITY_TO_STATION.get(clean, "")
+    if station:
+        return station
+    hub = CITY_NEARBY_HUB.get(clean, "")
+    if hub:
+        return CITY_TO_STATION.get(hub, f"{clean}站")
+    return f"{clean}站"
 
 
 def get_airport(city: str) -> str:
-    """获取城市主要机场名"""
+    """获取城市主要机场名，无机场时返回最近枢纽的机场名"""
     clean = city.replace("市", "").replace("省", "").strip()
     for key, code in AIRPORT_TO_IATA.items():
         if clean in key:
             return key
+    hub = CITY_NEARBY_HUB.get(clean, "")
+    if hub:
+        for key, code in AIRPORT_TO_IATA.items():
+            if hub in key:
+                return key
+        return f"{hub}机场"
     return f"{clean}机场"
 
 
@@ -134,10 +206,18 @@ def build_flight_query_text(dep_city: str, arr_city: str, date: str) -> str:
     arr_station = get_station(arr_city)
     dep_airport = get_airport(dep_city)
     arr_airport = get_airport(arr_city)
+    # 检查出发/目的城市是否需要去邻近枢纽
+    dep_hub = get_nearest_hub(dep_city)
+    arr_hub = get_nearest_hub(arr_city)
+    hub_note = ""
+    if dep_hub["has_hub"]:
+        hub_note += f"\n  ⚠ {dep_hub['note']}"
+    if arr_hub["has_hub"]:
+        hub_note += f"\n  ⚠ {arr_hub['note']}"
 
     return f"""【真实票务查询指引】
   出发城市：{dep_city}（IATA:{dep_iata}，机场：{dep_airport}，火车站：{dep_station}）
-  目的城市：{arr_city}（IATA:{arr_iata}，机场：{arr_airport}，火车站：{arr_station}）
+  目的城市：{arr_city}（IATA:{arr_iata}，机场：{arr_airport}，火车站：{arr_station}）{hub_note}
   查询日期：{date}
   
   请使用飞常准MCP工具 searchFlightsByDepArr 查询出发日期{date}从{dep_city}({dep_iata})到{arr_city}({arr_iata})的所有直飞航班，

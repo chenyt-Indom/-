@@ -12,7 +12,7 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
 from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
@@ -176,6 +176,11 @@ async def generate_trip(req: TripRequest):
             # 查询真实航班/火车班次数据
             schedule = get_route_schedule(req.departure_city, dest)
             transport_info["route_schedule"] = schedule
+            # 检查出发/目的城市是否需要去邻近枢纽
+            dep_hub = get_nearest_hub(req.departure_city)
+            dest_hub = get_nearest_hub(dest)
+            transport_info["dep_hub"] = dep_hub
+            transport_info["dest_hub"] = dest_hub
             # 计算前往机场/车站的时间
             if ti.get("need_flight"):
                 to_station = await calculate_transit_to_station(req.departure_city, "airport")
@@ -492,6 +497,11 @@ async def regenerate_trip(request: Request):
         # 查询真实航班/火车班次数据
         schedule = get_route_schedule(departure_city, dest)
         transport_info["route_schedule"] = schedule
+        # 检查出发/目的城市是否需要去邻近枢纽
+        dep_hub = get_nearest_hub(departure_city)
+        dest_hub = get_nearest_hub(dest)
+        transport_info["dep_hub"] = dep_hub
+        transport_info["dest_hub"] = dest_hub
 
     # 构建regenerate prompt
     prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,

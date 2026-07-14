@@ -60,6 +60,13 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
             if transport_info:
                 ti = transport_info.get("transport", {})
                 transport_section += f"\n【推荐交通】{ti.get('mode','')} - {ti.get('reason','')}"
+                # 邻近枢纽提示
+                dep_hub = transport_info.get("dep_hub", {})
+                dest_hub = transport_info.get("dest_hub", {})
+                if dep_hub.get("has_hub"):
+                    transport_section += f"\n【出发地枢纽】{dep_hub['note']}"
+                if dest_hub.get("has_hub"):
+                    transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
                 if transport_info.get("to_station"):
                     ts = transport_info["to_station"]
                     transport_section += f"\n【前往机场/车站】驾车约{ts.get('drive_min',0)}分钟，公交约{ts.get('transit_min',0)}分钟，{ts.get('advice','')}"
@@ -315,24 +322,31 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             if transport_info:
                 ti = transport_info.get("transport", {})
                 transport_section += f"\n【交通建议】{ti.get('mode','')} - {ti.get('reason','')}"
-            transport_section += f"""
+            # 邻近枢纽提示
+            dep_hub = transport_info.get("dep_hub", {})
+            dest_hub = transport_info.get("dest_hub", {})
+            if dep_hub.get("has_hub"):
+                transport_section += f"\n【出发地枢纽】{dep_hub['note']}"
+            if dest_hub.get("has_hub"):
+                transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
+    transport_section += f"""
 【交通选择原则】根据距离选择：≤5km步行，≤30km公交/地铁/打车，≤100km地铁/城际，≤300km高铁/动车，≤800km高铁优先，>800km飞机/高铁
 第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。
 【出发时间灵活】出发时间不固定，根据航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上。下午到达可安排晚间景点，晚上到达仅入住酒店。跨天到达需标注"次日XX:XX"并规划好到达后交通。需预留充足缓冲时间（飞机提前2小时到机场，火车提前1小时到站）。"""
-            if transport_info:
-                # 真实班次数据
-                schedule = transport_info.get("route_schedule", {})
-                if schedule.get("flights") or schedule.get("trains"):
-                    transport_section += "\n【以下是真实可选的航班/火车班次，必须从中选择，不可随意编造！】"
-                    if schedule.get("flights"):
-                        transport_section += "\n可选航班："
-                        for f in schedule["flights"]:
-                            transport_section += f"\n  ✈ {f['num']}：{f['dep']}出发 → {f['arr']}到达（{f['duration']}）"
-                    if schedule.get("trains"):
-                        transport_section += "\n可选火车/高铁："
-                        for t in schedule["trains"]:
-                            transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
-                    transport_section += "\n【强制要求】duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'），flight_number必须从以上班次中选择。"
+    if transport_info:
+        # 真实班次数据
+        schedule = transport_info.get("route_schedule", {})
+        if schedule.get("flights") or schedule.get("trains"):
+            transport_section += "\n【以下是真实可选的航班/火车班次，必须从中选择，不可随意编造！】"
+            if schedule.get("flights"):
+                transport_section += "\n可选航班："
+                for f in schedule["flights"]:
+                    transport_section += f"\n  ✈ {f['num']}：{f['dep']}出发 → {f['arr']}到达（{f['duration']}）"
+            if schedule.get("trains"):
+                transport_section += "\n可选火车/高铁："
+                for t in schedule["trains"]:
+                    transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
+            transport_section += "\n【强制要求】duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'），flight_number必须从以上班次中选择。"
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 
