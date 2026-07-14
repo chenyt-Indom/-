@@ -471,10 +471,16 @@ async def regenerate_trip(request: Request):
     # 获取最新天气
     weather_data = await amap_weather(dest)
 
+    # 获取交通判断信息（用于AI选择交通工具）
+    transport_info = {}
+    if departure_city:
+        ti = judge_transport(departure_city, dest)
+        transport_info["transport"] = ti
+
     # 构建regenerate prompt
     prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
                                      weather_data, start_date, end_date,
-                                     is_self_drive, departure_city)
+                                     is_self_drive, departure_city, transport_info)
     try:
         raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
         raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()

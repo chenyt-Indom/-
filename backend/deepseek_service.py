@@ -249,7 +249,8 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 
 def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary: list,
                             weather_data: list, start_date: str, end_date: str,
-                            is_self_drive: bool, departure_city: str) -> str:
+                            is_self_drive: bool, departure_city: str,
+                            transport_info: dict = None) -> str:
     """构建重新生成计划的提示词，重点参考用户输入的新需求"""
     old_summary = ""
     for day in old_itinerary:
@@ -267,13 +268,25 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 
     transport_mode = "自驾" if is_self_drive else "公共交通"
 
+    # 交通判断信息
+    transport_section = ""
+    if departure_city:
+        if is_self_drive:
+            transport_section = f"\n【出行方式】自驾从{departure_city}出发，需计算驾驶时间，长途需安排过夜停留"
+        else:
+            transport_section = f"\n【出发城市】{departure_city}，公共交通出行"
+            if transport_info:
+                ti = transport_info.get("transport", {})
+                transport_section += f"\n【交通建议】{ti.get('mode','')} - {ti.get('reason','')}"
+                transport_section += "\n【交通选择原则】根据距离选择：≤5km步行，≤30km公交/地铁/打车，≤100km地铁/城际，≤300km高铁/动车，≤800km高铁优先，>800km飞机/高铁"
+            transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。出发时间不能太紧凑，必须留足前往机场/车站的时间（飞机至少提前2小时，火车至少提前1小时）"
+
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 
 【目的地】{dest}
 【天数】{days}天
 【出行日期】{start_date} 至 {end_date}
-【出行方式】{transport_mode}
-【出发城市】{departure_city}
+【出行方式】{transport_mode}{transport_section}
 
 【用户的新需求】（这是最重要的参考，必须优先满足！）
 {user_input}
@@ -308,8 +321,10 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 
 要求：
 1. 【最高优先级-用户需求】必须重点参考用户的新需求，在实际可行的情况下务必满足用户的想法。如果用户要求调整出行方式、游览顺序、增减景点、换酒店等，必须严格遵循
-2. 结合天气预报合理安排室内外活动
-3. 景点名不能重复，同一商区景点安排在同一天
-4. 出发/返程时间不能太紧凑，必须留足缓冲
-5. 所有时间使用24小时制，禁止>23:59的时间，跨天使用"次日XX:XX"格式
-6. 只输出JSON，不要markdown代码块"""
+2. 结合天气预报合理安排室内外活动，雨天优先安排室内景点
+3. 景点名绝对不能重复，同一商区/相邻区域景点安排在同一天，减少交通时间
+4. 出发/返程时间不能太紧凑，必须留足缓冲。飞机需提前2小时到机场，火车需提前1小时到站
+5. 【时间安排】每天上午/下午/晚上各安排1个景点，景点之间间隔至少1小时用于交通和休息，绝对避免时间冲突。上午9:00-12:00，下午13:00-17:00，晚上18:00-21:00，确保每个时段有充足游览时间
+6. 所有时间使用24小时制，禁止>23:59的时间（如26:00），跨天活动使用"次日XX:XX"格式
+7. 公共交通出行时，根据距离选择合适交通工具：短距离步行/公交，中距离地铁/高铁，长距离飞机
+8. 只输出JSON，不要markdown代码块"""

@@ -1402,6 +1402,8 @@ function renderTrip(data){
   tipHtml += '</div>';
   document.getElementById('tipsCard').innerHTML = tipHtml;
   window.scrollTo(0,0);
+  // 启动天气图片加载超时检测
+  startWeatherImgTimeout();
 }
 
 function renderSlot(title, cls, slot, dayIdx, slotIdx){
@@ -2207,13 +2209,39 @@ window._stopMonitorPermanent = function() {
   btn.disabled = true;
 };
 
-// 天气图片加载失败的三级兜底
+// 天气图片加载失败的三级兜底（含超时机制）
+var _weatherImgFallbackCount = {};
 function weatherImgFallback(img, desc) {
+  var imgKey = desc + '_' + Date.now();
+  // 防止同一张图片重复触发兜底
+  if (_weatherImgFallbackCount[desc] > 3) {
+    showGradientFallback(img, 'weather', desc);
+    return;
+  }
+  _weatherImgFallbackCount[desc] = (_weatherImgFallbackCount[desc] || 0) + 1;
   // 第一级：尝试用不同prompt重新生成
   var altDesc = desc.replace('转', ' ');
   var url1 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' weather landscape, photorealistic, 4K') + '&image_size=landscape_16_9';
   img.src = url1;
+  // 设置8秒超时
+  var timeoutId = setTimeout(function() {
+    if (!img.complete || img.naturalWidth === 0) {
+      // 第二级：尝试portrait_4_3尺寸
+      var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
+      img.src = url2;
+      img.onerror = function() {
+        showGradientFallback(img, 'weather', desc);
+      };
+      // 再给5秒
+      setTimeout(function() {
+        if (!img.complete || img.naturalWidth === 0) {
+          showGradientFallback(img, 'weather', desc);
+        }
+      }, 5000);
+    }
+  }, 8000);
   img.onerror = function() {
+    clearTimeout(timeoutId);
     // 第二级：尝试portrait_4_3尺寸
     var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
     img.src = url2;
@@ -2222,6 +2250,18 @@ function weatherImgFallback(img, desc) {
       showGradientFallback(img, 'weather', desc);
     };
   };
+}
+
+// 启动天气图片加载超时检测（渲染后调用）
+function startWeatherImgTimeout() {
+  setTimeout(function() {
+    document.querySelectorAll('.weather-img').forEach(function(img) {
+      if (!img.complete || img.naturalWidth === 0) {
+        var desc = img.alt || '天气';
+        showGradientFallback(img, 'weather', desc);
+      }
+    });
+  }, 10000);
 }
 
 // 判断是否为当天
@@ -2277,6 +2317,7 @@ window.acceptMonitorSuggestion = acceptMonitorSuggestion;
 window.rejectMonitorSuggestion = rejectMonitorSuggestion;
 window.stopMonitor = window._stopMonitorPermanent;
 window.weatherImgFallback = weatherImgFallback;
+window.startWeatherImgTimeout = startWeatherImgTimeout;
 })();
 </script>
 <!-- 城市编辑弹窗 -->
