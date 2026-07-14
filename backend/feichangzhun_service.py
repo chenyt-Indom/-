@@ -17,13 +17,66 @@ CITY_TO_IATA = {
     "张家界": "DYG", "黄山": "TXN", "敦煌": "DNH", "延吉": "YNJ",
 }
 
-# 主要机场IATA代码
+# 主要机场IATA代码（仅包含当前运营的民用机场）
 AIRPORT_TO_IATA = {
     "北京首都": "PEK", "北京大兴": "PKX", "上海浦东": "PVG",
     "上海虹桥": "SHA", "广州白云": "CAN", "深圳宝安": "SZX",
     "杭州萧山": "HGH", "成都双流": "CTU", "成都天府": "TFU",
     "重庆江北": "CKG", "南京禄口": "NKG", "武汉天河": "WUH",
     "西安咸阳": "XIY", "昆明长水": "KMG", "长沙黄花": "CSX",
+}
+
+# 已知停用/军用/已关闭机场黑名单（AI绝对禁止使用）
+DECOMMISSIONED_AIRPORTS = [
+    "南苑", "北京南苑", "NAY",   # 北京南苑机场（2019年关闭，军用）
+    "大校场", "南京大校场",       # 南京大校场机场（已关闭，军用）
+    "巫家坝", "昆明巫家坝",       # 昆明巫家坝机场（2012年关闭）
+    "湛江", "湛江西厅",           # 旧湛江机场（已关闭）
+    "九江", "九江庐山",           # 九江庐山机场（长期停航）
+    "安庆", "安庆天柱山",         # 安庆机场（停航时间较长）
+    "长海", "大连长海",           # 长海机场（极小机场，常停航）
+    "朝阳", "朝阳机场",           # 朝阳机场（停航）
+    "鞍山", "鞍山腾鳌",           # 鞍山机场（停航）
+]
+
+# 当前运营的民用机场白名单（AI只能使用这些）
+VALID_AIRPORTS = [
+    "北京首都国际机场", "北京大兴国际机场",
+    "上海浦东国际机场", "上海虹桥国际机场",
+    "广州白云国际机场", "深圳宝安国际机场",
+    "杭州萧山国际机场", "成都双流国际机场", "成都天府国际机场",
+    "重庆江北国际机场", "南京禄口国际机场",
+    "武汉天河国际机场", "西安咸阳国际机场",
+    "昆明长水国际机场", "长沙黄花国际机场",
+    "郑州新郑国际机场", "天津滨海国际机场",
+    "哈尔滨太平国际机场", "沈阳桃仙国际机场",
+    "福州长乐国际机场", "合肥新桥国际机场",
+    "南宁吴圩国际机场", "贵阳龙洞堡国际机场",
+    "海口美兰国际机场", "拉萨贡嘎国际机场",
+    "乌鲁木齐地窝堡国际机场", "兰州中川国际机场",
+    "呼和浩特白塔国际机场", "银川河东国际机场",
+    "西宁曹家堡国际机场", "南昌昌北国际机场",
+    "济南遥墙国际机场", "太原武宿国际机场",
+    "石家庄正定国际机场", "长春龙嘉国际机场",
+    "珠海金湾机场", "桂林两江国际机场",
+    "三亚凤凰国际机场", "青岛胶东国际机场",
+    "大连周水子国际机场", "厦门高崎国际机场",
+    "宁波栎社国际机场", "温州龙湾国际机场",
+]
+
+# 简化机场名映射（短名→全名，用于AI prompt中的机场名标准化）
+SHORT_AIRPORT_MAP = {
+    "首都T2": "北京首都国际机场T2", "首都T3": "北京首都国际机场T3",
+    "大兴": "北京大兴国际机场",
+    "虹桥T1": "上海虹桥国际机场T1", "虹桥T2": "上海虹桥国际机场T2",
+    "浦东T1": "上海浦东国际机场T1", "浦东T2": "上海浦东国际机场T2",
+    "白云T1": "广州白云国际机场T1", "白云T2": "广州白云国际机场T2", "白云T3": "广州白云国际机场T3",
+    "双流T1": "成都双流国际机场T1", "双流T2": "成都双流国际机场T2",
+    "天府T1": "成都天府国际机场T1", "天府T2": "成都天府国际机场T2",
+    "萧山T3": "杭州萧山国际机场T3", "萧山T4": "杭州萧山国际机场T4",
+    "咸阳T3": "西安咸阳国际机场T3", "天河T3": "武汉天河国际机场T3",
+    "长水": "昆明长水国际机场", "凤凰": "三亚凤凰国际机场",
+    "太平": "哈尔滨太平国际机场", "宝安T3": "深圳宝安国际机场T3",
 }
 
 # 中国主要城市→主要火车站名映射
@@ -122,18 +175,55 @@ def get_station(city: str) -> str:
 
 
 def get_airport(city: str) -> str:
-    """获取城市主要机场名，无机场时返回最近枢纽的机场名"""
+    """获取城市主要机场名，严格过滤已停用/军用机场，无机场时不编造"""
     clean = city.replace("市", "").replace("省", "").strip()
+    # 检查是否在黑名单中（精确匹配，避免"北京"匹配到"北京南苑"）
+    for banned in DECOMMISSIONED_AIRPORTS:
+        if clean == banned or (len(clean) >= 3 and clean in banned and len(banned) - len(clean) <= 2):
+            return ""  # 停用机场，返回空
     for key, code in AIRPORT_TO_IATA.items():
         if clean in key:
             return key
     hub = CITY_NEARBY_HUB.get(clean, "")
     if hub:
+        for banned in DECOMMISSIONED_AIRPORTS:
+            if hub == banned or (len(hub) >= 3 and hub in banned and len(banned) - len(hub) <= 2):
+                return ""
         for key, code in AIRPORT_TO_IATA.items():
             if hub in key:
                 return key
-        return f"{hub}机场"
-    return f"{clean}机场"
+        return ""  # 邻近枢纽也找不到，不编造
+    return ""  # 找不到任何机场，不编造
+
+
+def is_airport_valid(airport_name: str) -> bool:
+    """校验机场名是否在白名单中（黑名单中的返回False）"""
+    if not airport_name:
+        return False
+    for banned in DECOMMISSIONED_AIRPORTS:
+        if banned in airport_name:
+            return False
+    for valid in VALID_AIRPORTS:
+        if valid in airport_name or airport_name in valid:
+            return True
+    if airport_name in SHORT_AIRPORT_MAP:
+        return True
+    return False
+
+
+def sanitize_airport_name(airport_name: str) -> str:
+    """净化机场名：简化名→全名，非法名→空字符串"""
+    if not airport_name:
+        return ""
+    for banned in DECOMMISSIONED_AIRPORTS:
+        if banned in airport_name:
+            return ""
+    if airport_name in SHORT_AIRPORT_MAP:
+        return SHORT_AIRPORT_MAP[airport_name]
+    for valid in VALID_AIRPORTS:
+        if valid in airport_name or airport_name in valid:
+            return airport_name
+    return ""
 
 
 def judge_transport(departure_city: str, dest_city: str) -> dict:
@@ -441,7 +531,12 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
     clean_arr = arr_city.replace("市", "").replace("省", "").strip()
     key1 = f"{clean_dep}-{clean_arr}"
     key2 = f"{clean_arr}-{clean_dep}"
-    result = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {"flights": [], "trains": [], "_verified": "无", "_source": "无预存数据"}
+    result = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {
+        "flights": [], "trains": [],
+        "_verified": "无", "_source": "无预存数据",
+        "_no_data": True,
+        "_no_data_note": "【致命警告-最高优先级】该路线没有预存真实班次数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ 在note中建议用户自行在携程查询实时航班号 ⑤ 绝对禁止编造任何航班号/车次号！"
+    }
     if date:
         # 验证日期必须是未来日期
         from datetime import date as date_type

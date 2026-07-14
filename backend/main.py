@@ -12,7 +12,7 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
 from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
@@ -31,6 +31,56 @@ app.mount("/app", StaticFiles(directory=_static_dir, html=True), name="static")
 async def health_check():
     """健康检查：返回API密钥配置状态"""
     return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY)}
+
+
+def _validate_transport_airports(trip_data: dict):
+    """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名"""
+    from feichangzhun_service import sanitize_airport_name, is_airport_valid, DECOMMISSIONED_AIRPORTS
+
+    for key in ("departure_transport", "return_transport"):
+        transport = trip_data.get(key, {})
+        if not transport:
+            continue
+
+        station = transport.get("station", "")
+        # 检查黑名单
+        for banned in DECOMMISSIONED_AIRPORTS:
+            if banned in station:
+                print(f"[WARN] AI使用了停用机场: {station}，已清空station字段")
+                transport["station"] = ""
+                transport["note"] = (transport.get("note", "") + "（原机场已停用，请自行查询当前运营机场）").strip()
+                break
+
+        # 如果station不为空但不在白名单中
+        if transport.get("station") and not is_airport_valid(transport.get("station", "")):
+            sanitized = sanitize_airport_name(transport.get("station", ""))
+            if sanitized:
+                transport["station"] = sanitized
+            else:
+                print(f"[WARN] AI使用了未知机场: {station}，已清空station字段")
+                transport["station"] = ""
+                transport["note"] = (transport.get("note", "") + "（机场信息未验证，请核实）").strip()
+
+        # 检查transfers中的机场名
+        for transfer in transport.get("transfers", []):
+            for tk in ("from_station", "to_station"):
+                ts = transfer.get(tk, "")
+                for banned in DECOMMISSIONED_AIRPORTS:
+                    if banned in ts:
+                        transfer[tk] = ""
+                        break
+                if transfer.get(tk) and not is_airport_valid(transfer.get(tk, "")):
+                    sanitized = sanitize_airport_name(transfer.get(tk, ""))
+                    if sanitized:
+                        transfer[tk] = sanitized
+                    else:
+                        transfer[tk] = ""
+
+        # 如果flight_number非空但station为空（说明AI编造了），清空flight_number
+        if transport.get("flight_number") and not transport.get("station"):
+            print(f"[WARN] AI编造了航班号但无有效机场: {transport.get('flight_number')}，已清空")
+            transport["flight_number"] = ""
+            transport["note"] = (transport.get("note", "") + "（航班信息未验证，请自行查询）").strip()
 
 
 @app.get("/api/locate")
@@ -235,6 +285,9 @@ async def generate_trip(req: TripRequest):
             trip_data = json.loads(raw_clean)
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
+
+        # 后处理验证：检查并修正AI生成的机场名
+        _validate_transport_airports(trip_data)
 
         # 3. 补全景点坐标
         await fill_coordinates(trip_data, dest)
@@ -552,6 +605,9 @@ async def regenerate_trip(request: Request):
             new_trip = json.loads(raw_clean)
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
+
+        # 后处理验证：检查并修正AI生成的机场名
+        _validate_transport_airports(new_trip)
 
         # 补全坐标
         try:
