@@ -490,21 +490,34 @@ async def regenerate_trip(request: Request):
             return {"success": False, "error": "缺少目的地信息"}
 
         # 获取最新天气
-        weather_data = await amap_weather(dest)
+        try:
+            weather_data = await amap_weather(dest)
+        except Exception:
+            weather_data = []
 
         # 获取交通判断信息（用于AI选择交通工具）
         transport_info = {}
         if departure_city:
-            ti = judge_transport(departure_city, dest)
-            transport_info["transport"] = ti
-            # 查询真实航班/火车班次数据
-            schedule = get_route_schedule(departure_city, dest)
-            transport_info["route_schedule"] = schedule
-            # 检查出发/目的城市是否需要去邻近枢纽
-            dep_hub = get_nearest_hub(departure_city)
-            dest_hub = get_nearest_hub(dest)
-            transport_info["dep_hub"] = dep_hub
-            transport_info["dest_hub"] = dest_hub
+            try:
+                ti = judge_transport(departure_city, dest)
+                transport_info["transport"] = ti
+            except Exception:
+                pass
+            try:
+                schedule = get_route_schedule(departure_city, dest)
+                transport_info["route_schedule"] = schedule
+            except Exception:
+                pass
+            try:
+                dep_hub = get_nearest_hub(departure_city)
+                transport_info["dep_hub"] = dep_hub
+            except Exception:
+                pass
+            try:
+                dest_hub = get_nearest_hub(dest)
+                transport_info["dest_hub"] = dest_hub
+            except Exception:
+                pass
 
         # 构建regenerate prompt
         prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
