@@ -319,6 +319,7 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 【交通选择原则】根据距离选择：≤5km步行，≤30km公交/地铁/打车，≤100km地铁/城际，≤300km高铁/动车，≤800km高铁优先，>800km飞机/高铁
 第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。
 【出发时间灵活】出发时间不固定，根据航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上。下午到达可安排晚间景点，晚上到达仅入住酒店。跨天到达需标注"次日XX:XX"并规划好到达后交通。需预留充足缓冲时间（飞机提前2小时到机场，火车提前1小时到站）。"""
+            if transport_info:
                 # 真实班次数据
                 schedule = transport_info.get("route_schedule", {})
                 if schedule.get("flights") or schedule.get("trains"):
