@@ -59,9 +59,49 @@ async def _fetch_wttr(city: str) -> dict:
 
 
 async def get_hourly_weather(city: str, date: str) -> dict:
-    """获取指定日期逐时天气：高德预报为主，wttr.in补充实时数据"""
+    """获取指定日期逐时天气：仅当天返回详细数据，非当天只返回摘要"""
     date = _normalize_date(date)
+    # 判断是否为当天
+    today = datetime.now().strftime("%Y-%m-%d")
+    is_today = (date == today)
+
     en = CITY_MAP.get(city, city)
+
+    # 并行请求：高德(主) + wttr.in(补充)
+    amap_data = None
+    wttr_data = None
+
+    # 1. 高德预报（主要数据源）
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(AMAP_WEATHER_URL, params={
+                "key": AMAP_KEY, "city": city, "extensions": "all",
+            })
+            data = resp.json()
+            if data.get("status") == "1":
+                for f in data.get("forecasts", []):
+                    for c in f.get("casts", []):
+                        if c.get("date") == date:
+                            amap_data = c
+                            break
+    except Exception:
+        pass
+
+    # 非当天：只返回摘要信息，不返回逐时数据
+    if not is_today:
+        if amap_data:
+            return {
+                "success": True, "date": date, "city": city,
+                "source": "高德预报", "is_today": False,
+                "current": {"temp": f"{amap_data.get('daytemp','')}°C",
+                            "weather": amap_data.get("dayweather",""),
+                            "wind": amap_data.get("daywind","")},
+                "hours": [],
+                "summary": f"{amap_data.get('dayweather','')} {amap_data.get('daytemp','')}°C~{amap_data.get('nighttemp','')}°C",
+                "message": "逐时天气仅当天可用，届时将显示详细数据"
+            }
+        return {"success": True, "date": date, "city": city, "is_today": False,
+                "hours": [], "message": "逐时天气仅当天可用，届时将显示详细数据"}
 
     # 并行请求：高德(主) + wttr.in(补充)
     amap_data = None
@@ -180,6 +220,7 @@ async def get_hourly_weather(city: str, date: str) -> dict:
         "date": date,
         "city": city,
         "source": source,
+        "is_today": True,
         "current": current,
         "hours": hours,
         "extreme_alert": extreme,

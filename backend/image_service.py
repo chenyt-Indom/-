@@ -98,7 +98,11 @@ async def fill_images(trip_data: dict, dest: str):
                 tasks.append(_fill_spot_image(spot_data, dest))
         w = day.get("weather", {})
         if w:
+            # 确保天气图片始终有值，先生成text_to_image URL
             w["image"] = weather_image_url(w.get("desc", "晴"))
+            # 同时生成备用URL（不同prompt，确保有图）
+            w["image_fallback"] = weather_image_url(
+                (w.get("desc", "晴") + " landscape").replace("转", " "), "portrait_4_3")
             weather_items.append(w)
     if tasks:
         await asyncio.gather(*tasks)
@@ -110,6 +114,13 @@ async def fill_images(trip_data: dict, dest: str):
             resolve_tasks.append(_resolve_and_set(w, "image", img))
     if resolve_tasks:
         await asyncio.gather(*resolve_tasks)
+    # 如果主图片URL解析失败，使用备用URL
+    for w in weather_items:
+        if not w.get("image") or w["image"] == w.get("image_fallback", ""):
+            continue
+        # 如果主图片URL还是text_to_image格式（说明CDN解析失败），保留它作为fallback
+        if IMG_BASE in w.get("image", ""):
+            w["image"] = w["image"]  # 保持text_to_image URL，浏览器会跟随重定向
 
 
 async def _resolve_and_set(item: dict, key: str, url: str):

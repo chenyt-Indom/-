@@ -27,8 +27,10 @@ async def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 
 
 def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                       poi_data: list, weather_data: list, start_date: str, end_date: str,
-                      travelers: int = 1, budget_type: str = "total", pace: int = 50) -> str:
-    """构建行程生成提示词，包含POI数据、天气、人数、预算类型、节奏和JSON格式要求"""
+                      travelers: int = 1, budget_type: str = "total", pace: int = 50,
+                      is_self_drive: bool = False, departure_city: str = "",
+                      transport_info: dict = None) -> str:
+    """构建行程生成提示词，包含POI数据、天气、人数、预算类型、节奏、自驾和JSON格式要求"""
     interest_str = "、".join(interests) if interests else "综合体验"
     poi_str = "\n".join([
         f"- {p['name']}（{p.get('type','景点')}，坐标：{p.get('location','')}，评分：{p.get('rating','无')}，商区：{p.get('business_area','')}）"
@@ -36,9 +38,32 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     ]) if poi_data else "（请根据常识推荐）"
     weather_str = "\n".join([
         f"  {w['date']}: {w['dayweather']} {w['daytemp']}°C~{w['nighttemp']}°C"
-        for w in weather_data[:days]
+        for w in weather_data[:days+2]  # 多取2天天气用于出发/返程
     ]) if weather_data else "（请根据常识判断）"
     date_info = f"\n【出行日期】{start_date} 至 {end_date}（共{days}天）" if start_date else ""
+
+    # 出发/返程交通信息
+    transport_section = ""
+    if departure_city:
+        if is_self_drive:
+            transport_section = f"\n【出行方式】自驾从{departure_city}出发"
+            if transport_info:
+                sd = transport_info.get("self_drive_plan", {})
+                transport_section += f"\n【自驾路线】全程{sd.get('total_distance','')}，预计驾驶{sd.get('total_duration_min',0)}分钟，当前路况{sd.get('traffic','畅通')}"
+                if sd.get("stopover"):
+                    so = sd["stopover"]
+                    transport_section += f"\n【沿途过夜】{so.get('suggestion','')}，第一天驾驶{so.get('day1_drive','')}，第二天驾驶{so.get('day2_drive','')}"
+                transport_section += f"\n【出发建议】{sd.get('suggested_departure','')}"
+            transport_section += "\n第一天和最后一天需包含出发/返程自驾规划，计算好驾驶时间，不要安排太紧凑，留足休息时间"
+        else:
+            transport_section = f"\n【出发城市】{departure_city}"
+            if transport_info:
+                ti = transport_info.get("transport", {})
+                transport_section += f"\n【推荐交通】{ti.get('mode','')} - {ti.get('reason','')}"
+                if transport_info.get("to_station"):
+                    ts = transport_info["to_station"]
+                    transport_section += f"\n【前往机场/车站】驾车约{ts.get('drive_min',0)}分钟，公交约{ts.get('transit_min',0)}分钟，{ts.get('advice','')}"
+            transport_section += "\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。出发时间不能太紧凑，必须留足前往机场/车站的时间（飞机至少提前2小时，火车至少提前1小时）"
 
     # 人数描述
     people_info = ""
@@ -79,7 +104,7 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     return f"""你是一个资深旅行规划师。请根据以下真实数据，生成一份 {days} 天的{dest}行程。
 
 【目的地】{dest}
-【天数】{days}天{date_info}{people_info}{budget_info}{pace_info}
+【天数】{days}天{date_info}{people_info}{budget_info}{pace_info}{transport_section}
 【兴趣】{interest_str}
 
 【高德 POI 真实数据（按评分降序排列，评分越高越热门）】
@@ -94,6 +119,24 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
   "days": {days},
   "start_date": "{start_date}",
   "end_date": "{end_date}",
+  "departure_transport": {{
+    "type": "出发交通方式（高铁/飞机/自驾/大巴）",
+    "departure_time": "建议出发时间（如8:00，留足缓冲）",
+    "station": "出发站/机场名称",
+    "arrival_time": "预计到达目的地时间",
+    "duration": "交通耗时",
+    "cost": "预估费用",
+    "note": "注意事项（如提前多久到站、中转信息）"
+  }},
+  "return_transport": {{
+    "type": "返程交通方式",
+    "departure_time": "建议出发时间",
+    "station": "出发站/机场名称",
+    "arrival_time": "预计到达时间",
+    "duration": "交通耗时",
+    "cost": "预估费用",
+    "note": "注意事项"
+  }},
   "weather": [
     {{"date": "日期", "weather": "天气", "temp": "温度", "wind": "风力", "icon": "天气图标emoji"}}
   ],
@@ -126,7 +169,8 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
    - route_detail 字段中描述当天的具体游览路线（如"南门进→金鞭溪→袁家界→百龙天梯→东门出"）
    - recommended_routes 字段中提供2-3条该景点的经典游览路线方案供用户参考（每条路线一句话描述，如"经典一日游：南门进→金鞭溪→袁家界→天子山→东门出（约6小时）"）
    - 普通景点 recommended_routes 设为空数组 []
-9. 只输出JSON，不要markdown代码块"""
+9. 【出发/返程】departure_transport和return_transport必须认真填写，出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站，自驾需预留堵车时间
+10. 只输出JSON，不要markdown代码块"""
 
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,

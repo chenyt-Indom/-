@@ -52,6 +52,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .pace-val{text-align:center;font-size:16px;color:#4A90D9;font-weight:600;margin-top:4px}
 .btn-generate{width:100%;height:72px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border-radius:40px;font-size:24px;font-weight:600;margin-top:16px;border:none;cursor:pointer;transition:opacity .2s}
 .btn-generate:disabled{opacity:.7;cursor:not-allowed}
+/* 控件禁用状态 */
+.form-card.disabled .input,.form-card.disabled .date-picker,.form-card.disabled .people-input,.form-card.disabled .tag,.form-card.disabled .budget-type-btn,.form-card.disabled .people-btn,.form-card.disabled .pace-slider{pointer-events:none;opacity:.5;background:#f0f0f0;color:#999}
+.form-card.disabled .tag.active{background:#b0c4de;color:#fff}
+.form-card.disabled .pace-slider::-webkit-slider-thumb{background:#ddd;border-color:#999}
+.form-card.disabled{pointer-events:none}
+.form-card.disabled .btn-generate{pointer-events:none;opacity:.5}
 .btn-content{display:flex;align-items:center;justify-content:center;height:100%}
 .btn-content.loading{gap:8px}
 .loading-dot{width:10px;height:10px;border-radius:50%;background:#fff;animation:bounce .6s infinite alternate}
@@ -94,6 +100,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* 行程页 */
 .trip-container{max-width:420px;margin:0 auto;padding:16px 24px 32px;background:#f5f6f8;min-height:100vh;display:none}
+/* 详情页顶部新计划控件 */
+.detail-top-controls{background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+.detail-top-controls .new-plan-input{width:100%;border:1px solid #e8e8e8;border-radius:10px;padding:12px 14px;font-size:16px;background:#f9fafb;outline:none;margin-bottom:8px}
+.detail-top-controls .new-plan-input:focus{border-color:#4A90D9}
+.detail-top-controls .btn-row{display:flex;gap:8px}
+.detail-top-controls .btn-regenerate-plan{flex:1;height:40px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer}
+.detail-top-controls .btn-monitor{flex:1;height:40px;background:#fff;color:#4A90D9;border:1px solid #4A90D9;border-radius:10px;font-size:16px;cursor:pointer}
+/* 监测通知弹窗 */
+.monitor-notification{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#fff;border-radius:16px;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:9999;max-width:380px;width:90%;display:none;animation:slideUp .3s ease}
+.monitor-notification.show{display:block}
+.monitor-notification .monitor-title{font-size:18px;font-weight:600;color:#E74C3C;margin-bottom:8px}
+.monitor-notification .monitor-body{font-size:15px;color:#555;line-height:1.6;margin-bottom:12px}
+.monitor-notification .monitor-btns{display:flex;gap:8px}
+.monitor-notification .monitor-btn{flex:1;padding:10px;border-radius:8px;font-size:15px;cursor:pointer;border:none}
+.monitor-notification .monitor-btn.accept{background:#4A90D9;color:#fff}
+.monitor-notification .monitor-btn.reject{background:#f5f5f5;color:#666}
+.monitor-notification .monitor-btn.no-more{background:none;color:#999;font-size:13px;text-align:center;width:100%;margin-top:6px;padding:6px;border:none;cursor:pointer}
+@keyframes slideUp{from{transform:translateX(-50%) translateY(100px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
 .trip-header{text-align:center;padding:20px 0;margin-bottom:16px}
 .trip-header h2{font-size:24px;color:#4A90D9}
 .weather-bar{background:#fff;border-radius:12px;padding:16px 0;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04);display:flex;overflow-x:auto}
@@ -434,6 +458,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="tag" data-tag="网红">网红</button>
       </div>
     </div>
+    <div class="form-item">
+      <label class="label">出行方式</label>
+      <div class="tag-group" id="transportGroup">
+        <button class="tag active" data-tag="public" onclick="switchTransport('public')">公共交通</button>
+        <button class="tag" data-tag="selfdrive" onclick="switchTransport('selfdrive')">自驾</button>
+      </div>
+    </div>
     <button class="btn-generate" id="btnGenerate">
       <div class="btn-content" id="btnNormal">一键生成攻略</div>
       <div class="btn-content loading" id="btnLoading" style="display:none">
@@ -479,6 +510,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- 行程详情页 -->
 <div class="trip-container" id="tripPage">
+  <div class="detail-top-controls">
+    <input class="new-plan-input" id="newPlanInput" placeholder="输入新计划需求，如：增加一个景点、调整住宿...">
+    <div class="btn-row">
+      <button class="btn-regenerate-plan" onclick="regeneratePlan()">重新生成计划</button>
+      <button class="btn-monitor" id="btnMonitor" onclick="toggleMonitor()">开启实时监测</button>
+    </div>
+  </div>
   <div class="trip-header"><h2 id="tripTitle"></h2></div>
   <div class="weather-bar" id="weatherBar"></div>
   <div id="dayCards"></div>
@@ -523,6 +561,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="alert-close" onclick="closeAlert()">×</button>
 </div>
 
+<!-- 监测通知弹窗 -->
+<div class="monitor-notification" id="monitorNotification">
+  <div class="monitor-title" id="monitorTitle">突发情况提醒</div>
+  <div class="monitor-body" id="monitorBody"></div>
+  <div class="monitor-btns">
+    <button class="monitor-btn accept" onclick="acceptMonitorSuggestion()">接受方案</button>
+    <button class="monitor-btn reject" onclick="rejectMonitorSuggestion()">暂不调整</button>
+  </div>
+  <button class="monitor-btn no-more" onclick="stopMonitor()">不再提出新方案</button>
+</div>
+
 <!-- 二维码分享弹窗 -->
 <div class="qr-overlay" id="qrOverlay">
   <div class="qr-card">
@@ -541,6 +590,18 @@ let selectedTags = [];
 let tripData = null;
 let departureCity = '';
 let budgetType = 'total';  // 预算类型：total=总预算, aa=AA制
+let isSelfDrive = false;   // 是否自驾
+let monitorTimer = null;   // 实时监测定时器
+let monitorRejected = false;  // 用户是否拒绝过监测建议
+let monitorStopped = false;   // 用户是否选择不再提示
+
+// 出行方式切换
+function switchTransport(type) {
+  isSelfDrive = (type === 'selfdrive');
+  document.querySelectorAll('#transportGroup .tag').forEach(b => {
+    b.classList.toggle('active', b.dataset.tag === type);
+  });
+}
 
 // 预算类型切换
 function switchBudgetType(type) {
@@ -794,6 +855,14 @@ function updateDays() {
   return 0;
 }
 
+// 禁用/启用所有控件
+function disableControls() {
+  document.querySelector('.form-card').classList.add('disabled');
+}
+function enableControls() {
+  document.querySelector('.form-card').classList.remove('disabled');
+}
+
 // 生成攻略
 let progressTimer = null;
 document.getElementById('btnGenerate').addEventListener('click', async function(){
@@ -801,6 +870,8 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
   const days = updateDays();
   if(!dest){ alert('请输入目的地'); return; }
   if(days < 1){ alert('请选择出行日期'); return; }
+  // 禁用所有控件
+  disableControls();
   document.getElementById('btnNormal').style.display='none';
   document.getElementById('btnLoading').style.display='flex';
   this.disabled = true;
@@ -820,6 +891,7 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
         departure_city: departureCity,
         travelers: parseInt(document.getElementById('travelers').value) || 1,
         pace: parseInt(document.getElementById('paceSlider').value),
+        is_self_drive: isSelfDrive,
       })
     });
     clearInterval(progressTimer);
@@ -1152,13 +1224,41 @@ function renderTrip(data){
   });
   document.getElementById('weatherBar').innerHTML = wHtml;
 
+  // 出发/返程交通卡片
+  let transHtml = '';
+  if (data.departure_transport) {
+    var dt = data.departure_transport;
+    transHtml += '<div class="bottom-card"><div class="bottom-title">🚀 出发交通</div>';
+    transHtml += '<div style="font-size:16px;line-height:1.8">';
+    transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
+    transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + '</b></div>';
+    transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
+    transHtml += '<div>预计到达：' + (dt.arrival_time||'') + ' | 耗时：' + (dt.duration||'') + '</div>';
+    transHtml += '<div>预估费用：' + (dt.cost||'') + '</div>';
+    transHtml += '<div style="color:#E67E22">⚠️ ' + (dt.note||'') + '</div>';
+    transHtml += '</div></div>';
+  }
+  if (data.return_transport) {
+    var rt = data.return_transport;
+    transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
+    transHtml += '<div style="font-size:16px;line-height:1.8">';
+    transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
+    transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + '</b></div>';
+    transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
+    transHtml += '<div>预计到达：' + (rt.arrival_time||'') + ' | 耗时：' + (rt.duration||'') + '</div>';
+    transHtml += '<div>预估费用：' + (rt.cost||'') + '</div>';
+    transHtml += '<div style="color:#E67E22">⚠️ ' + (rt.note||'') + '</div>';
+    transHtml += '</div></div>';
+  }
+  document.getElementById('transportCard').innerHTML = transHtml;
+
   let dHtml = '';
   (data.itinerary||[]).forEach((day,dayIdx)=>{
     const w = day.weather||{};
-    const wImg = w.image || getFallbackImgUrl(w.desc||'晴', 'weather');
+    const wImg = w.image || w.image_fallback || getFallbackImgUrl(w.desc||'晴', 'weather');
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      <img class="weather-img" src="${wImg}" alt="天气" onerror="imgFallback(this,'weather','天气',this.onclick)" onclick="showWeatherHourly(${dayIdx})">
+      <img class="weather-img" src="${wImg}" alt="天气" onerror="var f=this;var d='${w.desc||'晴'}';f.src='https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt='+encodeURIComponent(d.replace('转','')+' weather landscape, photorealistic, 4K')+'&image_size=landscape_16_9';f.onerror=function(){showGradientFallback(f,'weather',d);}" onclick="showWeatherHourly(${dayIdx})">
       ${renderSlot('上午','morning',day.morning,dayIdx,0)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
       ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
@@ -1520,6 +1620,9 @@ function shareTrip(){
 function goHome(){
   if (overviewMap) { overviewMap.destroy(); overviewMap = null; }
   if (dayMap) { dayMap.destroy(); dayMap = null; }
+  // 停止监测
+  stopMonitor();
+  enableControls();
   document.getElementById('homePage').style.display='block';
   document.getElementById('overviewPage').style.display='none';
   document.getElementById('tripPage').style.display='none';
@@ -1721,13 +1824,22 @@ async function showWeatherHourly(dayIdx) {
   document.getElementById('weatherHourlyOverlay').classList.add('show');
 
   try {
-    // 并行请求逐时天气 + 空气质量
     const [hourlyRes, aqiRes] = await Promise.all([
       fetch(API + `/api/weather-hourly?city=${encodeURIComponent(dest)}&date=${encodeURIComponent(date)}`),
       fetch(API + `/api/china-weather/air-quality?city=${encodeURIComponent(dest)}`)
     ]);
     const data = await hourlyRes.json();
     const aqiData = await aqiRes.json();
+
+    // 非当天：显示提示信息
+    if (!data.is_today) {
+      var w = tripData.itinerary[dayIdx].weather || {};
+      card.innerHTML = '<div class="wh-header"><div class="wh-date">' + date + ' ' + dest + '</div><div class="wh-summary">' + (data.summary||w.desc||'') + ' ' + (w.temp||'') + '</div></div>' +
+        '<div style="text-align:center;padding:30px;color:#999;font-size:16px;line-height:1.8">📅 逐时天气详情仅当天可用<br><span style="font-size:14px">当前日期：' + new Date().toLocaleDateString('zh-CN') + '</span><br><span style="font-size:14px;color:#4A90D9">届时将显示每小时的天气变化</span></div>' +
+        '<button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';
+      return;
+    }
+
     if (!data.success) { card.innerHTML = '<div style="text-align:center;padding:40px;color:#999">天气数据暂不可用</div><button class="wh-close" onclick="closeWeatherHourly()">关闭</button>'; return; }
 
     const emojiMap = { '晴':'☀️','Sunny':'☀️','Clear':'☀️','多云':'⛅','Partly cloudy':'⛅','Cloudy':'☁️','阴':'☁️','Overcast':'☁️','雨':'🌧️','Rain':'🌧️','Light rain':'🌦️','小雨':'🌦️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','雪':'❄️','Snow':'❄️','雾':'🌫️','Fog':'🌫️','Mist':'🌫️','霾':'🌫️','风':'💨','大风':'💨','雷阵雨':'⛈️','Thunder':'⛈️','Patchy rain':'🌦️','Light drizzle':'🌦️','Moderate rain':'🌧️','Heavy rain':'🌧️' };
@@ -1919,6 +2031,135 @@ async function checkRainSnowAlert() {
   } catch(e) {}
 }
 
+// 重新生成计划
+async function regeneratePlan() {
+  const newPlan = document.getElementById('newPlanInput').value.trim();
+  if (!newPlan) { alert('请输入新计划需求'); return; }
+  if (!tripData) return;
+  const btn = document.querySelector('.btn-regenerate-plan');
+  btn.disabled = true;
+  btn.textContent = '⏳ 重新生成中...';
+  try {
+    const res = await fetch(API + '/api/generate-trip', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        destination: tripData.destination,
+        days: tripData.days,
+        budget: document.getElementById('budget').value,
+        budget_type: budgetType,
+        interests: selectedTags,
+        start_date: tripData.start_date, end_date: tripData.end_date,
+        departure_city: departureCity,
+        travelers: parseInt(document.getElementById('travelers').value) || 1,
+        pace: parseInt(document.getElementById('paceSlider').value),
+        is_self_drive: isSelfDrive,
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      tripData = data.data;
+      saveToHistory(data.data);
+      renderTrip(tripData);
+      document.getElementById('newPlanInput').value = '';
+    } else {
+      alert('重新生成失败：' + (data.error || '请重试'));
+    }
+  } catch (e) {
+    alert('重新生成失败，请检查网络');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '重新生成计划';
+  }
+}
+
+// 实时监测
+function toggleMonitor() {
+  if (monitorTimer) { stopMonitor(); } else { startMonitor(); }
+}
+function startMonitor() {
+  if (monitorStopped) return;
+  const btn = document.getElementById('btnMonitor');
+  btn.textContent = '监测中...';
+  btn.style.background = '#E67E22';
+  btn.style.color = '#fff';
+  btn.style.borderColor = '#E67E22';
+  monitorRejected = false;
+  checkTripStatus();
+  monitorTimer = setInterval(checkTripStatus, 300000);
+}
+function stopMonitor() {
+  if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
+  const btn = document.getElementById('btnMonitor');
+  btn.textContent = '开启实时监测';
+  btn.style.background = '#fff';
+  btn.style.color = '#4A90D9';
+  btn.style.borderColor = '#4A90D9';
+  document.getElementById('monitorNotification').classList.remove('show');
+}
+async function checkTripStatus() {
+  if (!tripData || monitorStopped) return;
+  try {
+    let currentLocation = {};
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {timeout: 5000, maximumAge: 300000});
+        });
+        currentLocation = {lng: pos.coords.longitude, lat: pos.coords.latitude};
+      } catch (e) {}
+    }
+    const res = await fetch(API + '/api/monitor-trip', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({trip_data: tripData, current_location: currentLocation, rejected: monitorRejected})
+    });
+    const data = await res.json();
+    if (data.success && data.has_alert && data.suggestion) {
+      showMonitorNotification(data.alerts, data.suggestion);
+    }
+  } catch (e) {}
+}
+function showMonitorNotification(alerts, suggestion) {
+  const notif = document.getElementById('monitorNotification');
+  document.getElementById('monitorTitle').textContent = '⚠️ 突发情况提醒';
+  let body = '';
+  if (alerts) alerts.forEach(a => { body += '<div style="margin-bottom:4px">• ' + a.message + '</div>'; });
+  body += '<div style="margin-top:8px;color:#4A90D9;font-weight:500">💡 建议：' + suggestion + '</div>';
+  document.getElementById('monitorBody').innerHTML = body;
+  notif.classList.add('show');
+  notif._suggestion = suggestion;
+}
+function acceptMonitorSuggestion() {
+  document.getElementById('monitorNotification').classList.remove('show');
+  var notif = document.getElementById('monitorNotification');
+  document.getElementById('newPlanInput').value = notif._suggestion || '';
+  document.getElementById('newPlanInput').focus();
+}
+function rejectMonitorSuggestion() {
+  monitorRejected = true;
+  document.getElementById('monitorNotification').classList.remove('show');
+}
+window._stopMonitorPermanent = function() {
+  monitorStopped = true;
+  stopMonitor();
+  document.getElementById('monitorNotification').classList.remove('show');
+  var btn = document.getElementById('btnMonitor');
+  btn.textContent = '已停止监测';
+  btn.disabled = true;
+};
+
+// 判断是否为当天
+function checkIfToday(dateStr) {
+  if (!dateStr) return false;
+  var d = dateStr.replace(/年|月/g, '-').replace(/日/g, '');
+  var today = new Date();
+  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+  var parts = d.split('-');
+  if (parts.length === 3) {
+    return parts[0] + '-' + parts[1].padStart(2,'0') + '-' + parts[2].padStart(2,'0') === todayStr;
+  }
+  return d === todayStr;
+}
+
 renderHistory();
 // 将HTML onclick引用的函数暴露到全局作用域
 window.editCity = editCity;
@@ -1952,6 +2193,12 @@ window.closeQR = closeQR;
 window.imgFallback = imgFallback;
 window.toggleFavorite = toggleFavorite;
 window.regenerateDetail = regenerateDetail;
+window.switchTransport = switchTransport;
+window.regeneratePlan = regeneratePlan;
+window.toggleMonitor = toggleMonitor;
+window.acceptMonitorSuggestion = acceptMonitorSuggestion;
+window.rejectMonitorSuggestion = rejectMonitorSuggestion;
+window.stopMonitor = window._stopMonitorPermanent;
 })();
 </script>
 <!-- 城市编辑弹窗 -->

@@ -1,6 +1,6 @@
 """Pydantic 数据模型"""
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 
 class TripRequest(BaseModel):
@@ -15,3 +15,4 @@ class TripRequest(BaseModel):
     departure_city: str = ""  # 出发城市
     travelers: int = 1    # 旅行人数
     pace: int = 50     # 游玩节奏 0-100，0=极慢，100=极快
+    is_self_drive: bool = False  # 是否自驾出行
