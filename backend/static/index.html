@@ -118,6 +118,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .monitor-notification .monitor-btn.reject{background:#f5f5f5;color:#666}
 .monitor-notification .monitor-btn.no-more{background:none;color:#999;font-size:13px;text-align:center;width:100%;margin-top:6px;padding:6px;border:none;cursor:pointer}
 @keyframes slideUp{from{transform:translateX(-50%) translateY(100px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}
+/* 重新生成加载卡片 */
+.regenerate-loading-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);display:none;justify-content:center;align-items:center;z-index:10000}
+.regenerate-loading-overlay.show{display:flex}
+.regenerate-loading-card{background:#fff;border-radius:20px;padding:36px 28px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);max-width:340px;width:90%}
+.regenerate-loading-card .rlc-icon{font-size:52px;margin-bottom:12px;animation:pulse 1.5s ease-in-out infinite}
+.regenerate-loading-card .rlc-text{font-size:18px;font-weight:600;color:#333;margin-bottom:16px}
+.regenerate-loading-card .rlc-sub{font-size:14px;color:#999;margin-bottom:8px}
 .trip-header{text-align:center;padding:20px 0;margin-bottom:16px}
 .trip-header h2{font-size:24px;color:#4A90D9}
 .weather-bar{background:#fff;border-radius:12px;padding:16px 0;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04);display:flex;overflow-x:auto}
@@ -570,6 +577,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="monitor-btn reject" onclick="rejectMonitorSuggestion()">暂不调整</button>
   </div>
   <button class="monitor-btn no-more" onclick="stopMonitor()">不再提出新方案</button>
+</div>
+
+<!-- 重新生成加载卡片 -->
+<div class="regenerate-loading-overlay" id="regenerateLoadingOverlay">
+  <div class="regenerate-loading-card">
+    <div class="rlc-icon">✨</div>
+    <div class="rlc-text">AI正在按照您的想法重新规划路线</div>
+    <div class="rlc-sub">请稍候，正在分析您的新需求...</div>
+    <div class="ai-loading"><span></span><span></span><span></span></div>
+  </div>
 </div>
 
 <!-- 二维码分享弹窗 -->
@@ -1258,7 +1275,7 @@ function renderTrip(data){
     const wImg = w.image || w.image_fallback || getFallbackImgUrl(w.desc||'晴', 'weather');
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      <img class="weather-img" src="${wImg}" alt="天气" onerror="var f=this;var d='${w.desc||'晴'}';f.src='https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt='+encodeURIComponent(d.replace('转','')+' weather landscape, photorealistic, 4K')+'&image_size=landscape_16_9';f.onerror=function(){showGradientFallback(f,'weather',d);}" onclick="showWeatherHourly(${dayIdx})">
+      <img class="weather-img" src="${wImg}" alt="天气" onerror="weatherImgFallback(this,'${(w.desc||'晴').replace(/'/g,"\\'")}')" onclick="showWeatherHourly(${dayIdx})">
       ${renderSlot('上午','morning',day.morning,dayIdx,0)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
       ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
@@ -1389,7 +1406,6 @@ function renderTrip(data){
 
 function renderSlot(title, cls, slot, dayIdx, slotIdx){
   if(!slot) return '';
-  // 根据时段计算具体时间范围
   const slotStartTimes = {morning: '9:00', afternoon: '13:00', evening: '18:00'};
   let timeRange = '';
   if (slot.duration) {
@@ -1399,10 +1415,15 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
       const startTime = slotStartTimes[cls] || '9:00';
       const [sh, sm] = startTime.split(':').map(Number);
       const totalMin = sh * 60 + sm + Math.round(hours * 60);
-      const eh = Math.floor(totalMin / 60);
+      let eh = Math.floor(totalMin / 60);
       const em = totalMin % 60;
-      const endTime = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
-      timeRange = `${startTime} - ${endTime}`;
+      // 跨天处理：超过23:59显示"次日XX:XX"
+      if (eh >= 24) {
+        let nextDayHour = eh % 24;
+        timeRange = `${startTime} - 次日${String(nextDayHour).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+      } else {
+        timeRange = `${startTime} - ${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+      }
     }
   }
   const spotName = slot.spot||'';
@@ -2036,30 +2057,28 @@ async function regeneratePlan() {
   const newPlan = document.getElementById('newPlanInput').value.trim();
   if (!newPlan) { alert('请输入新计划需求'); return; }
   if (!tripData) return;
-  const btn = document.querySelector('.btn-regenerate-plan');
-  btn.disabled = true;
-  btn.textContent = '⏳ 重新生成中...';
+
+  // 显示加载卡片
+  document.getElementById('regenerateLoadingOverlay').classList.add('show');
+
   try {
-    const res = await fetch(API + '/api/generate-trip', {
+    const res = await fetch(API + '/api/regenerate-trip', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        destination: tripData.destination,
-        days: tripData.days,
-        budget: document.getElementById('budget').value,
-        budget_type: budgetType,
-        interests: selectedTags,
-        start_date: tripData.start_date, end_date: tripData.end_date,
-        departure_city: departureCity,
-        travelers: parseInt(document.getElementById('travelers').value) || 1,
-        pace: parseInt(document.getElementById('paceSlider').value),
+        user_input: newPlan,
+        trip_data: tripData,
         is_self_drive: isSelfDrive,
+        departure_city: departureCity,
       })
     });
     const data = await res.json();
     if (data.success) {
       tripData = data.data;
       saveToHistory(data.data);
+      // 重新渲染详情页
       renderTrip(tripData);
+      // 更新总览地图标记
+      updateOverviewMarkers();
       document.getElementById('newPlanInput').value = '';
     } else {
       alert('重新生成失败：' + (data.error || '请重试'));
@@ -2067,8 +2086,49 @@ async function regeneratePlan() {
   } catch (e) {
     alert('重新生成失败，请检查网络');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '重新生成计划';
+    document.getElementById('regenerateLoadingOverlay').classList.remove('show');
+  }
+}
+
+// 更新总览地图标记（重新生成计划后）
+function updateOverviewMarkers() {
+  if (!tripData) return;
+  allMarkers = [];
+  let globalOrder = 1;
+  (tripData.itinerary||[]).forEach(day => {
+    ['morning','afternoon','evening'].forEach(slot => {
+      const s = day[slot];
+      if(s && s.spot && s.location){
+        const [lng, lat] = s.location.split(',').map(Number);
+        if (!isNaN(lng) && !isNaN(lat)) {
+          allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
+          globalOrder++;
+        }
+      }
+    });
+  });
+  const bk = tripData.booking_info || {};
+  (bk.hotels || []).forEach(h => {
+    if (h.location) {
+      const [lng, lat] = h.location.split(',').map(Number);
+      if (!isNaN(lng) && !isNaN(lat)) {
+        allMarkers.push({ name: h.name, lng, lat, order: globalOrder, day: 0, type: 'hotel' });
+        globalOrder++;
+      }
+    }
+  });
+  (bk.tickets || []).forEach(t => {
+    if (t.location && t.need_booking) {
+      const [lng, lat] = t.location.split(',').map(Number);
+      if (!isNaN(lng) && !isNaN(lat)) {
+        allMarkers.push({ name: t.spot, lng, lat, order: globalOrder, day: 0, type: 'ticket' });
+        globalOrder++;
+      }
+    }
+  });
+  // 如果总览页正在显示，刷新地图
+  if (document.getElementById('overviewPage').style.display === 'flex') {
+    initOverviewMap(allMarkers);
   }
 }
 
@@ -2147,6 +2207,23 @@ window._stopMonitorPermanent = function() {
   btn.disabled = true;
 };
 
+// 天气图片加载失败的三级兜底
+function weatherImgFallback(img, desc) {
+  // 第一级：尝试用不同prompt重新生成
+  var altDesc = desc.replace('转', ' ');
+  var url1 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' weather landscape, photorealistic, 4K') + '&image_size=landscape_16_9';
+  img.src = url1;
+  img.onerror = function() {
+    // 第二级：尝试portrait_4_3尺寸
+    var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
+    img.src = url2;
+    img.onerror = function() {
+      // 第三级：显示渐变占位卡
+      showGradientFallback(img, 'weather', desc);
+    };
+  };
+}
+
 // 判断是否为当天
 function checkIfToday(dateStr) {
   if (!dateStr) return false;
@@ -2199,6 +2276,7 @@ window.toggleMonitor = toggleMonitor;
 window.acceptMonitorSuggestion = acceptMonitorSuggestion;
 window.rejectMonitorSuggestion = rejectMonitorSuggestion;
 window.stopMonitor = window._stopMonitorPermanent;
+window.weatherImgFallback = weatherImgFallback;
 })();
 </script>
 <!-- 城市编辑弹窗 -->

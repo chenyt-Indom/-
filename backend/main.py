@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from models import TripRequest
 from config import AMAP_KEY, DEEPSEEK_KEY, AMAP_REGEO_URL
 from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coordinates
-from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt
+from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
 from feichangzhun_service import judge_transport, search_flights
@@ -445,6 +445,57 @@ async def resolve_image(name: str, city: str = "", type: str = "spot"):
         return {"success": True, "url": url}
     except Exception as e:
         return {"success": False, "url": "", "error": str(e)}
+
+
+@app.post("/api/regenerate-trip")
+async def regenerate_trip(request: Request):
+    """根据用户新需求重新生成旅行计划，重点参考用户输入"""
+    body = await request.json()
+    user_input = body.get("user_input", "").strip()
+    trip_data = body.get("trip_data", {})
+    is_self_drive = body.get("is_self_drive", False)
+    departure_city = body.get("departure_city", "")
+
+    if not user_input:
+        return {"success": False, "error": "请输入新计划需求"}
+
+    dest = trip_data.get("destination", "")
+    days = trip_data.get("days", 3)
+    start_date = trip_data.get("start_date", "")
+    end_date = trip_data.get("end_date", "")
+    old_itinerary = trip_data.get("itinerary", [])
+
+    if not dest:
+        return {"success": False, "error": "缺少目的地信息"}
+
+    # 获取最新天气
+    weather_data = await amap_weather(dest)
+
+    # 构建regenerate prompt
+    prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
+                                     weather_data, start_date, end_date,
+                                     is_self_drive, departure_city)
+    try:
+        raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
+        raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        new_trip = json.loads(raw_clean)
+    except Exception:
+        return {"success": False, "error": "AI重新规划失败，请重试"}
+
+    # 补全坐标
+    await fill_coordinates(new_trip, dest)
+
+    # 获取图片
+    try:
+        await asyncio.wait_for(fill_images(new_trip, dest), timeout=25.0)
+    except (asyncio.TimeoutError, Exception):
+        pass
+
+    # 保留原有booking_info
+    new_trip["booking_info"] = trip_data.get("booking_info", {})
+    new_trip["transport_info"] = trip_data.get("transport_info", {})
+
+    return {"success": True, "data": new_trip}
 
 
 if __name__ == "__main__":

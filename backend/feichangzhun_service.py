@@ -33,37 +33,49 @@ def get_iata(city: str) -> str:
 
 
 def judge_transport(departure_city: str, dest_city: str) -> dict:
-    """根据距离和性价比判断推荐交通工具"""
-    # 主要城市间高铁/飞机的距离判断
-    SHORT_DISTANCE = {"北京-天津": 120, "广州-深圳": 140, "上海-苏州": 100,
-                       "上海-杭州": 170, "成都-重庆": 300, "南京-上海": 300,
-                       "广州-珠海": 140, "深圳-香港": 40, "北京-石家庄": 280}
-    MEDIUM_DISTANCE = {"北京-上海": 1200, "北京-西安": 1100, "上海-武汉": 800,
-                        "广州-长沙": 700, "北京-杭州": 1200, "上海-青岛": 700,
-                        "成都-西安": 700, "深圳-长沙": 800, "北京-南京": 1000,
-                        "广州-厦门": 600, "上海-厦门": 1000, "北京-武汉": 1100}
+    """根据距离和性价比判断推荐交通工具，覆盖步行→公交→地铁→高铁→飞机"""
+    # 已知城市间距离字典
+    KNOWN_DIST = {
+        "北京-天津": 120, "广州-深圳": 140, "上海-苏州": 100,
+        "上海-杭州": 170, "成都-重庆": 300, "南京-上海": 300,
+        "广州-珠海": 140, "深圳-香港": 40, "北京-石家庄": 280,
+        "北京-上海": 1200, "北京-西安": 1100, "上海-武汉": 800,
+        "广州-长沙": 700, "北京-杭州": 1200, "上海-青岛": 700,
+        "成都-西安": 700, "深圳-长沙": 800, "北京-南京": 1000,
+        "广州-厦门": 600, "上海-厦门": 1000, "北京-武汉": 1100,
+        "北京-哈尔滨": 1200, "上海-昆明": 2300, "广州-三亚": 800,
+        "北京-乌鲁木齐": 2800, "上海-拉萨": 4000, "成都-拉萨": 2100,
+        "北京-三亚": 2900, "上海-成都": 1900, "广州-昆明": 1300,
+    }
     key1 = f"{departure_city}-{dest_city}"
     key2 = f"{dest_city}-{departure_city}"
-    dist = SHORT_DISTANCE.get(key1) or SHORT_DISTANCE.get(key2) or \
-           MEDIUM_DISTANCE.get(key1) or MEDIUM_DISTANCE.get(key2)
+    dist = KNOWN_DIST.get(key1) or KNOWN_DIST.get(key2)
+    iata_dep = get_iata(departure_city)
+    iata_arr = get_iata(dest_city)
+
     if dist is None:
-        iata_dep = get_iata(departure_city)
-        iata_arr = get_iata(dest_city)
         if iata_dep and iata_arr and iata_dep != iata_arr:
             return {"mode": "建议飞机/高铁", "reason": "中长途城市间推荐飞机或高铁",
-                    "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True}
+                    "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True,
+                    "estimated_distance": ">800km"}
+        if departure_city == dest_city:
+            return {"mode": "市内交通", "reason": "同城出行，推荐地铁/公交/打车",
+                    "need_flight": False, "estimated_distance": "同城"}
         return {"mode": "建议高铁/自驾", "reason": "请根据实际距离选择",
-                "need_flight": False}
-    if dist <= 300:
-        return {"mode": "高铁/动车", "reason": f"距离约{dist}km，推荐高铁",
-                "need_flight": False}
+                "need_flight": False, "estimated_distance": "未知"}
+
+    if dist <= 5:
+        return {"mode": "步行", "reason": f"距离约{dist}km，步行即可到达", "need_flight": False}
+    elif dist <= 30:
+        return {"mode": "公交/地铁/打车", "reason": f"距离约{dist}km，推荐公交、地铁或打车", "need_flight": False}
+    elif dist <= 100:
+        return {"mode": "地铁/城际/自驾", "reason": f"距离约{dist}km，可乘地铁城际或自驾", "need_flight": False}
+    elif dist <= 300:
+        return {"mode": "高铁/动车", "reason": f"距离约{dist}km，推荐高铁，方便快捷", "need_flight": False}
     elif dist <= 800:
-        return {"mode": "高铁优先", "reason": f"距离约{dist}km，高铁便捷",
-                "need_flight": False}
+        return {"mode": "高铁优先", "reason": f"距离约{dist}km，高铁约{int(dist/300)}-{int(dist/250)}小时，性价比高", "need_flight": False}
     else:
-        iata_dep = get_iata(departure_city)
-        iata_arr = get_iata(dest_city)
-        return {"mode": "飞机/高铁", "reason": f"距离约{dist}km，推荐飞机或高铁",
+        return {"mode": "飞机/高铁", "reason": f"距离约{dist}km，推荐飞机（约{int(dist/800)}-{int(dist/600)}小时）或高铁（约{int(dist/300)}-{int(dist/250)}小时）",
                 "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True}
 
 

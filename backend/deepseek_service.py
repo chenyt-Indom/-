@@ -170,7 +170,8 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
    - recommended_routes 字段中提供2-3条该景点的经典游览路线方案供用户参考（每条路线一句话描述，如"经典一日游：南门进→金鞭溪→袁家界→天子山→东门出（约6小时）"）
    - 普通景点 recommended_routes 设为空数组 []
 9. 【出发/返程】departure_transport和return_transport必须认真填写，出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站，自驾需预留堵车时间
-10. 只输出JSON，不要markdown代码块"""
+10. 【时间格式】所有时间必须使用24小时制（如9:00、14:30），绝对禁止出现>23:59的时间（如26:00）。如果活动跨天，请使用"次日8:00"等格式表示。每天上午/下午/晚上的景点安排间隔至少1小时，避免时间冲突
+11. 只输出JSON，不要markdown代码块"""
 
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
@@ -244,3 +245,71 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 7. 【换酒店推荐】分析行程中景点的地理分布，如果不同天的景点集中在不同区域（如Day1-3在城东，Day4-5在城西），建议中途换酒店减少通勤时间，在 hotel_changes 中列出换酒店建议
 8. hotels 中 stay_days 字段注明该酒店适合入住的日期范围
 9. 只输出JSON，不要markdown代码块"""
+
+
+def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary: list,
+                            weather_data: list, start_date: str, end_date: str,
+                            is_self_drive: bool, departure_city: str) -> str:
+    """构建重新生成计划的提示词，重点参考用户输入的新需求"""
+    old_summary = ""
+    for day in old_itinerary:
+        spots = []
+        for slot in ["morning", "afternoon", "evening"]:
+            s = day.get(slot, {})
+            if s and s.get("spot"):
+                spots.append(f"{slot}: {s['spot']}")
+        old_summary += f"Day{day['day']}({day.get('date','')}): {', '.join(spots)}\n"
+
+    weather_str = "\n".join([
+        f"  {w['date']}: {w['dayweather']} {w['daytemp']}°C~{w['nighttemp']}°C"
+        for w in (weather_data or [])[:days+2]
+    ]) if weather_data else "（请根据常识判断）"
+
+    transport_mode = "自驾" if is_self_drive else "公共交通"
+
+    return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
+
+【目的地】{dest}
+【天数】{days}天
+【出行日期】{start_date} 至 {end_date}
+【出行方式】{transport_mode}
+【出发城市】{departure_city}
+
+【用户的新需求】（这是最重要的参考，必须优先满足！）
+{user_input}
+
+【原行程概览】
+{old_summary}
+
+【天气预报】
+{weather_str}
+
+请严格按照以下 JSON 格式输出（不要输出其他内容）：
+{{
+  "destination": "{dest}",
+  "days": {days},
+  "start_date": "{start_date}",
+  "end_date": "{end_date}",
+  "departure_transport": {{"type": "", "departure_time": "", "station": "", "arrival_time": "", "duration": "", "cost": "", "note": ""}},
+  "return_transport": {{"type": "", "departure_time": "", "station": "", "arrival_time": "", "duration": "", "cost": "", "note": ""}},
+  "itinerary": [
+    {{
+      "day": 1, "date": "日期",
+      "weather": {{"desc": "天气", "temp": "温度", "icon": "emoji"}},
+      "morning": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "afternoon": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "evening": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "lunch": "午餐推荐", "dinner": "晚餐推荐", "transport": "交通建议"
+    }}
+  ],
+  "budget_breakdown": {{"交通": "金额", "住宿": "金额", "餐饮": "金额", "门票": "金额", "其他": "金额"}},
+  "tips": ["贴士1", "贴士2", "贴士3"]
+}}
+
+要求：
+1. 【最高优先级-用户需求】必须重点参考用户的新需求，在实际可行的情况下务必满足用户的想法。如果用户要求调整出行方式、游览顺序、增减景点、换酒店等，必须严格遵循
+2. 结合天气预报合理安排室内外活动
+3. 景点名不能重复，同一商区景点安排在同一天
+4. 出发/返程时间不能太紧凑，必须留足缓冲
+5. 所有时间使用24小时制，禁止>23:59的时间，跨天使用"次日XX:XX"格式
+6. 只输出JSON，不要markdown代码块"""
