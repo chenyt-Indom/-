@@ -311,6 +311,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .route-detail{font-size:15px;color:#4A90D9;background:#EEF4FB;padding:8px 12px;border-radius:8px;margin-top:6px;line-height:1.5}
 .route-detail .route-icon{margin-right:4px}
 
+/* 推荐游览路线 */
+.recommend-routes{margin-top:8px;background:#F0F8E8;border-radius:10px;overflow:hidden}
+.recommend-routes-header{display:flex;align-items:center;gap:6px;padding:10px 14px;background:#E8F5D0;cursor:pointer;font-size:15px;font-weight:600;color:#4A7C2E}
+.recommend-routes-header .rr-arrow{font-size:12px;transition:transform .3s}
+.recommend-routes-header .rr-arrow.open{transform:rotate(90deg)}
+.recommend-routes-body{max-height:0;overflow:hidden;transition:max-height .4s ease}
+.recommend-routes-body.show{max-height:400px}
+.recommend-routes-item{display:flex;gap:8px;padding:8px 14px;font-size:14px;color:#555;line-height:1.5;border-bottom:1px solid #E8F5D0}
+.recommend-routes-item:last-child{border-bottom:none}
+.recommend-routes-item .rr-num{width:22px;height:22px;border-radius:50%;background:#4A7C2E;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.recommend-routes-item .rr-text{flex:1}
+
+/* 详情卡片中的推荐路线 */
+.detail-route-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;font-size:14px;color:#555;line-height:1.5;border-bottom:1px solid #f0f0f0}
+.detail-route-item:last-child{border-bottom:none}
+.rr-num-detail{width:22px;height:22px;border-radius:50%;background:#4A7C2E;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+
 /* 换酒店推荐卡片 */
 .hotel-change-card{background:#FFF8F0;padding:16px;border-radius:12px;margin-bottom:12px;border:1px dashed #E67E22}
 .hotel-change-title{font-size:18px;font-weight:600;color:#E67E22;margin-bottom:8px}
@@ -1300,9 +1317,25 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
   const imgHtml = imgUrl
     ? `<img class="spot-img" src="${imgUrl}" alt="${escName}" onerror="imgFallback(this,'spot','${escName}',this.onclick)" ${clickHandler}>`
     : `<div class="spot-placeholder" ${clickHandler}><div class="ph-spot-name">${escName}</div><div class="ph-hint">暂无真实照片</div></div>`;
+  // 推荐游览路线（在图片下方展示）
+  const routes = slot.recommended_routes;
+  let routesHtml = '';
+  if (routes && Array.isArray(routes) && routes.length > 0) {
+    const rid = 'rr_' + dayIdx + '_' + slotIdx;
+    routesHtml = `<div class="recommend-routes">
+      <div class="recommend-routes-header" onclick="var b=document.getElementById('${rid}');var a=this.querySelector('.rr-arrow');b.classList.toggle('show');a.classList.toggle('open')">
+        <span>🗺️</span><span>推荐游览路线</span><span class="rr-arrow">▶</span>
+      </div>
+      <div class="recommend-routes-body" id="${rid}">`;
+    routes.forEach((r, ri) => {
+      routesHtml += `<div class="recommend-routes-item"><span class="rr-num">${ri+1}</span><span class="rr-text">${r}</span></div>`;
+    });
+    routesHtml += '</div></div>';
+  }
   return `<div class="time-slot">
     <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${escName}','${slot.location}')">📍</span>` : ''}</div>
     ${imgHtml}
+    ${routesHtml}
     <div class="spot-name">${spotName}</div>
     ${timeRange ? `<div class="spot-time-range"><span class="sr-icon">🕐</span>${timeRange}</div>` : `<span class="meta-tag">时长：${slot.duration||''}</span>`}
     ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
@@ -1523,10 +1556,15 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
   }
   // 路线规划
   let routeInfo = '';
+  let recommendedRoutes = [];
   if (dayIdx !== undefined && slotIdx !== undefined && tripData && tripData.itinerary) {
     const day = tripData.itinerary[dayIdx];
     if (day) {
       const slots = ['morning', 'afternoon', 'evening'];
+      const slot = day[slots[slotIdx]];
+      if (slot && slot.recommended_routes) {
+        recommendedRoutes = slot.recommended_routes;
+      }
       let prevSpot = null;
       for (let i = slotIdx - 1; i >= 0; i--) {
         const s = day[slots[i]];
@@ -1552,7 +1590,8 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
       }
     }
   }
-  renderDetailCard(card, 'spot', {name, image: finalImage, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, dest, reason, routeInfo});
+  renderDetailCard(card, 'spot', {name, image: finalImage, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, dest, reason, routeInfo,
+    recommended_routes: recommendedRoutes});
   document.body.style.overflow = '';
 }
 
@@ -1589,7 +1628,7 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
 
 // 统一渲染详情卡片
 function renderDetailCard(card, type, opts) {
-  const {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, area, price, stay_days, routeInfo} = opts;
+  const {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, area, price, stay_days, routeInfo, recommended_routes} = opts;
   let html = '';
   // 确保图片src永不为空，天气用text_to_image兜底，景点/酒店用占位提示
   const imgSrc = image || (type === 'weather' ? getFallbackImgUrl(name, 'weather') : '');
@@ -1614,6 +1653,13 @@ function renderDetailCard(card, type, opts) {
   html += `</div>`;
   if (routeInfo) html += routeInfo;
   if (route_detail) html += `<div class="detail-section"><div class="detail-section-title">🗺️ 游玩路线</div><div class="detail-section-text">${route_detail}</div></div>`;
+  if (recommended_routes && Array.isArray(recommended_routes) && recommended_routes.length > 0) {
+    html += `<div class="detail-section"><div class="detail-section-title">🗺️ 推荐游览路线</div>`;
+    recommended_routes.forEach((r, i) => {
+      html += `<div class="detail-route-item"><span class="rr-num-detail">${i+1}</span>${r}</div>`;
+    });
+    html += `</div>`;
+  }
   html += `<div class="detail-section" style="margin-top:12px"><div class="detail-section-title">📖 详细介绍${fromCache?' <span style="font-size:12px;color:#52C41A">(已缓存)</span>':''}</div><div class="detail-long-text">${content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</div></div>`;
   if (location) html += `<div class="detail-section"><div class="detail-section-title">📍 坐标位置</div><div class="detail-section-text">${location}</div></div>`;
   html += `<button class="btn-regenerate" onclick="regenerateDetail('${cacheKey}','${type}','${name.replace(/'/g,"\\'")}')">🔄 重新生成介绍</button>`;

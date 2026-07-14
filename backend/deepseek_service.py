@@ -102,9 +102,9 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
       "day": 1,
       "date": "日期",
       "weather": {{"desc": "天气", "temp": "温度", "icon": "emoji"}},
-      "morning": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": ""}},
-      "afternoon": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": ""}},
-      "evening": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": ""}},
+      "morning": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "afternoon": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "evening": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
       "lunch": "午餐推荐",
       "dinner": "晚餐推荐",
       "transport": "交通建议"
@@ -119,13 +119,12 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 2. need_booking 标记需要提前预约的景点（如故宫、莫高窟、迪士尼等热门景点设为true）
 3. 结合天气预报合理安排室内外活动
 4. 上午/下午各安排1-2个景点，晚上安排1个
-5. 【重要】每天安排的景点不能重复出现！整个行程中每个独立景点只能出现一次
-6. 【多日大型景区例外】如果遇到大型景区需要多日游玩（如张家界国家森林公园、黄山风景区、九寨沟、稻城亚丁等），可以连续多天安排，但必须：
-   - 在 route_detail 字段中注明每天的游玩路线（如"南门进→金鞭溪→袁家界→百龙天梯"）
-   - 每天的入口/出口和游玩区域必须不同，确保路线不重复
-   - 连续天数不超过3天
-7. route_detail 字段：对于多日游玩的景区，填写具体游玩路线；对于普通单日景点，留空即可
-8. 只输出JSON，不要markdown代码块"""
+5. 【最高优先级】景点名绝对不能重复！整个{days}天行程中，每个独立景点名只能出现一次，不允许任何例外。即使同一大型景区，不同天也必须用不同子区域命名（如"张家界(金鞭溪-袁家界)"和"张家界(天子山-杨家界)"），确保景点名不重复，避免走回头路
+6. 对于大型景区（如张家界、黄山、九寨沟、故宫、颐和园等），每天安排不同区域/入口，按地理位置顺序游览，不走回头路：
+   - route_detail 字段中描述当天的具体游览路线（如"南门进→金鞭溪→袁家界→百龙天梯→东门出"）
+   - recommended_routes 字段中提供2-3条该景点的经典游览路线方案供用户参考（每条路线一句话描述，如"经典一日游：南门进→金鞭溪→袁家界→天子山→东门出（约6小时）"）
+   - 普通景点 recommended_routes 设为空数组 []
+7. 只输出JSON，不要markdown代码块"""
 
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
