@@ -637,19 +637,131 @@ let monitorTimer = null;   // 实时监测定时器
 let monitorRejected = false;  // 用户是否拒绝过监测建议
 let monitorStopped = false;   // 用户是否选择不再提示
 
+// 交通工具配图映射表
+var VEHICLE_IMAGE_MAP = {
+  airplane: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=commercial+airliner+in+blue+sky+photorealistic+4k&image_size=landscape_16_9',
+  high_speed_rail: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+high+speed+train+on+railway+photorealistic+4k&image_size=landscape_16_9',
+  car: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=car+on+highway+scenic+road+trip+photorealistic+4k&image_size=landscape_16_9',
+  bus: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+long+distance+bus+on+highway+photorealistic+4k&image_size=landscape_16_9'
+};
+
+// === 通用工具函数 ===
+
+// 解析坐标字符串 "lng,lat" 为 {lng, lat} 对象，无效返回 null
+function _parseCoords(locationStr) {
+  if (!locationStr) return null;
+  var parts = locationStr.split(',').map(Number);
+  if (isNaN(parts[0]) || isNaN(parts[1])) return null;
+  return { lng: parts[0], lat: parts[1] };
+}
+
+// 天气图标emoji映射表（统一维护，消除重复）
+var _WEATHER_EMOJI_MAP = {
+  '晴':'☀️','Sunny':'☀️','Clear':'☀️','少云':'🌤️','晴间多云':'⛅','多云':'⛅','Partly cloudy':'⛅','Cloudy':'☁️',
+  '阴':'☁️','阴天':'☁️','Overcast':'☁️','阵雨':'🌦️','雷阵雨':'⛈️','雷阵雨伴有冰雹':'⛈️','Thunder':'⛈️',
+  '小雨':'🌧️','Light rain':'🌦️','Patchy rain':'🌦️','Light drizzle':'🌦️','中雨':'🌧️','Moderate rain':'🌧️',
+  '大雨':'🌧️','Heavy rain':'🌧️','暴雨':'⛈️','大暴雨':'⛈️','特大暴雨':'⛈️','Rain':'🌧️',
+  '冻雨':'🌨️','雨':'🌧️','雨夹雪':'🌨️','小雪':'🌨️','中雪':'❄️','大雪':'❄️','暴雪':'❄️','雪':'❄️','Snow':'❄️',
+  '雾':'🌫️','Fog':'🌫️','Mist':'🌫️','霾':'🌫️','浮尘':'🌪️','扬沙':'🌪️','沙尘暴':'🌪️','强沙尘暴':'🌪️',
+  '大风':'💨','台风':'🌀','热带风暴':'🌀','风':'💨','热':'🔥','冷':'🥶'
+};
+
+// 根据天气描述获取emoji图标（统一入口，消除重复）
+function _getWeatherEmoji(weatherText) {
+  var desc = (weatherText || '晴').replace(/\s/g, '');
+  if (_WEATHER_EMOJI_MAP[desc]) return _WEATHER_EMOJI_MAP[desc];
+  if (desc.indexOf('转') >= 0) {
+    var parts = desc.split('转');
+    for (var i = 0; i < parts.length; i++) {
+      if (_WEATHER_EMOJI_MAP[parts[i]]) return _WEATHER_EMOJI_MAP[parts[i]];
+    }
+  }
+  for (var key in _WEATHER_EMOJI_MAP) {
+    if ((weatherText || '').includes(key)) return _WEATHER_EMOJI_MAP[key];
+  }
+  return '🌤️';
+}
+
+// 收集酒店和门票的标记点（renderOverview和updateOverviewMarkers共用）
+function _collectBookingMarkers(bookingInfo, startOrder) {
+  var markers = [];
+  var order = startOrder || 1;
+  (bookingInfo.hotels || []).forEach(function(hotel) {
+    var coords = _parseCoords(hotel.location);
+    if (coords) {
+      markers.push({ name: hotel.name, lng: coords.lng, lat: coords.lat, order: order, day: 0, type: 'hotel' });
+      order++;
+    }
+  });
+  (bookingInfo.tickets || []).forEach(function(ticket) {
+    if (ticket.location && ticket.need_booking) {
+      var coords = _parseCoords(ticket.location);
+      if (coords) {
+        markers.push({ name: ticket.spot, lng: coords.lng, lat: coords.lat, order: order, day: 0, type: 'ticket' });
+        order++;
+      }
+    }
+  });
+  return markers;
+}
+
+// 渲染中转/换乘步骤HTML
+function _renderTransferSteps(transfers) {
+  if (!transfers || !transfers.length) return '';
+  var html = '<div class="transfer-steps"><div class="transfer-title">🔄 中转/换乘详情</div>';
+  transfers.forEach(function(transfer, transferIndex) {
+    if (transferIndex > 0) {
+      html += '<div class="transfer-arrow">⬇️ 中转等待 <span class="transfer-wait">' + (transfer.transfer_time||'') + '</span></div>';
+    }
+    html += '<div class="transfer-step"><div class="transfer-step-num">' + (transfer.step||(transferIndex+1)) + '</div>';
+    html += '<div class="transfer-step-info">';
+    html += '<div><b>' + (transfer.type||'') + '</b>';
+    if (transfer.flight_number) html += ' <b style="color:#4A90D9">' + transfer.flight_number + '</b>';
+    html += '</div>';
+    html += '<div>' + (transfer.from_station||'') + ' → ' + (transfer.to_station||'') + '</div>';
+    html += '<div>出发：' + (transfer.departure_time||'') + ' | 到达：' + (transfer.arrival_time||'') + ' | ' + (transfer.duration||'') + '</div>';
+    if (transfer.note) html += '<div style="color:#999;font-size:13px">' + transfer.note + '</div>';
+    html += '</div></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// 渲染单个交通卡片（出发/返程通用）
+function _renderTransportCard(transport, title, icon) {
+  var vehicleImage = transport.vehicle_image || 'airplane';
+  var imageSrc = VEHICLE_IMAGE_MAP[vehicleImage] || VEHICLE_IMAGE_MAP['airplane'];
+  var arrivalLabel = transport.cross_day ? '预计到达（跨天）：' : '预计到达：';
+
+  var html = '<div class="bottom-card"><div class="bottom-title">' + icon + ' ' + title + '</div>';
+  html += '<div class="transport-img-wrap"><img src="' + imageSrc + '" alt="' + (transport.type||'交通') + '" onerror="this.parentElement.style.display=\\'none\\'" loading="lazy"></div>';
+  html += '<div style="font-size:16px;line-height:1.8">';
+  html += '<div>交通方式：<b>' + (transport.type||'') + '</b></div>';
+  html += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (transport.flight_number||'（请自行查询实时班次）') + '</b></div>';
+  html += '<div>出发时间：<b>' + (transport.departure_time||'') + '</b></div>';
+  html += '<div>出发站/机场：' + (transport.station||'') + '</div>';
+  html += '<div>' + arrivalLabel + '<b>' + (transport.arrival_time||'') + '</b> | 耗时：' + (transport.duration||'') + '</div>';
+  html += '<div>预估费用：' + (transport.cost||'') + '</div>';
+  if (transport.station_to_hotel) html += '<div>🏨 到酒店：' + (transport.station_to_hotel||'') + '</div>';
+  html += '<div style="color:#E67E22">⚠ ' + (transport.note||'') + '</div>';
+  html += _renderTransferSteps(transport.transfers);
+  html += '</div></div>';
+  return html;
+}
+
 // 出行方式切换
 function switchTransport(type) {
   isSelfDrive = (type === 'selfdrive');
-  document.querySelectorAll('#transportGroup .tag').forEach(b => {
-    b.classList.toggle('active', b.dataset.tag === type);
+  document.querySelectorAll('#transportGroup .tag').forEach(function(transportBtn) {
+    transportBtn.classList.toggle('active', transportBtn.dataset.tag === type);
   });
 }
 
 // 预算类型切换
 function switchBudgetType(type) {
   budgetType = type;
-  document.querySelectorAll('#budgetTypeRow .budget-type-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.type === type);
+  document.querySelectorAll('#budgetTypeRow .budget-type-btn').forEach(function(budgetBtn) {
+    budgetBtn.classList.toggle('active', budgetBtn.dataset.type === type);
   });
 }
 
@@ -670,7 +782,7 @@ function imgFallback(img, type, name, onClickFn) {
   img.style.opacity = '0.5';
   // 优先尝试API搜索真实图片，失败则显示渐变占位卡
   fetch(API + '/api/spot-images?query=' + encodeURIComponent(query) + '&limit=3')
-    .then(r => r.json())
+    .then(function(response) { return response.json(); })
     .then(data => {
       if (data.success && data.images && data.images.length > 0) {
         const newSrc = data.images[0].url;
@@ -692,16 +804,16 @@ function imgFallback(img, type, name, onClickFn) {
 }
 
 function showGradientFallback(img, type, name, onClickFn) {
-  const colors = {
+  const colorConfig = {
     spot:   { bg: 'linear-gradient(135deg, #4A90D9, #6DB3F2)', icon: '🏛️', w: '100%', h: '200px' },
     hotel:  { bg: 'linear-gradient(135deg, #E67E22, #F0A04B)', icon: '🏨', w: '100%', h: '160px' },
     weather:{ bg: 'linear-gradient(135deg, #5B9BD5, #7EC8E3)', icon: '🌤️', w: '100%', h: '150px' },
   };
-  const c = colors[type] || colors.spot;
+  const cfg = colorConfig[type] || colorConfig.spot;
   const div = document.createElement('div');
   div.className = 'img-fallback';
-  div.style.cssText = `width:${c.w};height:${c.h};background:${c.bg};cursor:pointer`;
-  div.innerHTML = `<span class="fb-icon">${c.icon}</span><span class="fb-name">${name||''}</span><span class="fb-hint">点击查看详情</span>`;
+  div.style.cssText = `width:${cfg.w};height:${cfg.h};background:${cfg.bg};cursor:pointer`;
+  div.innerHTML = `<span class="fb-icon">${cfg.icon}</span><span class="fb-name">${name||''}</span><span class="fb-hint">点击查看详情</span>`;
   if (onClickFn) div.onclick = onClickFn;
   if (img && img.parentNode) img.parentNode.replaceChild(div, img);
 }
@@ -737,14 +849,14 @@ function updatePeopleHint() {
 
 // 游玩节奏滑块（连续拖曳 0-100）
 function updatePace() {
-  const v = parseInt(document.getElementById('paceSlider').value);
-  let label;
-  if (v <= 10) label = '极慢节奏';
-  else if (v <= 25) label = '慢节奏';
-  else if (v <= 40) label = '偏休闲';
-  else if (v <= 55) label = '适中节奏';
-  else if (v <= 70) label = '偏紧凑';
-  else if (v <= 85) label = '快节奏';
+  var paceValue = parseInt(document.getElementById('paceSlider').value);
+  var label;
+  if (paceValue <= 10) label = '极慢节奏';
+  else if (paceValue <= 25) label = '慢节奏';
+  else if (paceValue <= 40) label = '偏休闲';
+  else if (paceValue <= 55) label = '适中节奏';
+  else if (paceValue <= 70) label = '偏紧凑';
+  else if (paceValue <= 85) label = '快节奏';
   else label = '极快节奏';
   document.getElementById('paceVal').textContent = label;
 }
@@ -831,7 +943,7 @@ const PROGRESS_TEXTS = [
 function loadHistory() { try { return JSON.parse(localStorage.getItem('trip_history')||'[]'); } catch(e){ return []; } }
 function saveToHistory(data) {
   let history = loadHistory();
-  const idx = history.findIndex(h => h.destination===data.destination && h.days===data.days);
+  const idx = history.findIndex(function(historyItem) { return historyItem.destination===data.destination && historyItem.days===data.days; });
   const record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data };
   if(idx>-1) history[idx]=record; else history.unshift(record);
   if(history.length>20) history.pop();
@@ -844,8 +956,8 @@ function renderHistory() {
   if(history.length===0){ sec.style.display='none'; return; }
   sec.style.display='block';
   let html = '';
-  history.forEach(h => {
-    html += `<div class="history-item" onclick="loadHistoryTrip(${h.id})"><div class="h-left"><span class="h-dest">${h.destination}</span><span class="h-days">${h.days}日游</span></div><span class="h-time">${h.time}</span></div>`;
+  history.forEach(function(historyItem) {
+    html += `<div class="history-item" onclick="loadHistoryTrip(${historyItem.id})"><div class="h-left"><span class="h-dest">${historyItem.destination}</span><span class="h-days">${historyItem.days}日游</span></div><span class="h-time">${historyItem.time}</span></div>`;
   });
   document.getElementById('historyList').innerHTML = html;
 }
@@ -857,7 +969,7 @@ function toggleHistory() {
 }
 function loadHistoryTrip(id) {
   const history = loadHistory();
-  const record = history.find(h => h.id===id);
+  const record = history.find(function(historyItem) { return historyItem.id===id; });
   if(record && record.data) { tripData = record.data; renderOverview(record.data); }
 }
 
@@ -886,9 +998,9 @@ startEl.addEventListener('change', function() {
 });
 endEl.addEventListener('change', updateDays);
 function updateDays() {
-  const s = startEl.value, e = endEl.value;
-  if (s && e) {
-    const days = Math.max(1, Math.ceil((new Date(e) - new Date(s)) / 86400000) + 1);
+  var startDate = startEl.value, endDate = endEl.value;
+  if (startDate && endDate) {
+    const days = Math.max(1, Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1);
     document.getElementById('daysNum').textContent = days;
     document.getElementById('daysHint').style.display = 'block';
     return days;
@@ -952,6 +1064,47 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
   }
 });
 
+// 收集所有需要预加载的图片URL
+function _collectImageTasks(data) {
+  var imgTasks = [];
+  (data.itinerary||[]).forEach(function(day) {
+    var weatherDay = day.weather||{};
+    if (weatherDay.image) imgTasks.push({url: weatherDay.image, type: 'weather', name: day.date});
+    ['morning','afternoon','evening'].forEach(function(slotName) {
+      var slotData = day[slotName];
+      if (slotData && slotData.image) imgTasks.push({url: slotData.image, type: 'spot', name: slotData.spot});
+    });
+  });
+  var bookingInfo = data.booking_info||{};
+  (bookingInfo.hotels||[]).forEach(function(hotel) { if (hotel.image) imgTasks.push({url: hotel.image, type: 'hotel', name: hotel.name}); });
+  (bookingInfo.hotel_changes||[]).forEach(function(hotelChange) { if (hotelChange.image) imgTasks.push({url: hotelChange.image, type: 'hotel', name: hotelChange.to_hotel}); });
+  return imgTasks;
+}
+
+// 预加载图片列表并更新进度条
+async function _preloadImageTasks(imgTasks) {
+  var total = imgTasks.length;
+  document.getElementById('loadProgress').textContent = `0/${total} 张图片已加载`;
+  document.getElementById('loadBarFill').style.width = '0%';
+  var loaded = 0;
+  var updateProgress = function() {
+    loaded++;
+    var pct = Math.round(loaded / total * 100);
+    document.getElementById('loadProgress').textContent = `${loaded}/${total} 张图片已加载`;
+    document.getElementById('loadBarFill').style.width = pct + '%';
+  };
+  var preloadOne = function(url) {
+    return new Promise(function(resolve) {
+      var img = new Image();
+      img.onload = function() { updateProgress(); resolve(); };
+      img.onerror = function() { updateProgress(); resolve(); };
+      img.src = url;
+      setTimeout(function() { updateProgress(); resolve(); }, 8000);
+    });
+  };
+  await Promise.all(imgTasks.map(function(task) { return preloadOne(task.url); }));
+}
+
 // 图片预加载：收集所有图片URL并预加载，完成后显示总览页
 async function showLoadingAndPreload(data) {
   // 隐藏首页，显示加载页
@@ -963,49 +1116,13 @@ async function showLoadingAndPreload(data) {
   document.getElementById('loadProgress').textContent = '正在收集图片...';
   document.getElementById('loadBarFill').style.width = '0%';
 
-  // 收集所有需要预加载的图片URL
-  const imgTasks = [];
-  (data.itinerary||[]).forEach(day => {
-    const w = day.weather||{};
-    if (w.image) imgTasks.push({url: w.image, type: 'weather', name: day.date});
-    ['morning','afternoon','evening'].forEach(slot => {
-      const s = day[slot];
-      if (s && s.image) imgTasks.push({url: s.image, type: 'spot', name: s.spot});
-    });
-  });
-  const bk = data.booking_info||{};
-  (bk.hotels||[]).forEach(h => { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.name}); });
-  (bk.hotel_changes||[]).forEach(h => { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.to_hotel}); });
-
-  const total = imgTasks.length;
-  document.getElementById('loadProgress').textContent = `0/${total} 张图片已加载`;
-  document.getElementById('loadBarFill').style.width = '0%';
-
-  if (total === 0) {
+  var imgTasks = _collectImageTasks(data);
+  if (imgTasks.length === 0) {
     loadPage.classList.remove('show');
     renderOverview(data);
     return;
   }
-
-  // 预加载所有图片（带进度条）
-  let loaded = 0;
-  const updateProgress = () => {
-    loaded++;
-    const pct = Math.round(loaded / total * 100);
-    document.getElementById('loadProgress').textContent = `${loaded}/${total} 张图片已加载`;
-    document.getElementById('loadBarFill').style.width = pct + '%';
-  };
-
-  const preloadOne = (url) => new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => { updateProgress(); resolve(); };
-    img.onerror = () => { updateProgress(); resolve(); };
-    img.src = url;
-    setTimeout(() => { updateProgress(); resolve(); }, 8000);
-  });
-
-  await Promise.all(imgTasks.map(t => preloadOne(t.url)));
-
+  await _preloadImageTasks(imgTasks);
   // 预加载完成后显示总览
   loadPage.classList.remove('show');
   renderOverview(data);
@@ -1038,39 +1155,34 @@ function renderOverview(data){
   header.appendChild(favBtn);
 
   // 按天构建列表 + 收集所有景点坐标
-  let allSpots = 0;
-  let listHtml = '';
-  allMarkers = [];
-  let globalOrder = 1;
+  var listHtml = '';
+  allMarkers = _collectItineraryMarkers(data.itinerary);
 
-  (data.itinerary||[]).forEach((day, idx) => {
-    const spots = [];
-    ['morning','afternoon','evening'].forEach(slot => {
-      const s = day[slot];
-      if(s && s.spot){
-        const [lng, lat] = (s.location||'').split(',').map(Number);
-        if (!isNaN(lng) && !isNaN(lat)) {
-          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: s.location, need_booking: s.need_booking, lng, lat, order: globalOrder });
-          allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
-          globalOrder++;
+  (data.itinerary||[]).forEach(function(day, idx) {
+    var spots = [];
+    ['morning','afternoon','evening'].forEach(function(slot) {
+      var slotData = day[slot];
+      if (slotData && slotData.spot) {
+        var coords = _parseCoords(slotData.location);
+        if (coords) {
+          spots.push({ name: slotData.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: slotData.location, need_booking: slotData.need_booking, lng: coords.lng, lat: coords.lat });
         } else {
-          spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: '', need_booking: s.need_booking });
+          spots.push({ name: slotData.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: '', need_booking: slotData.need_booking });
         }
       }
     });
-    allSpots += spots.length;
-    listHtml += `<div class="day-summary">
+    listHtml += '<div class="day-summary">
       <div class="day-summary-header" onclick="toggleDay(${idx})">
         <span class="day-label">Day ${day.day}</span>
         <span class="day-summary-date">${day.date||''}</span>
         <span class="day-arrow" id="dayArrow${idx}">▶</span>
       </div>
       <div class="day-spots" id="daySpots${idx}">`;
-    spots.forEach((s, si) => {
+    spots.forEach(function(spot, spotIndex) {
       listHtml += `<div class="day-spot">
-        <span class="spot-num">${s.order||(si+1)}</span>
-        <div class="spot-info"><span class="spot-name">${s.name}${s.need_booking?' ⚠需预约':''}</span><span class="spot-time">${s.time}</span></div>
-        ${s.location ? `<span class="spot-loc-icon" onclick="focusSpot('${s.name}',${s.lat},${s.lng})">📍</span>` : ''}
+        <span class="spot-num">${spot.order||(spotIndex+1)}</span>
+        <div class="spot-info"><span class="spot-name">${spot.name}${spot.need_booking?' ⚠需预约':''}</span><span class="spot-time">${spot.time}</span></div>
+        ${spot.location ? `<span class="spot-loc-icon" onclick="focusSpot('${spot.name}',${spot.lat},${spot.lng})">📍</span>` : ''}
       </div>`;
     });
     listHtml += `</div></div>`;
@@ -1079,25 +1191,8 @@ function renderOverview(data){
   document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个景点已标注`;
 
   // 收集酒店和门票预约位置到地图
-  const bk = data.booking_info || {};
-  (bk.hotels || []).forEach(h => {
-    if (h.location) {
-      const [lng, lat] = h.location.split(',').map(Number);
-      if (!isNaN(lng) && !isNaN(lat)) {
-        allMarkers.push({ name: h.name, lng, lat, order: globalOrder, day: 0, type: 'hotel' });
-        globalOrder++;
-      }
-    }
-  });
-  (bk.tickets || []).forEach(t => {
-    if (t.location && t.need_booking) {
-      const [lng, lat] = t.location.split(',').map(Number);
-      if (!isNaN(lng) && !isNaN(lat)) {
-        allMarkers.push({ name: t.spot, lng, lat, order: globalOrder, day: 0, type: 'ticket' });
-        globalOrder++;
-      }
-    }
-  });
+  var bookingMarkers = _collectBookingMarkers(data.booking_info || {}, allMarkers.length + 1);
+  allMarkers = allMarkers.concat(bookingMarkers);
   document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个地点已标注（含酒店、需预约景点）`;
 
   // 初始化高德地图
@@ -1117,8 +1212,8 @@ function initOverviewMap(markers) {
   // 计算中心点
   let centerLng = 116.4, centerLat = 39.9;
   if (markers.length > 0) {
-    centerLng = markers.reduce((s,m) => s + m.lng, 0) / markers.length;
-    centerLat = markers.reduce((s,m) => s + m.lat, 0) / markers.length;
+    centerLng = markers.reduce(function(sum, marker) { return sum + marker.lng; }, 0) / markers.length;
+    centerLat = markers.reduce(function(sum, marker) { return sum + marker.lat; }, 0) / markers.length;
   }
 
   overviewMap = new AMap.Map('overviewMapContainer', {
@@ -1128,27 +1223,27 @@ function initOverviewMap(markers) {
   });
 
   // 添加标记点
-  markers.forEach(m => {
+  markers.forEach(function(marker) {
     let bgColor = '#4A90D9';
-    let label = `${m.order}`;
-    if (m.type === 'hotel') { bgColor = '#E67E22'; label = '🏨'; }
-    else if (m.type === 'ticket') { bgColor = '#E74C3C'; label = '🎫'; }
+    let label = `${marker.order}`;
+    if (marker.type === 'hotel') { bgColor = '#E67E22'; label = '🏨'; }
+    else if (marker.type === 'ticket') { bgColor = '#E74C3C'; label = '🎫'; }
     const content = `<div style="background:${bgColor};color:#fff;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;font-weight:700">${label}</div>`;
-    const marker = new AMap.Marker({
-      position: [m.lng, m.lat],
+    const amapMarker = new AMap.Marker({
+      position: [marker.lng, marker.lat],
       content: content,
       offset: new AMap.Pixel(-11, -11),
-      title: m.type === 'hotel' ? `🏨 ${m.name}` : m.type === 'ticket' ? `🎫 ${m.name}` : `${m.order}. Day${m.day} ${m.name}`,
+      title: marker.type === 'hotel' ? `🏨 ${marker.name}` : marker.type === 'ticket' ? `🎫 ${marker.name}` : `${marker.order}. Day${marker.day} ${marker.name}`,
     });
-    marker.setMap(overviewMap);
+    amapMarker.setMap(overviewMap);
 
-    marker.on('click', () => {
-      const prefix = m.type === 'hotel' ? '🏨 ' : m.type === 'ticket' ? '🎫 需预约 ' : '';
+    amapMarker.on('click', function() {
+      const prefix = marker.type === 'hotel' ? '🏨 ' : marker.type === 'ticket' ? '🎫 需预约 ' : '';
       const info = new AMap.InfoWindow({
-        content: `<div style="padding:4px 8px;font-size:13px"><b>${prefix}${m.name}</b>${m.day ? '<br>Day'+m.day : ''}</div>`,
+        content: `<div style="padding:4px 8px;font-size:13px"><b>${prefix}${marker.name}</b>${marker.day ? '<br>Day'+marker.day : ''}</div>`,
         offset: new AMap.Pixel(0, -30),
       });
-      info.open(overviewMap, [m.lng, m.lat]);
+      info.open(overviewMap, [marker.lng, marker.lat]);
     });
   });
 
@@ -1265,7 +1360,7 @@ function loadSavedTrips() {
       } catch(e) {}
     }
   });
-  return savedTrips.sort((a,b) => new Date(b.saved_at) - new Date(a.saved_at));
+  return savedTrips.sort(function(tripA, tripB) { return new Date(tripB.saved_at) - new Date(tripA.saved_at); });
 }
 
 function openAmapLink(name, location){
@@ -1277,7 +1372,7 @@ function openAmapLink(name, location){
 
 // 天气渐变卡片配色方案（100%可靠，不依赖任何外部API）
 function getWeatherGradient(desc) {
-  var d = (desc||'晴').replace(/\s/g,'');
+  var weatherDesc = (desc||'晴').replace(/\s/g,'');
   // 精确匹配
   var gradMap = {
     '晴':'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
@@ -1316,304 +1411,265 @@ function getWeatherGradient(desc) {
     '热':'linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%)',
     '冷':'linear-gradient(135deg, #a8d8ea 0%, #2193b0 100%)'
   };
-  if (gradMap[d]) return gradMap[d];
+  if (gradMap[weatherDesc]) return gradMap[weatherDesc];
   // 处理"X转Y"组合
-  if (d.indexOf('转')>=0) {
-    var parts = d.split('转');
+  if (weatherDesc.indexOf('转')>=0) {
+    var parts = weatherDesc.split('转');
     for (var i=0;i<parts.length;i++) {
       if (gradMap[parts[i]]) return gradMap[parts[i]];
     }
   }
   // 模糊匹配
-  for (var k in gradMap) {
-    if (d.indexOf(k)>=0 || k.indexOf(d)>=0) return gradMap[k];
+  for (var key in gradMap) {
+    if (weatherDesc.indexOf(key)>=0 || key.indexOf(weatherDesc)>=0) return gradMap[key];
   }
   return 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)';
 }
 
 function getWeatherIcon(desc) {
-  var d = (desc||'晴').replace(/\s/g,'');
-  var iconMap = {
-    '晴':'☀️','少云':'🌤️','晴间多云':'⛅','多云':'⛅','阴':'☁️','阴天':'☁️',
-    '阵雨':'🌦️','雷阵雨':'⛈️','雷阵雨伴有冰雹':'⛈️',
-    '小雨':'🌧️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','大暴雨':'⛈️','特大暴雨':'⛈️',
-    '冻雨':'🌨️','雨':'🌧️','雨夹雪':'🌨️',
-    '小雪':'🌨️','中雪':'❄️','大雪':'❄️','暴雪':'❄️','雪':'❄️',
-    '雾':'🌫️','霾':'🌫️','浮尘':'🌪️','扬沙':'🌪️','沙尘暴':'🌪️','强沙尘暴':'🌪️',
-    '大风':'💨','台风':'🌀','热带风暴':'🌀','风':'💨',
-    '热':'🔥','冷':'🥶'
-  };
-  if (iconMap[d]) return iconMap[d];
-  if (d.indexOf('转')>=0) {
-    var parts = d.split('转');
-    for (var i=0;i<parts.length;i++) {
-      if (iconMap[parts[i]]) return iconMap[parts[i]];
-    }
+  return _getWeatherEmoji(desc);
+}
+
+// 渲染天气横条
+function _renderWeatherBar(weatherData) {
+  var html = '';
+  (weatherData||[]).forEach(function(weatherDay) {
+    html += '<div class="weather-item"><span class="w-icon">' + (weatherDay.icon||'☀️') + '</span><span class="w-date">' + weatherDay.date + '</span><span class="w-desc">' + weatherDay.weather + '</span><span class="w-temp">' + weatherDay.temp + '</span></div>';
+  });
+  return html;
+}
+
+// 渲染单个天卡片
+function _renderDayCard(day, dayIdx) {
+  var weatherDay = day.weather||{};
+  var weatherDesc = weatherDay.desc||'晴';
+  var weatherIcon = weatherDay.icon||'☀️';
+  var weatherTemp = weatherDay.temp||'';
+  var weatherImage = weatherDay.image || '';
+  var weatherGradient = getWeatherGradient(weatherDesc);
+  var weatherBgStyle = 'background:' + weatherGradient + ';';
+  var weatherImgHtml = '';
+  if (weatherImage) {
+    weatherImgHtml = '<img class="weather-card-bg" src="' + weatherImage + '" onerror="this.style.display=\\'none\\'" alt="">';
   }
-  for (var k in iconMap) {
-    if (d.indexOf(k)>=0 || k.indexOf(d)>=0) return iconMap[k];
+  return '<div class="day-card">' +
+    '<div class="card-header"><span class="day-badge">Day ' + day.day + '</span><span class="day-date">' + day.date + '</span><span class="day-weather">' + weatherIcon + ' ' + weatherDesc + ' ' + weatherTemp + '</span><button class="map-btn" onclick="openDayAmap(' + dayIdx + ')">🗺️ 高德地图</button></div>' +
+    '<div class="weather-card" style="' + weatherBgStyle + '" onclick="showWeatherHourly(' + dayIdx + ')">' +
+      weatherImgHtml +
+      '<span class="wc-icon">' + getWeatherIcon(weatherDesc) + '</span>' +
+      '<span class="wc-desc">' + weatherDesc + '</span>' +
+      '<span class="wc-temp">' + weatherTemp + '</span>' +
+      '<span class="wc-hint">点击查看逐时天气 ›</span>' +
+    '</div>' +
+    renderSlot('上午','morning',day.morning,dayIdx,0) +
+    renderSlot('下午','afternoon',day.afternoon,dayIdx,1) +
+    renderSlot('晚上','evening',day.evening,dayIdx,2) +
+    '<div class="day-footer">' +
+      '<div class="footer-row"><span class="footer-icon">🍜</span><span class="footer-label">午餐：</span><span class="footer-text">' + (day.lunch||'') + '</div>' +
+      '<div class="footer-row"><span class="footer-icon">🍽️</span><span class="footer-label">晚餐：</span><span class="footer-text">' + (day.dinner||'') + '</div>' +
+      '<div class="footer-row"><span class="footer-icon">🚗</span><span class="footer-label">交通：</span><span class="footer-text">' + (day.transport||'') + '</div>' +
+    '</div></div>';
+}
+
+// 渲染所有天卡片
+function _renderDayCards(itinerary) {
+  var html = '';
+  (itinerary||[]).forEach(function(day, dayIdx) {
+    html += _renderDayCard(day, dayIdx);
+  });
+  return html;
+}
+
+// 渲染预算卡片
+function _renderBudgetCard(budgetData) {
+  var html = '<div class="bottom-card"><div class="bottom-title">预算明细</div><div class="budget-grid">';
+  for (var category in budgetData) {
+    html += '<div class="budget-item"><span class="budget-name">' + category + '</span><span class="budget-value">' + budgetData[category] + '</span></div>';
   }
-  return '🌤️';
+  html += '</div></div>';
+  return html;
+}
+
+// 渲染机票/火车票卡片
+function _renderFlightsCard(bookingInfo) {
+  if (!bookingInfo.flights || !bookingInfo.flights.length) return '';
+  var html = '<div class="bottom-card"><div class="bottom-title">✈️ 机票/火车票</div>';
+  bookingInfo.flights.forEach(function(flight) {
+    html += '<div class="booking-item">' +
+      '<div class="booking-row"><span class="booking-type">' + flight.type + '</span><span class="booking-suggest">' + flight.suggest + '</span></div>' +
+      '<div class="booking-row"><span class="booking-price">' + flight.price + '</span><span class="booking-note">' + (flight.note||'') + '</span></div>' +
+      '<button class="btn-book" onclick="window.open(\'' + flight.link + '\',\'_blank\')">立即订购</button>' +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// 渲染单个酒店图片HTML（酒店和换酒店共用，消除重复代码）
+function _renderHotelImageHtml(hotel, nameKey, areaKey, stayDaysLabel) {
+  var hotelName = hotel[nameKey] || '';
+  var hotelImage = hotel.image || '';
+  var hotelArea = hotel[areaKey] || '';
+  var hotelPrice = hotel.price || '';
+  var hotelReason = hotel.reason || '';
+  var hotelLocation = hotel.location || '';
+  var escName = hotelName.replace(/'/g,"\\'");
+  var escReason = hotelReason.replace(/'/g,"\\'");
+  var escImage = hotelImage.replace(/'/g,"\\'");
+  var escArea = hotelArea.replace(/'/g,"\\'");
+  var clickHandler = hotelImage
+    ? 'onclick="showHotelDetail(\'' + escName + '\',\'' + escImage + '\',\'' + escReason + '\',\'' + hotelLocation + '\',\'' + escArea + '\',\'' + hotelPrice + '\',\'' + stayDaysLabel + '\')"'
+    : 'onclick="showHotelDetail(\'' + escName + '\',\'\',\'' + escReason + '\',\'' + hotelLocation + '\',\'' + escArea + '\',\'' + hotelPrice + '\',\'' + stayDaysLabel + '\')"';
+  var imgHtml = hotelImage
+    ? '<img class="hotel-img" src="' + hotelImage + '" alt="' + hotelName + '" onerror="imgFallback(this,\'hotel\',\'' + escName + '\',this.onclick)" ' + clickHandler + '>'
+    : '<div class="hotel-placeholder" ' + clickHandler + '><div class="ph-hotel-name">' + hotelName + '</div><div class="ph-hint">暂无真实照片</div></div>';
+  return imgHtml;
+}
+
+// 渲染酒店推荐卡片
+function _renderHotelsCard(bookingInfo) {
+  if (!bookingInfo.hotels || !bookingInfo.hotels.length) return '';
+  var html = '<div class="bottom-card"><div class="bottom-title">🏨 酒店推荐</div>';
+  bookingInfo.hotels.forEach(function(hotel, hotelIdx) {
+    var imgHtml = _renderHotelImageHtml(hotel, 'name', 'area', hotel.stay_days||'');
+    html += '<div class="booking-item">' +
+      '<div class="booking-row"><span class="booking-hotel-name">' + hotel.name + '</span></div>' +
+      '<div class="booking-row"><span class="booking-area">' + (hotel.area||'') + '</span><span class="booking-price">' + hotel.price + '</span></div>' +
+      '<div class="booking-reason">' + (hotel.reason||'') + '</div>' +
+      (hotel.stay_days ? '<div class="booking-reason" style="color:#4A90D9">📅 ' + hotel.stay_days + '入住</div>' : '') +
+      imgHtml +
+      (hotel.location ? '<div class="spot-coord"><span class="coord-icon">📌</span>' + hotel.location + '</div>' : '') +
+      '<div class="btn-book-row">' +
+        '<button class="btn-book" onclick="window.open(\'' + hotel.link + '\',\'_blank\')">预订酒店</button>' +
+        (hotel.location ? '<button class="btn-map" onclick="openHotelMap(' + hotelIdx + ')">🗺️ 查看地图</button>' : '') +
+      '</div></div>';
+  });
+  // 换酒店推荐
+  if (bookingInfo.hotel_changes && bookingInfo.hotel_changes.length) {
+    html += '<div style="margin-top:16px"><div class="bottom-title" style="border-left-color:#E67E22">🔄 换酒店建议</div>';
+    bookingInfo.hotel_changes.forEach(function(hotelChange) {
+      var imgHtml = _renderHotelImageHtml(hotelChange, 'to_hotel', 'new_area', 'Day' + hotelChange.change_day + '起');
+      html += '<div class="hotel-change-card">' +
+        '<div class="hotel-change-title">Day ' + hotelChange.change_day + ' 换酒店</div>' +
+        imgHtml +
+        '<div class="hotel-change-row">🏨 <b>' + hotelChange.from_hotel + '</b> → <b>' + hotelChange.to_hotel + '</b></div>' +
+        '<div class="hotel-change-row">📍 ' + (hotelChange.new_area||'') + ' | ' + (hotelChange.price||'') + '</div>' +
+        '<div class="hotel-change-row">💡 ' + (hotelChange.reason||'') + '</div>' +
+        (hotelChange.location ? '<div class="spot-coord"><span class="coord-icon">📌</span>' + hotelChange.location + '</div>' : '') +
+        '<button class="btn-book" style="margin-top:8px" onclick="window.open(\'' + hotelChange.link + '\',\'_blank\')">预订新酒店</button>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// 渲染门票预约卡片
+function _renderTicketsCard(bookingInfo) {
+  if (!bookingInfo.tickets || !bookingInfo.tickets.length) return '';
+  var html = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约（需提前预约）</div>';
+  bookingInfo.tickets.forEach(function(ticket) {
+    html += '<div class="booking-item ticket-item">' +
+      '<div class="booking-row"><span class="ticket-spot">' + ticket.spot + '</span><span class="ticket-price">' + ticket.price + '</span></div>' +
+      (ticket.need_booking ? '<div class="booking-row"><span class="ticket-booking-warn">⚠ 需提前' + ticket.booking_days + '预约</span></div>' : '') +
+      '<div class="booking-row"><span class="ticket-platform">平台：' + (ticket.platform||'') + '</span></div>' +
+      '<div class="ticket-note">' + (ticket.note||'') + '</div>' +
+      '<button class="btn-book warn" onclick="window.open(\'' + ticket.link + '\',\'_blank\')">去预约</button>' +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// 渲染预约贴士卡片
+function _renderBookingTipsCard(bookingInfo) {
+  if (!bookingInfo.booking_tips || !bookingInfo.booking_tips.length) return '';
+  var html = '<div class="bottom-card"><div class="bottom-title">📋 预约贴士</div>';
+  bookingInfo.booking_tips.forEach(function(tip) {
+    html += '<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">' + tip + '</span></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// 渲染出行贴士卡片
+function _renderTipsCard(tips) {
+  var html = '<div class="bottom-card"><div class="bottom-title">出行贴士</div>';
+  (tips||[]).forEach(function(tip) {
+    html += '<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">' + tip + '</span></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// 从行程中收集所有标记点（renderOverview和updateOverviewMarkers共用）
+function _collectItineraryMarkers(itinerary) {
+  var markers = [];
+  var globalOrder = 1;
+  (itinerary||[]).forEach(function(day) {
+    ['morning','afternoon','evening'].forEach(function(slot) {
+      var slotData = day[slot];
+      if (slotData && slotData.spot && slotData.location) {
+        var coords = _parseCoords(slotData.location);
+        if (coords) {
+          markers.push({ name: slotData.spot, lng: coords.lng, lat: coords.lat, order: globalOrder, day: day.day });
+          globalOrder++;
+        }
+      }
+    });
+  });
+  return markers;
 }
 
 function renderTrip(data){
+  var bookingInfo = data.booking_info || {};
   tripData = data;
   document.getElementById('tripTitle').textContent = data.destination + data.days + '日游';
-  let wHtml = '';
-  (data.weather||[]).forEach(w=>{
-    wHtml += `<div class="weather-item"><span class="w-icon">${w.icon||'☀️'}</span><span class="w-date">${w.date}</span><span class="w-desc">${w.weather}</span><span class="w-temp">${w.temp}</span></div>`;
-  });
-  document.getElementById('weatherBar').innerHTML = wHtml;
+  document.getElementById('weatherBar').innerHTML = _renderWeatherBar(data.weather);
 
-  // 出发/返程交通卡片
-  let transHtml = '';
-  var viMap = {airplane:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=commercial+airliner+in+blue+sky+photorealistic+4k&image_size=landscape_16_9',high_speed_rail:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+high+speed+train+on+railway+photorealistic+4k&image_size=landscape_16_9',car:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=car+on+highway+scenic+road+trip+photorealistic+4k&image_size=landscape_16_9',bus:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+long+distance+bus+on+highway+photorealistic+4k&image_size=landscape_16_9'};
-  if (data.departure_transport) {
-    var dt = data.departure_transport;
-    transHtml += '<div class="bottom-card"><div class="bottom-title">🚀 出发交通</div>';
-    // 交通工具配图
-    var vi = dt.vehicle_image || 'airplane';
-    var viSrc = viMap[vi] || viMap['airplane'];
-    transHtml += '<div class="transport-img-wrap"><img src="' + viSrc + '" alt="' + (dt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
-    transHtml += '<div style="font-size:16px;line-height:1.8">';
-    transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
-    transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (dt.flight_number||'（请自行查询实时班次）') + '</b></div>';
-    transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + '</b></div>';
-    transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
-    var arrivalLabel = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
-    transHtml += '<div>' + arrivalLabel + '<b>' + (dt.arrival_time||'') + '</b> | 耗时：' + (dt.duration||'') + '</div>';
-    transHtml += '<div>预估费用：' + (dt.cost||'') + '</div>';
-    if (dt.station_to_hotel) transHtml += '<div>🏨 到酒店：' + dt.station_to_hotel + '</div>';
-    transHtml += '<div style="color:#E67E22">⚠️ ' + (dt.note||'') + '</div>';
-    // 中转/换乘步骤
-    if (dt.transfers && dt.transfers.length > 0) {
-      transHtml += '<div class="transfer-steps"><div class="transfer-title">🔄 中转/换乘详情</div>';
-      dt.transfers.forEach(function(tr, tri){
-        if (tri > 0) transHtml += '<div class="transfer-arrow">⬇️ 中转等待 <span class="transfer-wait">' + (tr.transfer_time||'') + '</span></div>';
-        transHtml += '<div class="transfer-step"><div class="transfer-step-num">' + (tr.step||(tri+1)) + '</div>';
-        transHtml += '<div class="transfer-step-info">';
-        transHtml += '<div><b>' + (tr.type||'') + '</b>';
-        if (tr.flight_number) transHtml += ' <b style="color:#4A90D9">' + tr.flight_number + '</b>';
-        transHtml += '</div>';
-        transHtml += '<div>' + (tr.from_station||'') + ' → ' + (tr.to_station||'') + '</div>';
-        transHtml += '<div>出发：' + (tr.departure_time||'') + ' | 到达：' + (tr.arrival_time||'') + ' | ' + (tr.duration||'') + '</div>';
-        if (tr.note) transHtml += '<div style="color:#999;font-size:13px">' + tr.note + '</div>';
-        transHtml += '</div></div>';
-      });
-      transHtml += '</div>';
-    }
-    transHtml += '</div></div>';
-  }
-  if (data.return_transport) {
-    var rt = data.return_transport;
-    transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
-    var rvi = rt.vehicle_image || 'airplane';
-    var rviSrc = viMap[rvi] || viMap['airplane'];
-    transHtml += '<div class="transport-img-wrap"><img src="' + rviSrc + '" alt="' + (rt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
-    transHtml += '<div style="font-size:16px;line-height:1.8">';
-    transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
-    transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (rt.flight_number||'（请自行查询实时班次）') + '</b></div>';
-    transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + '</b></div>';
-    transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
-    var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');
-    transHtml += '<div>' + rtArrivalLabel + '<b>' + (rt.arrival_time||'') + '</b> | 耗时：' + (rt.duration||'') + '</div>';
-    transHtml += '<div>预估费用：' + (rt.cost||'') + '</div>';
-    if (rt.station_to_hotel) transHtml += '<div>🏨 到酒店/家：' + rt.station_to_hotel + '</div>';
-    transHtml += '<div style="color:#E67E22">⚠️ ' + (rt.note||'') + '</div>';
-    // 返程中转
-    if (rt.transfers && rt.transfers.length > 0) {
-      transHtml += '<div class="transfer-steps"><div class="transfer-title">🔄 中转/换乘详情</div>';
-      rt.transfers.forEach(function(tr, tri){
-        if (tri > 0) transHtml += '<div class="transfer-arrow">⬇️ 中转等待 <span class="transfer-wait">' + (tr.transfer_time||'') + '</span></div>';
-        transHtml += '<div class="transfer-step"><div class="transfer-step-num">' + (tr.step||(tri+1)) + '</div>';
-        transHtml += '<div class="transfer-step-info">';
-        transHtml += '<div><b>' + (tr.type||'') + '</b>';
-        if (tr.flight_number) transHtml += ' <b style="color:#4A90D9">' + tr.flight_number + '</b>';
-        transHtml += '</div>';
-        transHtml += '<div>' + (tr.from_station||'') + ' → ' + (tr.to_station||'') + '</div>';
-        transHtml += '<div>出发：' + (tr.departure_time||'') + ' | 到达：' + (tr.arrival_time||'') + ' | ' + (tr.duration||'') + '</div>';
-        if (tr.note) transHtml += '<div style="color:#999;font-size:13px">' + tr.note + '</div>';
-        transHtml += '</div></div>';
-      });
-      transHtml += '</div>';
-    }
-    transHtml += '</div></div>';
-  }
+  var transHtml = '';
+  if (data.departure_transport) transHtml += _renderTransportCard(data.departure_transport, '出发交通', '🚀');
+  if (data.return_transport) transHtml += _renderTransportCard(data.return_transport, '返程交通', '🏠');
   document.getElementById('transportCard').innerHTML = transHtml;
 
-  let dHtml = '';
-  (data.itinerary||[]).forEach((day,dayIdx)=>{
-    const w = day.weather||{};
-    const wDesc = w.desc||'晴';
-    const wIcon = w.icon||'☀️';
-    const wTemp = w.temp||'';
-    // 天气图片：使用<img>标签，更可靠地加载本地天气图片，渐变作为fallback
-    var wImg = w.image || '';
-    var wGrad = getWeatherGradient(wDesc);
-    var wBgStyle = 'background:' + wGrad + ';';
-    var wImgHtml = '';
-    if (wImg) {
-      wImgHtml = '<img class="weather-card-bg" src="' + wImg + '" onerror="this.style.display=\'none\'" alt="">';
-    }
-    dHtml += `<div class="day-card">
-      <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${wIcon} ${wDesc} ${wTemp}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      <div class="weather-card" style="${wBgStyle}" onclick="showWeatherHourly(${dayIdx})">
-        ${wImgHtml}
-        <span class="wc-icon">${getWeatherIcon(wDesc)}</span>
-        <span class="wc-desc">${wDesc}</span>
-        <span class="wc-temp">${wTemp}</span>
-        <span class="wc-hint">点击查看逐时天气 ›</span>
-      </div>
-      ${renderSlot('上午','morning',day.morning,dayIdx,0)}
-      ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
-      ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
-      <div class="day-footer">
-        <div class="footer-row"><span class="footer-icon">🍜</span><span class="footer-label">午餐：</span><span class="footer-text">${day.lunch||''}</span></div>
-        <div class="footer-row"><span class="footer-icon">🍽️</span><span class="footer-label">晚餐：</span><span class="footer-text">${day.dinner||''}</span></div>
-        <div class="footer-row"><span class="footer-icon">🚗</span><span class="footer-label">交通：</span><span class="footer-text">${day.transport||''}</span></div>
-      </div></div>`;
-  });
-  document.getElementById('dayCards').innerHTML = dHtml;
-
-  // 预算
-  let bd = data.budget_breakdown||{};
-  let bHtml = '<div class="bottom-card"><div class="bottom-title">预算明细</div><div class="budget-grid">';
-  for(let k in bd) bHtml += `<div class="budget-item"><span class="budget-name">${k}</span><span class="budget-value">${bd[k]}</span></div>`;
-  bHtml += '</div></div>';
-  document.getElementById('budgetCard').innerHTML = bHtml;
-
-  // 订票信息
-  const bk = data.booking_info || {};
-
-  // 交通方式推荐
-  let tHtml = '';
-  if (bk.transport_mode) {
-    tHtml = `<div class="bottom-card"><div class="bottom-title">🚄 推荐交通方式</div><div style="font-size:18px;color:#333;padding:8px 0">${bk.transport_mode}</div></div>`;
-  }
-  document.getElementById('transportCard').innerHTML = tHtml;
-
-  let fHtml = '';
-  if (bk.flights && bk.flights.length) {
-    fHtml = '<div class="bottom-card"><div class="bottom-title">✈️ 机票/火车票</div>';
-    bk.flights.forEach(f => {
-      fHtml += `<div class="booking-item">
-        <div class="booking-row"><span class="booking-type">${f.type}</span><span class="booking-suggest">${f.suggest}</span></div>
-        <div class="booking-row"><span class="booking-price">${f.price}</span><span class="booking-note">${f.note||''}</span></div>
-        <button class="btn-book" onclick="window.open('${f.link}','_blank')">立即订购</button>
-      </div>`;
-    });
-    fHtml += '</div>';
-  }
-  document.getElementById('flightsCard').innerHTML = fHtml;
-
-  let hHtml = '';
-  if (bk.hotels && bk.hotels.length) {
-    hHtml = '<div class="bottom-card"><div class="bottom-title">🏨 酒店推荐</div>';
-    bk.hotels.forEach((h, hotelIdx) => {
-      const hImg = h.image || '';
-      const hEscName = (h.name||'').replace(/'/g,"\\'");
-      const hEscReason = (h.reason||'').replace(/'/g,"\\'");
-      const hClick = hImg
-        ? `onclick="showHotelDetail('${hEscName}','${hImg.replace(/'/g,"\\'")}','${hEscReason}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')"`
-        : `onclick="showHotelDetail('${hEscName}','','${hEscReason}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')"`;
-      const hImgHtml = hImg
-        ? `<img class="hotel-img" src="${hImg}" alt="${h.name}" onerror="imgFallback(this,'hotel','${hEscName}',this.onclick)" ${hClick}>`
-        : `<div class="hotel-placeholder" ${hClick}><div class="ph-hotel-name">${h.name}</div><div class="ph-hint">暂无真实照片</div></div>`;
-      hHtml += `<div class="booking-item">
-        <div class="booking-row"><span class="booking-hotel-name">${h.name}</span></div>
-        <div class="booking-row"><span class="booking-area">${h.area||''}</span><span class="booking-price">${h.price}</span></div>
-        <div class="booking-reason">${h.reason||''}</div>
-        ${h.stay_days ? `<div class="booking-reason" style="color:#4A90D9">📅 ${h.stay_days}入住</div>` : ''}
-        ${hImgHtml}
-        ${h.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${h.location}</div>` : ''}
-        <div class="btn-book-row">
-          <button class="btn-book" onclick="window.open('${h.link}','_blank')">预订酒店</button>
-          ${h.location ? `<button class="btn-map" onclick="openHotelMap(${hotelIdx})">🗺️ 查看地图</button>` : ''}
-        </div>
-      </div>`;
-    });
-    // 换酒店推荐
-    if (bk.hotel_changes && bk.hotel_changes.length) {
-      hHtml += '<div style="margin-top:16px"><div class="bottom-title" style="border-left-color:#E67E22">🔄 换酒店建议</div>';
-      bk.hotel_changes.forEach(ch => {
-        const chImg = ch.image || '';
-        const chEscName = (ch.to_hotel||'').replace(/'/g,"\\'");
-        const chEscReason = (ch.reason||'').replace(/'/g,"\\'");
-        const chClick = chImg
-          ? `onclick="showHotelDetail('${chEscName}','${chImg.replace(/'/g,"\\'")}','${chEscReason}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')"`
-          : `onclick="showHotelDetail('${chEscName}','','${chEscReason}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')"`;
-        const chImgHtml = chImg
-          ? `<img class="hotel-img" src="${chImg}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${chEscName}',this.onclick)" ${chClick}>`
-          : `<div class="hotel-placeholder" ${chClick}><div class="ph-hotel-name">${ch.to_hotel}</div><div class="ph-hint">暂无真实照片</div></div>`;
-        hHtml += `<div class="hotel-change-card">
-          <div class="hotel-change-title">Day ${ch.change_day} 换酒店</div>
-          ${chImgHtml}
-          <div class="hotel-change-row">🏨 <b>${ch.from_hotel}</b> → <b>${ch.to_hotel}</b></div>
-          <div class="hotel-change-row">📍 ${ch.new_area||''} | ${ch.price||''}</div>
-          <div class="hotel-change-row">💡 ${ch.reason||''}</div>
-          ${ch.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${ch.location}</div>` : ''}
-          <button class="btn-book" style="margin-top:8px" onclick="window.open('${ch.link}','_blank')">预订新酒店</button>
-        </div>`;
-      });
-      hHtml += '</div>';
-    }
-    hHtml += '</div>';
-  }
-  document.getElementById('hotelsCard').innerHTML = hHtml;
-
-  let ticketHtml = '';
-  if (bk.tickets && bk.tickets.length) {
-    ticketHtml = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约（需提前预约）</div>';
-    bk.tickets.forEach(t => {
-      ticketHtml += `<div class="booking-item ticket-item">
-        <div class="booking-row"><span class="ticket-spot">${t.spot}</span><span class="ticket-price">${t.price}</span></div>
-        ${t.need_booking ? `<div class="booking-row"><span class="ticket-booking-warn">⚠ 需提前${t.booking_days}预约</span></div>` : ''}
-        <div class="booking-row"><span class="ticket-platform">平台：${t.platform||''}</span></div>
-        <div class="ticket-note">${t.note||''}</div>
-        <button class="btn-book warn" onclick="window.open('${t.link}','_blank')">去预约</button>
-      </div>`;
-    });
-    ticketHtml += '</div>';
-  }
-  document.getElementById('ticketsCard').innerHTML = ticketHtml;
-
-  let btipHtml = '';
-  if (bk.booking_tips && bk.booking_tips.length) {
-    btipHtml = '<div class="bottom-card"><div class="bottom-title">📋 预约贴士</div>';
-    bk.booking_tips.forEach(t => { btipHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
-    btipHtml += '</div>';
-  }
-  document.getElementById('bookingTipsCard').innerHTML = btipHtml;
-
-  let tipHtml = '<div class="bottom-card"><div class="bottom-title">出行贴士</div>';
-  (data.tips||[]).forEach(t=>{ tipHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
-  tipHtml += '</div>';
-  document.getElementById('tipsCard').innerHTML = tipHtml;
+  document.getElementById('dayCards').innerHTML = _renderDayCards(data.itinerary);
+  document.getElementById('budgetCard').innerHTML = _renderBudgetCard(data.budget_breakdown||{});
+  document.getElementById('flightsCard').innerHTML = _renderFlightsCard(bookingInfo);
+  document.getElementById('hotelsCard').innerHTML = _renderHotelsCard(bookingInfo);
+  document.getElementById('ticketsCard').innerHTML = _renderTicketsCard(bookingInfo);
+  document.getElementById('bookingTipsCard').innerHTML = _renderBookingTipsCard(bookingInfo);
+  document.getElementById('tipsCard').innerHTML = _renderTipsCard(data.tips);
   window.scrollTo(0,0);
+}
+
+// 计算时间段文本：优先使用AI生成的time_slot，fallback到根据duration计算
+function _calculateTimeRange(slot, slotName) {
+  var timeRange = slot.time_slot || '';
+  if (!timeRange && slot.duration) {
+    var slotStartTimes = {morning: '9:00', afternoon: '13:00', evening: '18:00'};
+    var durMatch = slot.duration.match(/(\d+(?:\.\d+)?)\s*小时/);
+    if (durMatch) {
+      var hours = parseFloat(durMatch[1]);
+      var startTime = slotStartTimes[slotName] || '9:00';
+      var timeParts = startTime.split(':').map(Number);
+      var totalMin = timeParts[0] * 60 + timeParts[1] + Math.round(hours * 60);
+      var endHour = Math.floor(totalMin / 60);
+      var endMin = totalMin % 60;
+      if (endHour >= 24) {
+        timeRange = startTime + ' - 次日' + String(endHour % 24).padStart(2,'0') + ':' + String(endMin).padStart(2,'0');
+      } else {
+        timeRange = startTime + ' - ' + String(endHour).padStart(2,'0') + ':' + String(endMin).padStart(2,'0');
+      }
+    }
+  }
+  return timeRange;
 }
 
 function renderSlot(title, cls, slot, dayIdx, slotIdx){
   if(!slot) return '';
   // 优先使用后端AI生成的time_slot（如"9:00-11:30"），fallback到前端计算
-  var timeRange = slot.time_slot || '';
-  if (!timeRange && slot.duration) {
-    const slotStartTimes = {morning: '9:00', afternoon: '13:00', evening: '18:00'};
-    const durMatch = slot.duration.match(/(\d+(?:\.\d+)?)\s*小时/);
-    if (durMatch) {
-      const hours = parseFloat(durMatch[1]);
-      const startTime = slotStartTimes[cls] || '9:00';
-      const [sh, sm] = startTime.split(':').map(Number);
-      const totalMin = sh * 60 + sm + Math.round(hours * 60);
-      let eh = Math.floor(totalMin / 60);
-      const em = totalMin % 60;
-      if (eh >= 24) {
-        let nextDayHour = eh % 24;
-        timeRange = startTime + ' - 次日' + String(nextDayHour).padStart(2,'0') + ':' + String(em).padStart(2,'0');
-      } else {
-        timeRange = startTime + ' - ' + String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0');
-      }
-    }
-  }
+  var timeRange = _calculateTimeRange(slot, cls);
   const spotName = slot.spot||'';
   const imgUrl = slot.image || '';
   const escName = spotName.replace(/'/g,"\\'");
@@ -1636,8 +1692,8 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
         <span>🗺️</span><span>推荐游览路线</span><span class="rr-arrow">▶</span>
       </div>
       <div class="recommend-routes-body" id="${rid}">`;
-    routes.forEach((r, ri) => {
-      routesHtml += `<div class="recommend-routes-item"><span class="rr-num">${ri+1}</span><span class="rr-text">${r}</span></div>`;
+    routes.forEach(function(route, routeIdx) {
+      routesHtml += `<div class="recommend-routes-item"><span class="rr-num">${routeIdx+1}</span><span class="rr-text">${route}</span></div>`;
     });
     routesHtml += '</div></div>';
   }
@@ -1655,16 +1711,50 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
   </div>`;
 }
 
+// 在地图上创建单个标记点
+function _createMapMarker(mapInstance, markerData, options) {
+  var opts = options || {};
+  var bgColor = opts.bgColor || '#4A90D9';
+  var label = opts.label || '' + markerData.order;
+  var content = '<div style="background:' + bgColor + ';color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700">' + label + '</div>';
+  var marker = new AMap.Marker({
+    position: [markerData.lng, markerData.lat],
+    content: content,
+    offset: new AMap.Pixel(-12, -12),
+    title: markerData.name,
+    zIndex: opts.zIndex || 100,
+  });
+  marker.setMap(mapInstance);
+  marker.on('click', function() {
+    var infoContent = '<div style="padding:4px 8px;font-size:13px"><b>' + (opts.infoPrefix || '') + (markerData.order || '') + '. ' + markerData.name + '</b>' + (opts.infoExtra || '') + '</div>';
+    new AMap.InfoWindow({
+      content: infoContent,
+      offset: new AMap.Pixel(0, -32),
+    }).open(mapInstance, [markerData.lng, markerData.lat]);
+  });
+  return marker;
+}
+
+// 初始化地图中心点
+function _initMapCenter(containerId, centerLng, centerLat, zoom) {
+  if (dayMap) { dayMap.destroy(); dayMap = null; }
+  return new AMap.Map(containerId, {
+    center: [centerLng, centerLat],
+    zoom: zoom || 13,
+    resizeEnable: true,
+  });
+}
+
 function openDayAmap(dayIdx){
   if(!tripData || !tripData.itinerary) return;
   const day = tripData.itinerary[dayIdx];
   if(!day) return;
   const spots = [];
-  ['morning','afternoon','evening'].forEach(slot => {
-    const s = day[slot];
-    if(s && s.spot && s.location){
-      const [lng, lat] = s.location.split(',').map(Number);
-      if (!isNaN(lng) && !isNaN(lat)) spots.push({ name: s.spot, location: s.location, lng, lat });
+  ['morning','afternoon','evening'].forEach(function(slotName) {
+    var slotData = day[slotName];
+    if(slotData && slotData.spot && slotData.location){
+      var coords = _parseCoords(slotData.location);
+      if (coords) spots.push({ name: slotData.spot, location: slotData.location, lng: coords.lng, lat: coords.lat });
     }
   });
   if(spots.length === 0) { alert('该天暂无景点坐标'); return; }
@@ -1677,42 +1767,22 @@ function openDayAmap(dayIdx){
     if (typeof AMap === 'undefined') { console.warn('高德地图 SDK 未加载'); return; }
     const container = document.getElementById('dayMapContainer');
     if (!container) return;
-    if (dayMap) { dayMap.destroy(); dayMap = null; }
 
-    const centerLng = spots.reduce((s,m) => s + m.lng, 0) / spots.length;
-    const centerLat = spots.reduce((s,m) => s + m.lat, 0) / spots.length;
+    const centerLng = spots.reduce(function(sum, spot) { return sum + spot.lng; }, 0) / spots.length;
+    const centerLat = spots.reduce(function(sum, spot) { return sum + spot.lat; }, 0) / spots.length;
 
-    dayMap = new AMap.Map('dayMapContainer', {
-      center: [centerLng, centerLat],
-      zoom: spots.length > 1 ? 12 : 14,
-      resizeEnable: true,
+    dayMap = _initMapCenter('dayMapContainer', centerLng, centerLat, spots.length > 1 ? 12 : 14);
+
+    spots.forEach(function(spot, spotIndex) {
+      _createMapMarker(dayMap, { lng: spot.lng, lat: spot.lat, name: spot.name, order: spotIndex + 1 });
     });
-
-    spots.forEach((s, i) => {
-      const content = `<div style="background:#4A90D9;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700">${i+1}</div>`;
-      const marker = new AMap.Marker({
-        position: [s.lng, s.lat],
-        content: content,
-        offset: new AMap.Pixel(-12, -12),
-        title: s.name,
-      });
-      marker.setMap(dayMap);
-      marker.on('click', () => {
-        const info = new AMap.InfoWindow({
-          content: `<div style="padding:4px 8px;font-size:13px"><b>${i+1}. ${s.name}</b></div>`,
-          offset: new AMap.Pixel(0, -32),
-        });
-        info.open(dayMap, [s.lng, s.lat]);
-      });
-    });
-
     if (spots.length > 1) dayMap.setFitView(null, false, [40, 40, 40, 40]);
   }, 200);
 
   // 构建景点列表
   let html = '';
-  spots.forEach((s, i) => {
-    html += `<div class="map-spot-item"><span class="map-spot-num">${i+1}</span><div class="map-spot-info"><span class="map-spot-name">${s.name}</span><span class="map-spot-loc">坐标：${s.location}</span></div></div>`;
+  spots.forEach(function(spot, spotIndex) {
+    html += '<div class="map-spot-item"><span class="map-spot-num">'+(spotIndex+1)+'</span><div class="map-spot-info"><span class="map-spot-name">'+spot.name+'</span><span class="map-spot-loc">坐标：'+spot.location+'</span></div></div>';
   });
   document.getElementById('daySpotList').innerHTML = html;
 }
@@ -1724,18 +1794,18 @@ function openHotelMap(hotelIdx){
   if(!hotel || !hotel.location) return;
   // 收集所有景点坐标
   const spots = [];
-  (tripData.itinerary||[]).forEach(day => {
-    ['morning','afternoon','evening'].forEach(slot => {
-      const s = day[slot];
-      if(s && s.spot && s.location){
-        const [lng, lat] = s.location.split(',').map(Number);
-        if (!isNaN(lng) && !isNaN(lat)) spots.push({ name: s.spot, location: s.location, lng, lat, day: day.day });
+  (tripData.itinerary||[]).forEach(function(day) {
+    ['morning','afternoon','evening'].forEach(function(slotName) {
+      var slotData = day[slotName];
+      if(slotData && slotData.spot && slotData.location){
+        var coords = _parseCoords(slotData.location);
+        if (coords) spots.push({ name: slotData.spot, location: slotData.location, lng: coords.lng, lat: coords.lat, day: day.day });
       }
     });
   });
   // 解析酒店坐标
-  const [hLng, hLat] = hotel.location.split(',').map(Number);
-  if (isNaN(hLng) || isNaN(hLat)) return;
+  var hotelCoords = _parseCoords(hotel.location);
+  if (!hotelCoords) return;
 
   document.getElementById('mapDialogTitle').textContent = hotel.name + ' + 附近景点';
   document.getElementById('mapOverlay').classList.add('show');
@@ -1744,58 +1814,31 @@ function openHotelMap(hotelIdx){
     if (typeof AMap === 'undefined') { console.warn('高德地图 SDK 未加载'); return; }
     const container = document.getElementById('dayMapContainer');
     if (!container) return;
-    if (dayMap) { dayMap.destroy(); dayMap = null; }
 
-    dayMap = new AMap.Map('dayMapContainer', {
-      center: [hLng, hLat],
-      zoom: 13,
-      resizeEnable: true,
-    });
+    dayMap = _initMapCenter('dayMapContainer', hotelCoords.lng, hotelCoords.lat, 13);
 
     // 酒店标记（红色特殊图标）
-    const hotelContent = '<div style="background:#E74C3C;color:#fff;width:32px;height:32px;border-radius:50%;text-align:center;line-height:32px;font-size:16px;box-shadow:0 2px 8px rgba(231,76,60,.4)">🏨</div>';
-    const hotelMarker = new AMap.Marker({
-      position: [hLng, hLat],
-      content: hotelContent,
-      offset: new AMap.Pixel(-16, -16),
-      title: hotel.name,
-      zIndex: 999,
-    });
-    hotelMarker.setMap(dayMap);
-    hotelMarker.on('click', () => {
-      new AMap.InfoWindow({
-        content: '<div style="padding:6px 10px;font-size:14px"><b>🏨 '+hotel.name+'</b><br><span style="color:#999;font-size:12px">'+hotel.area+'</span></div>',
-        offset: new AMap.Pixel(0, -36),
-      }).open(dayMap, [hLng, hLat]);
+    _createMapMarker(dayMap, { lng: hotelCoords.lng, lat: hotelCoords.lat, name: hotel.name, order: '' }, {
+      bgColor: '#E74C3C', label: '🏨', zIndex: 999,
+      infoPrefix: '🏨 ', infoExtra: '<br><span style="color:#999;font-size:12px">' + hotel.area + '</span>'
     });
 
     // 景点标记（蓝色编号）
-    spots.forEach((s, i) => {
-      const content = '<div style="background:#4A90D9;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700">'+(i+1)+'</div>';
-      const marker = new AMap.Marker({
-        position: [s.lng, s.lat],
-        content: content,
-        offset: new AMap.Pixel(-12, -12),
-        title: s.name,
-      });
-      marker.setMap(dayMap);
-      marker.on('click', () => {
-        new AMap.InfoWindow({
-          content: '<div style="padding:4px 8px;font-size:13px"><b>'+(i+1)+'. '+s.name+'</b><br><span style="color:#999;font-size:11px">Day'+s.day+'</span></div>',
-          offset: new AMap.Pixel(0, -32),
-        }).open(dayMap, [s.lng, s.lat]);
+    spots.forEach(function(spot, spotIndex) {
+      _createMapMarker(dayMap, { lng: spot.lng, lat: spot.lat, name: spot.name, order: spotIndex + 1 }, {
+        infoExtra: '<br><span style="color:#999;font-size:11px">Day' + spot.day + '</span>'
       });
     });
 
     // 自动适配视野
-    const allPoints = [[hLng, hLat], ...spots.map(s => [s.lng, s.lat])];
+    const allPoints = [[hotelCoords.lng, hotelCoords.lat]].concat(spots.map(function(spot) { return [spot.lng, spot.lat]; }));
     dayMap.setFitView(allPoints, false, [40, 40, 40, 40]);
   }, 200);
 
   // 构建列表：酒店在最前面（红色），后面是景点（蓝色编号）
   let html = '<div class="map-spot-item"><span class="map-spot-num hotel">🏨</span><div class="map-spot-info"><span class="map-spot-name">'+hotel.name+'</span><span class="map-spot-loc">坐标：'+hotel.location+' | '+hotel.area+'</span></div></div>';
-  spots.forEach((s, i) => {
-    html += '<div class="map-spot-item"><span class="map-spot-num">'+(i+1)+'</span><div class="map-spot-info"><span class="map-spot-name">'+s.name+'</span><span class="map-spot-loc">坐标：'+s.location+' | Day'+s.day+'</span></div></div>';
+  spots.forEach(function(spot, spotIndex) {
+    html += '<div class="map-spot-item"><span class="map-spot-num">'+(spotIndex+1)+'</span><div class="map-spot-info"><span class="map-spot-name">'+spot.name+'</span><span class="map-spot-loc">坐标：'+spot.location+' | Day'+spot.day+'</span></div></div>';
   });
   document.getElementById('daySpotList').innerHTML = html;
 }
@@ -1820,10 +1863,10 @@ function shareTrip(){
     y += 24;
   });
   ctx.fillStyle = '#666'; ctx.font = '12px sans-serif';
-  (tripData.tips||[]).forEach(t => { if(y>480) return; ctx.fillText(`• ${t}`, 20, y); y+=20; });
+  (tripData.tips||[]).forEach(function(tip) { if(y>480) return; ctx.fillText('• ' + tip, 20, y); y+=20; });
   const link = canvas.toDataURL('image/png');
-  const a = document.createElement('a'); a.href = link; a.download = `行旅白_${tripData.destination}${tripData.days}日游.png`;
-  a.click();
+  const downloadLink = document.createElement('a'); downloadLink.href = link; downloadLink.download = '行旅白_' + tripData.destination + tripData.days + '日游.png';
+  downloadLink.click();
   alert('分享卡片已下载！');
 }
 
@@ -1847,8 +1890,37 @@ function goHome(){
   window.scrollTo(0,0);
 }
 
-// 景点详情卡片（AI生成文本介绍 + 直接使用槽位已有图片）
+// 获取两个景点之间的路线信息（从上一个景点到当前景点）
+async function _fetchRouteInfo(dayIdx, slotIdx, currentSpotName, currentLocation) {
+  if (dayIdx === undefined || slotIdx === undefined || !tripData || !tripData.itinerary) return '';
+  var day = tripData.itinerary[dayIdx];
+  if (!day) return '';
+  var slots = ['morning', 'afternoon', 'evening'];
+  var prevSpot = null;
+  for (var i = slotIdx - 1; i >= 0; i--) {
+    var slotData = day[slots[i]];
+    if (slotData && slotData.spot && slotData.location) { prevSpot = slotData; break; }
+  }
+  if (!prevSpot || !currentLocation) return '';
+  var prevCoords = prevSpot.location.split(',').map(Number);
+  var currCoords = currentLocation.split(',').map(Number);
+  if (isNaN(prevCoords[0]) || isNaN(prevCoords[1]) || isNaN(currCoords[0]) || isNaN(currCoords[1])) return '';
+  try {
+    var res = await fetch(API + '/api/route-plan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({spots: [{name: prevSpot.spot, lng: prevCoords[0], lat: prevCoords[1]}, {name: currentSpotName, lng: currCoords[0], lat: currCoords[1]}]})
+    });
+    var data = await res.json();
+    if (data.success && data.routes && data.routes[0] && data.routes[0].duration) {
+      var routeData = data.routes[0];
+      var trafficMap = {'畅通':'green','缓行':'orange','拥堵':'red'};
+      return '<div class="route-info"><span class="ri-icon">🚗</span>从「' + prevSpot.spot + '」出发：' + routeData.distance + '，约' + routeData.duration + '分钟 <span class="ri-traffic ' + (trafficMap[routeData.traffic]||'green') + '">' + routeData.traffic + '</span></div>';
+    }
+  } catch(e) {}
+  return '';
+}
 
+// 景点详情卡片（AI生成文本介绍 + 直接使用槽位已有图片）
 async function showSpotDetail(name, image, reason, location, duration, need_booking, route_detail, timeRange, dayIdx, slotIdx) {
   const card = document.getElementById('detailCard');
   const overlay = document.getElementById('detailOverlay');
@@ -1876,39 +1948,17 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
     } catch(e) { content = reason || `${name}是${dest}的著名景点。`; }
   }
   // 路线规划
-  let routeInfo = '';
-  let recommendedRoutes = [];
+  var routeInfo = '';
+  var recommendedRoutes = [];
   if (dayIdx !== undefined && slotIdx !== undefined && tripData && tripData.itinerary) {
-    const day = tripData.itinerary[dayIdx];
+    var day = tripData.itinerary[dayIdx];
     if (day) {
-      const slots = ['morning', 'afternoon', 'evening'];
-      const slot = day[slots[slotIdx]];
+      var slots = ['morning', 'afternoon', 'evening'];
+      var slot = day[slots[slotIdx]];
       if (slot && slot.recommended_routes) {
         recommendedRoutes = slot.recommended_routes;
       }
-      let prevSpot = null;
-      for (let i = slotIdx - 1; i >= 0; i--) {
-        const s = day[slots[i]];
-        if (s && s.spot && s.location) { prevSpot = s; break; }
-      }
-      if (prevSpot && location) {
-        const [plng, plat] = prevSpot.location.split(',').map(Number);
-        const [clng, clat] = location.split(',').map(Number);
-        if (!isNaN(plng) && !isNaN(plat) && !isNaN(clng) && !isNaN(clat)) {
-          try {
-            const res = await fetch(API + '/api/route-plan', {
-              method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({spots: [{name: prevSpot.spot, lng: plng, lat: plat}, {name, lng: clng, lat: clat}]})
-            });
-            const data = await res.json();
-            if (data.success && data.routes && data.routes[0] && data.routes[0].duration) {
-              const r = data.routes[0];
-              const trafficMap = {'畅通':'green','缓行':'orange','拥堵':'red'};
-              routeInfo = `<div class="route-info"><span class="ri-icon">🚗</span>从「${prevSpot.spot}」出发：${r.distance}，约${r.duration}分钟 <span class="ri-traffic ${trafficMap[r.traffic]||'green'}">${r.traffic}</span></div>`;
-            }
-          } catch(e) {}
-        }
-      }
+      routeInfo = await _fetchRouteInfo(dayIdx, slotIdx, name, location);
     }
   }
   renderDetailCard(card, 'spot', {name, image: finalImage, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, dest, reason, routeInfo,
@@ -1976,8 +2026,8 @@ function renderDetailCard(card, type, opts) {
   if (route_detail) html += `<div class="detail-section"><div class="detail-section-title">🗺️ 游玩路线</div><div class="detail-section-text">${route_detail}</div></div>`;
   if (recommended_routes && Array.isArray(recommended_routes) && recommended_routes.length > 0) {
     html += `<div class="detail-section"><div class="detail-section-title">🗺️ 推荐游览路线</div>`;
-    recommended_routes.forEach((r, i) => {
-      html += `<div class="detail-route-item"><span class="rr-num-detail">${i+1}</span>${r}</div>`;
+    recommended_routes.forEach(function(route, routeIdx) {
+      html += `<div class="detail-route-item"><span class="rr-num-detail">${routeIdx+1}</span>${route}</div>`;
     });
     html += `</div>`;
   }
@@ -2028,6 +2078,91 @@ async function regenerateDetail(cacheKey, type, name) {
 
 function closeDetail() { document.getElementById('detailOverlay').classList.remove('show'); }
 
+// 渲染当前天气概览
+function _renderWeatherCurrent(current, getEmoji) {
+  if (!current.temp) return '';
+  var html = '<div class="wh-current"><div class="wh-current-main">' +
+    '<div class="wh-current-temp">' + current.temp + '</div>' +
+    '<div class="wh-current-desc">' + getEmoji(current.weather) + ' ' + current.weather + '</div></div>' +
+    '<div class="wh-current-detail">' +
+    (current.feels_like ? '<div class="wh-detail-item"><span>体感</span><span class="wh-detail-val">' + current.feels_like + '</span></div>' : '') +
+    (current.humidity ? '<div class="wh-detail-item"><span>湿度</span><span class="wh-detail-val">' + current.humidity + '</span></div>' : '') +
+    (current.wind ? '<div class="wh-detail-item"><span>风力</span><span class="wh-detail-val">' + (current.wind.split(' ')[0]||'') + '</span></div>' : '') +
+    (current.uv ? '<div class="wh-detail-item"><span>紫外线</span><span class="wh-detail-val">' + current.uv + '</span></div>' : '') +
+    (current.visibility ? '<div class="wh-detail-item"><span>能见度</span><span class="wh-detail-val">' + current.visibility + '</span></div>' : '') +
+    '</div></div>';
+  return html;
+}
+
+// 渲染空气质量指数
+function _renderWeatherAQI(aqiData) {
+  if (!aqiData.success || !aqiData.aqi) return '';
+  return '<div class="wh-aqi" style="background:' + aqiData.color + '15;border:1px solid ' + aqiData.color + '40">' +
+    '<div class="wh-aqi-value" style="color:' + aqiData.color + '">' + aqiData.aqi + '</div>' +
+    '<div class="wh-aqi-info">' +
+    '<div class="wh-aqi-level" style="color:' + aqiData.color + '">空气' + aqiData.level + '</div>' +
+    '<div class="wh-aqi-desc">' + aqiData.description + '</div>' +
+    '<div class="wh-aqi-detail">' +
+    (aqiData.pm25 ? '<span>PM2.5 ' + aqiData.pm25 + '</span>' : '') +
+    (aqiData.pm10 ? '<span>PM10 ' + aqiData.pm10 + '</span>' : '') +
+    '</div></div></div>';
+}
+
+// 渲染天气预警信息
+function _renderWeatherAlerts(data) {
+  var html = '';
+  if (data.extreme_alert && data.extreme_alert.has_alert) {
+    html += '<div class="wh-alert-bar">';
+    data.extreme_alert.alerts.forEach(function(alert) {
+      var bg = alert.level === 'danger' ? '#FFE0E0' : '#FFF3E0';
+      var color = alert.level === 'danger' ? '#D32F2F' : '#E67E22';
+      html += '<div style="background:' + bg + ';color:' + color + ';padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">⚠️ ' + alert.message + '</div>';
+    });
+    html += '</div>';
+  }
+  if (data.alerts && data.alerts.length) {
+    html += '<div class="wh-alert-bar">';
+    data.alerts.forEach(function(alert) {
+      html += '<div style="background:#FFE0E0;color:#D32F2F;padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">🚨 ' + (alert.headline||alert.event||'天气预警') + '</div>';
+    });
+    html += '</div>';
+  }
+  return html;
+}
+
+// 渲染逐时天气网格
+function _renderWeatherHourlyGrid(hours, currentHour, getEmoji) {
+  var html = '<div class="wh-grid">';
+  (hours||[]).forEach(function(hourData) {
+    var hourNum = parseInt(hourData.time);
+    var isNow = hourNum === currentHour || hourNum === currentHour - 1 || hourNum === currentHour - 2;
+    html += '<div class="wh-item' + (isNow ? ' now' : '') + '">' +
+      '<div class="wh-time">' + hourData.time + (isNow ? ' 现在' : '') + '</div>' +
+      '<div class="wh-emoji">' + getEmoji(hourData.weather) + '</div>' +
+      '<div class="wh-temp">' + hourData.temp + '</div>' +
+      (hourData.rain_chance && parseInt(hourData.rain_chance) > 30 ? '<div class="wh-rain">🌧️' + hourData.rain_chance + '</div>' : '') +
+      (hourData.wind ? '<div class="wh-wind">💨' + (hourData.wind.split(' ')[0]||'') + '</div>' : '') +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// 检测未来2小时是否有雨雪天气
+function _findUpcomingRainAlert(hours, currentHour) {
+  for (var i = 0; i < (hours||[]).length; i++) {
+    var hourData = hours[i];
+    var weatherText = (hourData.weather||'').toLowerCase();
+    if ((weatherText.includes('rain') || weatherText.includes('snow') || weatherText.includes('雨') || weatherText.includes('雪')) && parseInt(hourData.rain_chance) > 50) {
+      var hourNum = parseInt(hourData.time);
+      if (hourNum - currentHour > 0 && hourNum - currentHour <= 2) {
+        return '预计' + hourData.time + '左右将有' + hourData.weather + '，请提前做好准备';
+      }
+    }
+  }
+  return '';
+}
+
 // 天气逐时卡片（集成中国天气智能体：wttr.in实时数据 + 空气质量 + AI天气助手）
 async function showWeatherHourly(dayIdx) {
   if (!tripData || !tripData.itinerary) return;
@@ -2049,10 +2184,9 @@ async function showWeatherHourly(dayIdx) {
     const data = await hourlyRes.json();
     const aqiData = await aqiRes.json();
 
-    // 非当天：显示提示信息
     if (!data.is_today) {
-      var w = tripData.itinerary[dayIdx].weather || {};
-      card.innerHTML = '<div class="wh-header"><div class="wh-date">' + date + ' ' + dest + '</div><div class="wh-summary">' + (data.summary||w.desc||'') + ' ' + (w.temp||'') + '</div></div>' +
+      var weatherDay = tripData.itinerary[dayIdx].weather || {};
+      card.innerHTML = '<div class="wh-header"><div class="wh-date">' + date + ' ' + dest + '</div><div class="wh-summary">' + (data.summary||weatherDay.desc||'') + ' ' + (weatherDay.temp||'') + '</div></div>' +
         '<div style="text-align:center;padding:30px;color:#999;font-size:16px;line-height:1.8">📅 逐时天气详情仅当天可用<br><span style="font-size:14px">当前日期：' + new Date().toLocaleDateString('zh-CN') + '</span><br><span style="font-size:14px;color:#4A90D9">届时将显示每小时的天气变化</span></div>' +
         '<button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';
       return;
@@ -2060,107 +2194,25 @@ async function showWeatherHourly(dayIdx) {
 
     if (!data.success) { card.innerHTML = '<div style="text-align:center;padding:40px;color:#999">天气数据暂不可用</div><button class="wh-close" onclick="closeWeatherHourly()">关闭</button>'; return; }
 
-    const emojiMap = { '晴':'☀️','Sunny':'☀️','Clear':'☀️','多云':'⛅','Partly cloudy':'⛅','Cloudy':'☁️','阴':'☁️','Overcast':'☁️','雨':'🌧️','Rain':'🌧️','Light rain':'🌦️','小雨':'🌦️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','雪':'❄️','Snow':'❄️','雾':'🌫️','Fog':'🌫️','Mist':'🌫️','霾':'🌫️','风':'💨','大风':'💨','雷阵雨':'⛈️','Thunder':'⛈️','Patchy rain':'🌦️','Light drizzle':'🌦️','Moderate rain':'🌧️','Heavy rain':'🌧️' };
-    function getEmoji(w) { for (let k in emojiMap) { if ((w||'').includes(k)) return emojiMap[k]; } return '🌤️'; }
+    function getEmoji(weatherText) { return _getWeatherEmoji(weatherText); }
 
     const now = new Date();
     const currentHour = now.getHours();
-    const cur = data.current || {};
+    const current = data.current || {};
 
-    let html = `<div class="wh-header">
-      <div class="wh-date">${date} ${dest}</div>
-      <div class="wh-summary">${data.source||'中国天气智能体'}</div>
-    </div>`;
-
-    // 实时天气概览
-    if (cur.temp) {
-      html += `<div class="wh-current">
-        <div class="wh-current-main">
-          <div class="wh-current-temp">${cur.temp}</div>
-          <div class="wh-current-desc">${getEmoji(cur.weather)} ${cur.weather}</div>
-        </div>
-        <div class="wh-current-detail">
-          ${cur.feels_like ? `<div class="wh-detail-item"><span>体感</span><span class="wh-detail-val">${cur.feels_like}</span></div>` : ''}
-          ${cur.humidity ? `<div class="wh-detail-item"><span>湿度</span><span class="wh-detail-val">${cur.humidity}</span></div>` : ''}
-          ${cur.wind ? `<div class="wh-detail-item"><span>风力</span><span class="wh-detail-val">${cur.wind.split(' ')[0]||''}</span></div>` : ''}
-          ${cur.uv ? `<div class="wh-detail-item"><span>紫外线</span><span class="wh-detail-val">${cur.uv}</span></div>` : ''}
-          ${cur.visibility ? `<div class="wh-detail-item"><span>能见度</span><span class="wh-detail-val">${cur.visibility}</span></div>` : ''}
-        </div>
-      </div>`;
-    }
-
-    // 空气质量指数（中国天气智能体）
-    if (aqiData.success && aqiData.aqi) {
-      html += `<div class="wh-aqi" style="background:${aqiData.color}15;border:1px solid ${aqiData.color}40">
-        <div class="wh-aqi-value" style="color:${aqiData.color}">${aqiData.aqi}</div>
-        <div class="wh-aqi-info">
-          <div class="wh-aqi-level" style="color:${aqiData.color}">空气${aqiData.level}</div>
-          <div class="wh-aqi-desc">${aqiData.description}</div>
-          <div class="wh-aqi-detail">
-            ${aqiData.pm25 ? `<span>PM2.5 ${aqiData.pm25}</span>` : ''}
-            ${aqiData.pm10 ? `<span>PM10 ${aqiData.pm10}</span>` : ''}
-          </div>
-        </div>
-      </div>`;
-    }
-
-    // 极端天气预警
-    if (data.extreme_alert && data.extreme_alert.has_alert) {
-      html += '<div class="wh-alert-bar">';
-      data.extreme_alert.alerts.forEach(a => {
-        const bg = a.level === 'danger' ? '#FFE0E0' : '#FFF3E0';
-        const color = a.level === 'danger' ? '#D32F2F' : '#E67E22';
-        html += `<div style="background:${bg};color:${color};padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">⚠️ ${a.message}</div>`;
-      });
-      html += '</div>';
-    }
-
-    // 官方天气预警
-    if (data.alerts && data.alerts.length) {
-      html += '<div class="wh-alert-bar">';
-      data.alerts.forEach(a => {
-        html += `<div style="background:#FFE0E0;color:#D32F2F;padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">🚨 ${a.headline||a.event||'天气预警'}</div>`;
-      });
-      html += '</div>';
-    }
-
-    // 逐时天气网格（3小时间隔）
-    html += '<div class="wh-grid">';
-    (data.hours||[]).forEach(h => {
-      const hNum = parseInt(h.time);
-      const isNow = hNum === currentHour || hNum === currentHour - 1 || hNum === currentHour - 2;
-      html += `<div class="wh-item${isNow ? ' now' : ''}">
-        <div class="wh-time">${h.time}${isNow ? ' 现在' : ''}</div>
-        <div class="wh-emoji">${getEmoji(h.weather)}</div>
-        <div class="wh-temp">${h.temp}</div>
-        ${h.rain_chance && parseInt(h.rain_chance) > 30 ? `<div class="wh-rain">🌧️${h.rain_chance}</div>` : ''}
-        ${h.wind ? `<div class="wh-wind">💨${h.wind.split(' ')[0]||''}</div>` : ''}
-      </div>`;
-    });
-    html += '</div>';
+    var html = '<div class="wh-header"><div class="wh-date">' + date + ' ' + dest + '</div><div class="wh-summary">' + (data.source||'中国天气智能体') + '</div></div>';
+    html += _renderWeatherCurrent(current, getEmoji);
+    html += _renderWeatherAQI(aqiData);
+    html += _renderWeatherAlerts(data);
+    html += _renderWeatherHourlyGrid(data.hours, currentHour, getEmoji);
 
     // 雨雪到来前1小时提醒
-    let rainAlert = null;
-    for (let i = 0; i < (data.hours||[]).length; i++) {
-      const h = data.hours[i];
-      const w = (h.weather||'').toLowerCase();
-      if ((w.includes('rain') || w.includes('snow') || w.includes('雨') || w.includes('雪')) && parseInt(h.rain_chance) > 50) {
-        const hNum = parseInt(h.time);
-        if (hNum - currentHour > 0 && hNum - currentHour <= 2) {
-          rainAlert = `预计${h.time}左右将有${h.weather}，请提前做好准备`;
-          break;
-        }
-      }
-    }
-    if (rainAlert) {
-      html += `<div class="wh-rain-alert">⏰ ${rainAlert}</div>`;
-    }
+    var rainAlert = _findUpcomingRainAlert(data.hours, currentHour);
+    if (rainAlert) html += '<div class="wh-rain-alert">⏰ ' + rainAlert + '</div>';
 
-    // AI天气助手按钮
-    html += `<button class="wh-ai-btn" onclick="askWeatherAI('${dest.replace(/'/g,"\\'")}')" id="whAiBtn">🤖 问问中国天气智能体</button>`;
-    html += `<div class="wh-ai-loading" id="whAiLoading">⏳ AI正在分析天气...</div>`;
-    html += `<div class="wh-ai-reply" id="whAiReply"></div>`;
-
+    html += '<button class="wh-ai-btn" onclick="askWeatherAI(\'' + dest.replace(/'/g,"\\'") + '\')" id="whAiBtn">🤖 问问中国天气智能体</button>';
+    html += '<div class="wh-ai-loading" id="whAiLoading">⏳ AI正在分析天气...</div>';
+    html += '<div class="wh-ai-reply" id="whAiReply"></div>';
     html += '<button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';
     card.innerHTML = html;
   } catch(e) {
@@ -2226,7 +2278,7 @@ async function checkRainSnowAlert() {
   const today = new Date();
   const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
   // 查找今天是否有行程
-  const todayDay = (tripData.itinerary||[]).find(d => d.date === todayStr);
+  const todayDay = (tripData.itinerary||[]).find(function(dayItem) { return dayItem.date === todayStr; });
   if (!todayDay) return;
   try {
     const res = await fetch(API + `/api/weather-hourly?city=${encodeURIComponent(tripData.destination)}&date=${encodeURIComponent(todayStr)}`);
@@ -2235,9 +2287,9 @@ async function checkRainSnowAlert() {
     const nowHour = today.getHours();
     // 检查接下来1-2小时是否有雨雪
     const rainSnow = ['雨','雪','暴雨','大雨','中雨','小雨','雷阵雨','暴雪','大雪','中雪','小雪'];
-    const nextHour = data.hours.find(h => {
-      const hh = parseInt(h.time);
-      return hh >= nowHour && hh <= nowHour + 2 && rainSnow.some(r => h.weather.includes(r));
+    const nextHour = data.hours.find(function(hourData) {
+      const hh = parseInt(hourData.time);
+      return hh >= nowHour && hh <= nowHour + 2 && rainSnow.some(function(rainType) { return hourData.weather.includes(rainType); });
     });
     if (nextHour) {
       const bar = document.getElementById('alertBar');
@@ -2290,40 +2342,9 @@ async function regeneratePlan() {
 // 更新总览地图标记（重新生成计划后）
 function updateOverviewMarkers() {
   if (!tripData) return;
-  allMarkers = [];
-  let globalOrder = 1;
-  (tripData.itinerary||[]).forEach(day => {
-    ['morning','afternoon','evening'].forEach(slot => {
-      const s = day[slot];
-      if(s && s.spot && s.location){
-        const [lng, lat] = s.location.split(',').map(Number);
-        if (!isNaN(lng) && !isNaN(lat)) {
-          allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
-          globalOrder++;
-        }
-      }
-    });
-  });
-  const bk = tripData.booking_info || {};
-  (bk.hotels || []).forEach(h => {
-    if (h.location) {
-      const [lng, lat] = h.location.split(',').map(Number);
-      if (!isNaN(lng) && !isNaN(lat)) {
-        allMarkers.push({ name: h.name, lng, lat, order: globalOrder, day: 0, type: 'hotel' });
-        globalOrder++;
-      }
-    }
-  });
-  (bk.tickets || []).forEach(t => {
-    if (t.location && t.need_booking) {
-      const [lng, lat] = t.location.split(',').map(Number);
-      if (!isNaN(lng) && !isNaN(lat)) {
-        allMarkers.push({ name: t.spot, lng, lat, order: globalOrder, day: 0, type: 'ticket' });
-        globalOrder++;
-      }
-    }
-  });
-  // 如果总览页正在显示，刷新地图
+  allMarkers = _collectItineraryMarkers(tripData.itinerary);
+  var bookingMarkers = _collectBookingMarkers(tripData.booking_info || {}, allMarkers.length + 1);
+  allMarkers = allMarkers.concat(bookingMarkers);
   if (document.getElementById('overviewPage').style.display === 'flex') {
     initOverviewMap(allMarkers);
   }
@@ -2379,7 +2400,7 @@ function showMonitorNotification(alerts, suggestion) {
   const notif = document.getElementById('monitorNotification');
   document.getElementById('monitorTitle').textContent = '⚠️ 突发情况提醒';
   let body = '';
-  if (alerts) alerts.forEach(a => { body += '<div style="margin-bottom:4px">• ' + a.message + '</div>'; });
+  if (alerts) alerts.forEach(function(alertItem) { body += '<div style="margin-bottom:4px">• ' + alertItem.message + '</div>'; });
   body += '<div style="margin-top:8px;color:#4A90D9;font-weight:500">💡 建议：' + suggestion + '</div>';
   document.getElementById('monitorBody').innerHTML = body;
   notif.classList.add('show');
@@ -2407,14 +2428,14 @@ window._stopMonitorPermanent = function() {
 // 判断是否为当天
 function checkIfToday(dateStr) {
   if (!dateStr) return false;
-  var d = dateStr.replace(/年|月/g, '-').replace(/日/g, '');
+  var normalizedDate = dateStr.replace(/年|月/g, '-').replace(/日/g, '');
   var today = new Date();
   var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
-  var parts = d.split('-');
+  var parts = normalizedDate.split('-');
   if (parts.length === 3) {
     return parts[0] + '-' + parts[1].padStart(2,'0') + '-' + parts[2].padStart(2,'0') === todayStr;
   }
-  return d === todayStr;
+  return normalizedDate === todayStr;
 }
 
 renderHistory();
@@ -2472,10 +2493,10 @@ window.stopMonitor = window._stopMonitorPermanent;
 <script>
 // 异步加载高德地图 SDK，避免阻塞页面渲染
 (function loadAmap() {
-  var s = document.createElement('script');
-  s.src = 'https://webapi.amap.com/maps?v=2.0&key=a0c3b637da468b7b66c5f4dbaa5d676b';
-  s.onerror = function() { console.warn('高德地图 SDK 加载失败，地图功能不可用'); };
-  document.head.appendChild(s);
+  var scriptEl = document.createElement('script');
+  scriptEl.src = 'https://webapi.amap.com/maps?v=2.0&key=a0c3b637da468b7b66c5f4dbaa5d676b';
+  scriptEl.onerror = function() { console.warn('高德地图 SDK 加载失败，地图功能不可用'); };
+  document.head.appendChild(scriptEl);
 })();
 </script>
 </body>

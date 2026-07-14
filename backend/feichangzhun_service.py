@@ -135,7 +135,7 @@ CITY_NEARBY_HUB = {
 
 def get_nearest_hub(city: str) -> dict:
     """获取最近的有机场/高铁站的交通枢纽城市"""
-    clean = city.replace("市", "").replace("省", "").strip()
+    clean = _clean_city_name(city)
     hub = CITY_NEARBY_HUB.get(clean, "")
     if not hub:
         return {"has_hub": False, "hub_city": "", "note": ""}
@@ -152,10 +152,10 @@ def get_nearest_hub(city: str) -> dict:
 
 def get_iata(city: str) -> str:
     """将中文城市名转换为IATA城市代码，无机场时返回最近枢纽的代码"""
-    clean = city.replace("市", "").replace("省", "").strip()
-    code = CITY_TO_IATA.get(clean, "")
-    if code:
-        return code
+    clean = _clean_city_name(city)
+    iata_code = CITY_TO_IATA.get(clean, "")
+    if iata_code:
+        return iata_code
     hub = CITY_NEARBY_HUB.get(clean, "")
     if hub:
         return CITY_TO_IATA.get(hub, "")
@@ -164,7 +164,7 @@ def get_iata(city: str) -> str:
 
 def get_station(city: str) -> str:
     """获取城市主要火车站名，无高铁站时返回最近枢纽的站名"""
-    clean = city.replace("市", "").replace("省", "").strip()
+    clean = _clean_city_name(city)
     station = CITY_TO_STATION.get(clean, "")
     if station:
         return station
@@ -174,26 +174,36 @@ def get_station(city: str) -> str:
     return f"{clean}站"
 
 
+def _is_banned_airport(name: str) -> bool:
+    """检查名称是否在黑名单中（精确匹配，避免'北京'匹配到'北京南苑'）"""
+    for banned in DECOMMISSIONED_AIRPORTS:
+        if name == banned or (len(name) >= 3 and name in banned and len(banned) - len(name) <= 2):
+            return True
+    return False
+
+
+def _find_airport_by_city(city_name: str) -> str:
+    """在AIRPORT_TO_IATA中查找城市对应的机场名"""
+    for airport_name, iata_code in AIRPORT_TO_IATA.items():
+        if city_name in airport_name:
+            return airport_name
+    return ""
+
+
 def get_airport(city: str) -> str:
     """获取城市主要机场名，严格过滤已停用/军用机场，无机场时不编造"""
-    clean = city.replace("市", "").replace("省", "").strip()
-    # 检查是否在黑名单中（精确匹配，避免"北京"匹配到"北京南苑"）
-    for banned in DECOMMISSIONED_AIRPORTS:
-        if clean == banned or (len(clean) >= 3 and clean in banned and len(banned) - len(clean) <= 2):
-            return ""  # 停用机场，返回空
-    for key, code in AIRPORT_TO_IATA.items():
-        if clean in key:
-            return key
+    clean = _clean_city_name(city)
+    if _is_banned_airport(clean):
+        return ""
+    airport = _find_airport_by_city(clean)
+    if airport:
+        return airport
     hub = CITY_NEARBY_HUB.get(clean, "")
     if hub:
-        for banned in DECOMMISSIONED_AIRPORTS:
-            if hub == banned or (len(hub) >= 3 and hub in banned and len(banned) - len(hub) <= 2):
-                return ""
-        for key, code in AIRPORT_TO_IATA.items():
-            if hub in key:
-                return key
-        return ""  # 邻近枢纽也找不到，不编造
-    return ""  # 找不到任何机场，不编造
+        if _is_banned_airport(hub):
+            return ""
+        return _find_airport_by_city(hub)
+    return ""
 
 
 def is_airport_valid(airport_name: str) -> bool:
@@ -228,7 +238,6 @@ def sanitize_airport_name(airport_name: str) -> str:
 
 def judge_transport(departure_city: str, dest_city: str) -> dict:
     """根据距离和性价比判断推荐交通工具，覆盖步行→公交→地铁→高铁→飞机"""
-    # 已知城市间距离字典
     KNOWN_DIST = {
         "北京-天津": 120, "广州-深圳": 140, "上海-苏州": 100,
         "上海-杭州": 170, "成都-重庆": 300, "南京-上海": 300,
@@ -241,16 +250,16 @@ def judge_transport(departure_city: str, dest_city: str) -> dict:
         "北京-乌鲁木齐": 2800, "上海-拉萨": 4000, "成都-拉萨": 2100,
         "北京-三亚": 2900, "上海-成都": 1900, "广州-昆明": 1300,
     }
-    key1 = f"{departure_city}-{dest_city}"
-    key2 = f"{dest_city}-{departure_city}"
-    dist = KNOWN_DIST.get(key1) or KNOWN_DIST.get(key2)
-    iata_dep = get_iata(departure_city)
-    iata_arr = get_iata(dest_city)
+    forward_key = _make_route_key(departure_city, dest_city)
+    backward_key = _make_route_key(dest_city, departure_city)
+    distance = KNOWN_DIST.get(forward_key) or KNOWN_DIST.get(backward_key)
+    dep_iata = get_iata(departure_city)
+    arr_iata = get_iata(dest_city)
 
-    if dist is None:
-        if iata_dep and iata_arr and iata_dep != iata_arr:
+    if distance is None:
+        if dep_iata and arr_iata and dep_iata != arr_iata:
             return {"mode": "建议飞机/高铁", "reason": "中长途城市间推荐飞机或高铁",
-                    "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True,
+                    "dep_iata": dep_iata, "arr_iata": arr_iata, "need_flight": True,
                     "estimated_distance": ">800km"}
         if departure_city == dest_city:
             return {"mode": "市内交通", "reason": "同城出行，推荐地铁/公交/打车",
@@ -258,19 +267,19 @@ def judge_transport(departure_city: str, dest_city: str) -> dict:
         return {"mode": "建议高铁/自驾", "reason": "请根据实际距离选择",
                 "need_flight": False, "estimated_distance": "未知"}
 
-    if dist <= 5:
-        return {"mode": "步行", "reason": f"距离约{dist}km，步行即可到达", "need_flight": False}
-    elif dist <= 30:
-        return {"mode": "公交/地铁/打车", "reason": f"距离约{dist}km，推荐公交、地铁或打车", "need_flight": False}
-    elif dist <= 100:
-        return {"mode": "地铁/城际/自驾", "reason": f"距离约{dist}km，可乘地铁城际或自驾", "need_flight": False}
-    elif dist <= 300:
-        return {"mode": "高铁/动车", "reason": f"距离约{dist}km，推荐高铁，方便快捷", "need_flight": False}
-    elif dist <= 800:
-        return {"mode": "高铁优先", "reason": f"距离约{dist}km，高铁约{int(dist/300)}-{int(dist/250)}小时，性价比高", "need_flight": False}
+    if distance <= 5:
+        return {"mode": "步行", "reason": f"距离约{distance}km，步行即可到达", "need_flight": False}
+    elif distance <= 30:
+        return {"mode": "公交/地铁/打车", "reason": f"距离约{distance}km，推荐公交、地铁或打车", "need_flight": False}
+    elif distance <= 100:
+        return {"mode": "地铁/城际/自驾", "reason": f"距离约{distance}km，可乘地铁城际或自驾", "need_flight": False}
+    elif distance <= 300:
+        return {"mode": "高铁/动车", "reason": f"距离约{distance}km，推荐高铁，方便快捷", "need_flight": False}
+    elif distance <= 800:
+        return {"mode": "高铁优先", "reason": f"距离约{distance}km，高铁约{int(distance/300)}-{int(distance/250)}小时，性价比高", "need_flight": False}
     else:
-        return {"mode": "飞机/高铁", "reason": f"距离约{dist}km，推荐飞机（约{int(dist/800)}-{int(dist/600)}小时）或高铁（约{int(dist/300)}-{int(dist/250)}小时）",
-                "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True}
+        return {"mode": "飞机/高铁", "reason": f"距离约{distance}km，推荐飞机（约{int(distance/800)}-{int(distance/600)}小时）或高铁（约{int(distance/300)}-{int(distance/250)}小时）",
+                "dep_iata": dep_iata, "arr_iata": arr_iata, "need_flight": True}
 
 
 async def search_flights(dep_city: str, arr_city: str, date: str) -> dict:
@@ -523,42 +532,100 @@ COMMON_ROUTES = {
 }
 
 
+# 中转枢纽城市映射
+_TRANSFER_HUBS = {
+    "北京": ["上海", "广州", "成都", "西安", "武汉"],
+    "上海": ["北京", "广州", "成都", "西安"],
+    "广州": ["北京", "上海", "成都", "昆明"],
+    "成都": ["北京", "上海", "广州", "西安", "昆明"],
+    "西安": ["北京", "上海", "成都", "武汉"],
+    "昆明": ["成都", "广州", "重庆"],
+    "武汉": ["北京", "广州", "西安", "成都"],
+}
+
+
+def _clean_city_name(city: str) -> str:
+    """清洗城市名：去除'市'、'省'后缀和空白"""
+    return city.replace("市", "").replace("省", "").strip()
+
+
+def _make_route_key(dep: str, arr: str) -> str:
+    """生成路线查询键"""
+    return f"{dep}-{arr}"
+
+
+def _validate_travel_date(result: dict, date: str):
+    """验证出行日期，添加日期校验提示"""
+    from datetime import date as date_type
+    try:
+        travel_date = date_type.fromisoformat(date)
+        today = date_type.today()
+        if travel_date < today:
+            result["_date_warning"] = f"⚠️ 出行日期{date}已过，请使用当前日期之后的班次！"
+        elif travel_date == today:
+            result["_date_warning"] = f"⚠️ 出行日期为今天{date}，请确保所选班次出发时间晚于当前时间！"
+    except ValueError:
+        pass
+    result["_date"] = date
+    result["_date_note"] = (
+        f"【严格日期校验-最高优先级】以上班次为携程实时数据（验证日期：2026-07-15），"
+        f"必须确保所选班次在 {date} 当天有实际运营。\n"
+        f"  ① 只能选择以上列出的航班号/车次号，这些是经过验证的真实运营班次\n"
+        f"  ② 绝对禁止编造不存在的航班号（如CA1501等已停运/不存在的班次）\n"
+        f"  ③ 绝对禁止使用军用机场（如南苑机场等已关闭的机场）\n"
+        f"  ④ 如果该日期无此班次，则只填写交通方式类型（如'飞机'或'高铁'），不填具体航班号\n"
+        f"  ⑤ 出发/到达机场必须使用以上列出的真实民用机场名称\n"
+    )
+
+
+def _check_direct_available(dep: str, arr: str) -> bool:
+    """检查两个城市间是否有直飞航班"""
+    forward_key = _make_route_key(dep, arr)
+    backward_key = _make_route_key(arr, dep)
+    return bool(
+        COMMON_ROUTES.get(forward_key, {}).get("flights")
+        or COMMON_ROUTES.get(backward_key, {}).get("flights")
+    )
+
+
+def _build_transfer_option(dep: str, hub: str, arr: str, date: str) -> dict:
+    """构建单个中转方案"""
+    first_leg = get_route_schedule(dep, hub, date)
+    second_leg = get_route_schedule(hub, arr, date)
+    has_complete_route = bool(second_leg.get("flights") or second_leg.get("trains"))
+    return {
+        "transfer_city": hub,
+        "leg1": {
+            "from": dep, "to": hub,
+            "flights": first_leg.get("flights", [])[:3],
+            "trains": first_leg.get("trains", [])[:3],
+        },
+        "leg2": {
+            "from": hub, "to": arr,
+            "flights": second_leg.get("flights", [])[:3],
+            "trains": second_leg.get("trains", [])[:3],
+        },
+        "has_full_route": has_complete_route,
+        "note": f"经{hub}中转，需预留至少1.5小时中转时间（飞机转飞机）或2小时（火车转飞机）",
+    }
+
+
 def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
     """获取两个城市间的航班/高铁班次参考数据（基于携程实时数据验证）
     date参数用于校准：确保AI只使用出行日期的班次，禁止混入过往数据
     """
-    clean_dep = dep_city.replace("市", "").replace("省", "").strip()
-    clean_arr = arr_city.replace("市", "").replace("省", "").strip()
-    key1 = f"{clean_dep}-{clean_arr}"
-    key2 = f"{clean_arr}-{clean_dep}"
-    result = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {
+    clean_dep = _clean_city_name(dep_city)
+    clean_arr = _clean_city_name(arr_city)
+    forward_key = _make_route_key(clean_dep, clean_arr)
+    backward_key = _make_route_key(clean_arr, clean_dep)
+    result = COMMON_ROUTES.get(forward_key) or COMMON_ROUTES.get(backward_key) or {
         "flights": [], "trains": [],
         "_verified": "无", "_source": "无预存数据",
         "_no_data": True,
         "_no_data_note": "【致命警告-最高优先级】该路线没有预存真实班次数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ 在note中建议用户自行在携程查询实时航班号 ⑤ 绝对禁止编造任何航班号/车次号！"
     }
     if date:
-        # 验证日期必须是未来日期
-        from datetime import date as date_type
-        try:
-            travel_date = date_type.fromisoformat(date)
-            today = date_type.today()
-            if travel_date < today:
-                result["_date_warning"] = f"⚠️ 出行日期{date}已过，请使用当前日期之后的班次！"
-            elif travel_date == today:
-                result["_date_warning"] = f"⚠️ 出行日期为今天{date}，请确保所选班次出发时间晚于当前时间！"
-        except ValueError:
-            pass
-        result["_date"] = date
-        result["_date_note"] = (
-            f"【严格日期校验-最高优先级】以上班次为携程实时数据（验证日期：2026-07-15），"
-            f"必须确保所选班次在 {date} 当天有实际运营。\n"
-            f"  ① 只能选择以上列出的航班号/车次号，这些是经过验证的真实运营班次\n"
-            f"  ② 绝对禁止编造不存在的航班号（如CA1501等已停运/不存在的班次）\n"
-            f"  ③ 绝对禁止使用军用机场（如南苑机场等已关闭的机场）\n"
-            f"  ④ 如果该日期无此班次，则只填写交通方式类型（如'飞机'或'高铁'），不填具体航班号\n"
-            f"  ⑤ 出发/到达机场必须使用以上列出的真实民用机场名称\n"
-        )
+        _validate_travel_date(result, date)
     return result
 
 
@@ -566,56 +633,22 @@ def get_transfer_routes(dep_city: str, arr_city: str, date: str = "") -> dict:
     """获取两城市间的中转/换乘方案（无直飞航班时需要中转）
     返回可能的中转城市和换乘建议
     """
-    clean_dep = dep_city.replace("市", "").replace("省", "").strip()
-    clean_arr = arr_city.replace("市", "").replace("省", "").strip()
+    clean_dep = _clean_city_name(dep_city)
+    clean_arr = _clean_city_name(arr_city)
 
-    # 中转枢纽城市映射
-    TRANSFER_HUBS = {
-        "北京": ["上海", "广州", "成都", "西安", "武汉"],
-        "上海": ["北京", "广州", "成都", "西安"],
-        "广州": ["北京", "上海", "成都", "昆明"],
-        "成都": ["北京", "上海", "广州", "西安", "昆明"],
-        "西安": ["北京", "上海", "成都", "武汉"],
-        "昆明": ["成都", "广州", "重庆"],
-        "武汉": ["北京", "广州", "西安", "成都"],
-    }
-
-    hub_cities = TRANSFER_HUBS.get(clean_dep, [])
+    hub_cities = _TRANSFER_HUBS.get(clean_dep, [])
     transfer_options = []
 
-    for hub in hub_cities:
-        if hub == clean_arr:
+    for hub_city in hub_cities:
+        if hub_city == clean_arr:
             continue
-        # 查第一段（出发→中转）
-        route1 = get_route_schedule(clean_dep, hub, date)
-        # 查第二段（中转→到达）
-        route2 = get_route_schedule(hub, clean_arr, date)
+        first_leg = get_route_schedule(clean_dep, hub_city, date)
+        if first_leg.get("flights") or first_leg.get("trains"):
+            transfer_options.append(_build_transfer_option(clean_dep, hub_city, clean_arr, date))
 
-        if route1.get("flights") or route1.get("trains"):
-            has_route2 = route2.get("flights") or route2.get("trains")
-            transfer_options.append({
-                "transfer_city": hub,
-                "leg1": {
-                    "from": clean_dep, "to": hub,
-                    "flights": route1.get("flights", [])[:3],
-                    "trains": route1.get("trains", [])[:3],
-                },
-                "leg2": {
-                    "from": hub, "to": clean_arr,
-                    "flights": route2.get("flights", [])[:3],
-                    "trains": route2.get("trains", [])[:3],
-                },
-                "has_full_route": has_route2,
-                "note": f"经{hub}中转，需预留至少1.5小时中转时间（飞机转飞机）或2小时（火车转飞机）",
-            })
-
-    result = {
-        "direct_available": bool(
-            COMMON_ROUTES.get(f"{clean_dep}-{clean_arr}", {}).get("flights")
-            or COMMON_ROUTES.get(f"{clean_arr}-{clean_dep}", {}).get("flights")
-        ),
-        "transfer_options": transfer_options[:3],  # 最多3个中转方案
+    return {
+        "direct_available": _check_direct_available(clean_dep, clean_arr),
+        "transfer_options": transfer_options[:3],
         "_date": date,
         "_note": "【中转规则】中转时间必须充裕：飞机转飞机≥1.5小时，火车转飞机≥2小时，飞机转火车≥1.5小时。宁可少玩景点也不可赶时间！"
     }
-    return result

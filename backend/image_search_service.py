@@ -27,11 +27,11 @@ async def search_amap_photos(name: str, city: str) -> list:
                 })
                 data = resp.json()
                 if data.get("status") != "1": continue
-                for p in data.get("pois", []):
-                    for pic in (p.get("photos", []) or []):
+                for poi in data.get("pois", []):
+                    for pic in (poi.get("photos", []) or []):
                         url = pic.get("url", "")
                         if url and url.startswith("http"):
-                            images.append({"url": url, "title": p.get("name", name),
+                            images.append({"url": url, "title": poi.get("name", name),
                                            "quality": 85, "source": "amap"})
                             if len(images) >= 5: return images
             except Exception:
@@ -58,9 +58,9 @@ async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
                 "prop": "pageimages", "format": "json", "pithumbsize": "800",
             })
             data2 = resp2.json()
-            for pid, pg in data2.get("query", {}).get("pages", {}).items():
-                thumb = pg.get("thumbnail", {}).get("source", "")
-                if thumb: images.append({"url": thumb, "title": pg.get("title", ""),
+            for page_id, page_data in data2.get("query", {}).get("pages", {}).items():
+                thumb = page_data.get("thumbnail", {}).get("source", "")
+                if thumb: images.append({"url": thumb, "title": page_data.get("title", ""),
                                          "quality": 70, "source": f"wikipedia_{lang}"})
     except Exception: pass
     return images
@@ -85,9 +85,9 @@ async def search_wikimedia(query: str, limit: int = 8) -> list:
                 "prop": "imageinfo|pageassessments",
                 "iiprop": "url|size|extmetadata", "iiurlwidth": "800", "format": "json",
             })
-            for pid, pg in resp2.json().get("query", {}).get("pages", {}).items():
-                if "missing" in pg or "imageinfo" not in pg: continue
-                info = pg["imageinfo"][0]
+            for page_id, page_data in resp2.json().get("query", {}).get("pages", {}).items():
+                if "missing" in page_data or "imageinfo" not in page_data: continue
+                info = page_data["imageinfo"][0]
                 url = info.get("thumburl") or info.get("url", "")
                 if not url: continue
                 mime = info.get("mime", "")
@@ -98,12 +98,12 @@ async def search_wikimedia(query: str, limit: int = 8) -> list:
                 if "featured" in qa.lower(): quality = 100
                 elif "quality" in qa.lower(): quality = 80
                 elif "valued" in qa.lower(): quality = 60
-                w = int(info.get("width", 0))
-                if w >= 2000: quality += 30
-                elif w >= 1000: quality += 20
-                elif w >= 500: quality += 10
-                images.append({"url": url, "title": pg.get("title", ""),
-                               "width": w, "height": info.get("height", 0),
+                img_width = int(info.get("width", 0))
+                if img_width >= 2000: quality += 30
+                elif img_width >= 1000: quality += 20
+                elif img_width >= 500: quality += 10
+                images.append({"url": url, "title": page_data.get("title", ""),
+                               "width": img_width, "height": info.get("height", 0),
                                "quality": quality, "source": "wikimedia"})
             images.sort(key=lambda x: x["quality"], reverse=True)
     except Exception: pass
