@@ -190,9 +190,9 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
       "day": 1,
       "date": "日期",
       "weather": {{"desc": "天气", "temp": "温度", "icon": "emoji"}},
-      "morning": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
-      "afternoon": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
-      "evening": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "morning": {{"spot": "景点名", "time_slot": "游玩时间段（如8:00-10:30）", "duration": "建议时长（如2.5小时）", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "afternoon": {{"spot": "景点名", "time_slot": "游玩时间段（如13:00-15:30）", "duration": "建议时长（如2.5小时）", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "evening": {{"spot": "景点名", "time_slot": "游玩时间段（如18:30-20:30）", "duration": "建议时长（如2小时）", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
       "lunch": "午餐推荐",
       "dinner": "晚餐推荐",
       "transport": "交通建议"
@@ -207,16 +207,27 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 2. 优先使用高德POI真实数据，location坐标必须填写
 3. need_booking 标记需要提前预约的景点（如故宫、莫高窟、迪士尼等热门景点设为true）
 4. 结合天气预报合理安排室内外活动
-5. 上午/下午各安排1-2个景点，晚上安排1个
-6. 【最高优先级】景点名绝对不能重复！整个{days}天行程中，每个独立景点名只能出现一次，不允许任何例外。即使同一大型景区，不同天也必须用不同子区域命名（如"张家界(金鞭溪-袁家界)"和"张家界(天子山-杨家界)"），确保景点名不重复，避免走回头路
-7. 【交通便利性】安排景点顺序时需考虑地理位置和商区分布，将同一商区/相邻区域的景点安排在同一天，减少不必要的交通时间。每天景点之间距离不宜过远
-8. 对于大型景区（如张家界、黄山、九寨沟、故宫、颐和园等），每天安排不同区域/入口，按地理位置顺序游览，不走回头路：
+5. 上午/下午各安排1个景点，晚上安排1个
+6. 【最高优先级-时间规划】每个景点必须填写 time_slot 字段，给出当天在当地的具体游玩时间段（如"9:00-11:30"），必须严格遵循以下规则：
+   a) 上午时段：最早8:00开始，最晚12:00结束，上午景点游玩时间建议2-3小时
+   b) 下午时段：最早13:00开始，最晚17:30结束，下午景点游玩时间建议2-3.5小时
+   c) 晚上时段：最早18:00开始，最晚21:30结束，晚上景点游玩时间建议1.5-2.5小时
+   d) 午餐时间：12:00-13:00为午餐和休息时间，不可安排景点游玩
+   e) 晚餐时间：17:30-18:30为晚餐时间，不可安排景点游玩
+   f) 景点间交通损耗：相邻景点之间必须预留至少30-60分钟交通和休息时间（根据距离远近），上午景点的结束时间与下午景点的开始时间间隔至少1小时，下午景点的结束时间与晚上景点的开始时间间隔至少1小时
+   g) 大景点时间：大型景区（如故宫、黄山、九寨沟、张家界等）上午游玩时间建议3-4小时，下午建议3-4小时
+   h) 小景点时间：博物馆、寺庙、公园等小景点建议1.5-2.5小时
+   i) 节奏适配：极慢/慢节奏需将游玩时间增加30%，并增加景点间休息时间至60-90分钟；快/极快节奏可适当缩短游玩时间但不可低于1小时，景点间间隔至少30分钟
+   j) 所有时间使用24小时制，跨天使用"次日XX:XX"格式
+7. 【最高优先级】景点名绝对不能重复！整个{days}天行程中，每个独立景点名只能出现一次，不允许任何例外。即使同一大型景区，不同天也必须用不同子区域命名（如"张家界(金鞭溪-袁家界)"和"张家界(天子山-杨家界)"），确保景点名不重复，避免走回头路
+8. 【交通便利性】安排景点顺序时需考虑地理位置和商区分布，将同一商区/相邻区域的景点安排在同一天，减少不必要的交通时间。每天景点之间距离不宜过远
+9. 对于大型景区（如张家界、黄山、九寨沟、故宫、颐和园等），每天安排不同区域/入口，按地理位置顺序游览，不走回头路：
    - route_detail 字段中描述当天的具体游览路线（如"南门进→金鞭溪→袁家界→百龙天梯→东门出"）
    - recommended_routes 字段中提供2-3条该景点的经典游览路线方案供用户参考（每条路线一句话描述，如"经典一日游：南门进→金鞭溪→袁家界→天子山→东门出（约6小时）"）
    - 普通景点 recommended_routes 设为空数组 []
-9. 【出发/返程-最高优先级】departure_transport和return_transport必须认真填写。flight_number必须从提供的真实航班/车次班次中选择，不可随意编造！duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'、'CA1501 2h10min'）。出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站。出发时间可以是任意时刻（上午/下午/晚上），根据实际航班/车次时刻表决定。如果下午到达，第一天可安排1个晚间景点；如果晚上到达，仅安排入住酒店。跨天到达必须标注"次日XX:XX"并设置cross_day=true。station_to_hotel字段必须填写从机场/车站到酒店的具体交通方式和时间。
-10. 【时间格式】所有时间必须使用24小时制（如9:00、14:30），绝对禁止出现>23:59的时间（如26:00）。如果活动跨天，请使用"次日8:00"等格式表示。每天上午/下午/晚上的景点安排间隔至少1小时，避免时间冲突
-11. 只输出JSON，不要markdown代码块"""
+10. 【出发/返程-最高优先级】departure_transport和return_transport必须认真填写。flight_number必须从提供的真实航班/车次班次中选择，不可随意编造！duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'、'CA1501 2h10min'）。出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站。出发时间可以是任意时刻（上午/下午/晚上），根据实际航班/车次时刻表决定。如果下午到达，第一天可安排1个晚间景点；如果晚上到达，仅安排入住酒店。跨天到达必须标注"次日XX:XX"并设置cross_day=true。station_to_hotel字段必须填写从机场/车站到酒店的具体交通方式和时间。
+11. 【时间格式】所有时间必须使用24小时制（如9:00、14:30），绝对禁止出现>23:59的时间（如26:00）。如果活动跨天，请使用"次日8:00"等格式表示。每天上午/下午/晚上的景点安排间隔至少1小时，避免时间冲突
+12. 只输出JSON，不要markdown代码块"""
 
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
@@ -378,9 +389,9 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
     {{
       "day": 1, "date": "日期",
       "weather": {{"desc": "天气", "temp": "温度", "icon": "emoji"}},
-      "morning": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
-      "afternoon": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
-      "evening": {{"spot": "景点名", "duration": "建议时长", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "morning": {{"spot": "景点名", "time_slot": "游玩时间段（如8:00-10:30）", "duration": "建议时长（如2.5小时）", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "afternoon": {{"spot": "景点名", "time_slot": "游玩时间段（如13:00-15:30）", "duration": "建议时长（如2.5小时）", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
+      "evening": {{"spot": "景点名", "time_slot": "游玩时间段（如18:30-20:30）", "duration": "建议时长（如2小时）", "reason": "推荐理由", "location": "坐标", "need_booking": false, "route_detail": "", "recommended_routes": []}},
       "lunch": "午餐推荐", "dinner": "晚餐推荐", "transport": "交通建议"
     }}
   ],
@@ -393,7 +404,7 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 2. 结合天气预报合理安排室内外活动，雨天优先安排室内景点
 3. 景点名绝对不能重复，同一商区/相邻区域景点安排在同一天，减少交通时间
 4. 出发/返程时间不能太紧凑，必须留足缓冲。飞机需提前2小时到机场，火车需提前1小时到站
-5. 【时间安排】每天上午/下午/晚上各安排1个景点，景点之间间隔至少1小时用于交通和休息，绝对避免时间冲突。上午9:00-12:00，下午13:00-17:00，晚上18:00-21:00，确保每个时段有充足游览时间
+5. 【时间安排-最高优先级】每个景点必须填写 time_slot 字段（如"9:00-11:30"），严格遵循：上午8:00-12:00，下午13:00-17:30，晚上18:00-21:30；午餐12:00-13:00和晚餐17:30-18:30不可安排景点；景点间预留至少30-60分钟交通损耗；大景点3-4小时，小景点1.5-2.5小时；节奏慢则游玩时间+30%，节奏快可缩短但≥1小时。上午结束与下午开始间隔≥1小时，下午结束与晚上开始间隔≥1小时
 6. 所有时间使用24小时制，禁止>23:59的时间（如26:00），跨天活动使用"次日XX:XX"格式
 7. 公共交通出行时，根据距离选择合适交通工具：短距离步行/公交，中距离地铁/高铁，长距离飞机
 8. 只输出JSON，不要markdown代码块"""
