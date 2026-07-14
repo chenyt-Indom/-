@@ -226,7 +226,7 @@ async def generate_trip(req: TripRequest):
             elif e.response.status_code == 429:
                 err_msg = "请求过于频繁，请稍后重试"
             return {"success": False, "error": err_msg}
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError) as e:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
         except Exception:
             return {"success": False, "error": "攻略生成失败，请检查网络后重试"}
@@ -521,13 +521,16 @@ async def regenerate_trip(request: Request):
             elif e.response.status_code == 429:
                 err_msg = "请求过于频繁，请稍后重试"
             return {"success": False, "error": err_msg}
-        except json.JSONDecodeError:
-            return {"success": False, "error": "AI返回数据格式异常，请重试"}
+        except (json.JSONDecodeError, ValueError) as e:
+            return {"success": False, "error": f"AI返回数据格式异常，请重试"}
         except Exception:
             return {"success": False, "error": "AI重新规划失败，请重试"}
 
         # 补全坐标
-        await fill_coordinates(new_trip, dest)
+        try:
+            await fill_coordinates(new_trip, dest)
+        except Exception:
+            pass  # 坐标补全失败不影响主流程
 
         # 获取图片
         try:

@@ -22,7 +22,8 @@ async def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 
             },
         )
         resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+        data = resp.json()
+    return data["choices"][0]["message"]["content"]
 
 
 def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
