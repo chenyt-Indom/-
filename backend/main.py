@@ -157,8 +157,19 @@ async def generate_trip(req: TripRequest):
             if isinstance(r, list):
                 all_pois.extend(r)
 
+        # 去重并按评分降序排列（高评分优先），取前20个
+        seen_names = set()
+        unique_pois = []
+        for p in all_pois:
+            if p["name"] not in seen_names:
+                seen_names.add(p["name"])
+                unique_pois.append(p)
+        # 按评分降序（有评分的优先），无评分的排末尾
+        unique_pois.sort(key=lambda x: float(x["rating"]) if x["rating"] else 0, reverse=True)
+        ranked_pois = unique_pois[:20]
+
         # 2. 调用 DeepSeek 生成行程
-        prompt = build_trip_prompt(dest, days, req.budget, req.interests, all_pois, weather_data,
+        prompt = build_trip_prompt(dest, days, req.budget, req.interests, ranked_pois, weather_data,
                                    start_date, end_date, req.travelers, req.budget_type, req.pace)
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)

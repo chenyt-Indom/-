@@ -31,8 +31,8 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     """构建行程生成提示词，包含POI数据、天气、人数、预算类型、节奏和JSON格式要求"""
     interest_str = "、".join(interests) if interests else "综合体验"
     poi_str = "\n".join([
-        f"- {p['name']}（{p.get('type','景点')}，坐标：{p.get('location','')}）"
-        for p in poi_data[:15]
+        f"- {p['name']}（{p.get('type','景点')}，坐标：{p.get('location','')}，评分：{p.get('rating','无')}，商区：{p.get('business_area','')}）"
+        for p in poi_data[:20]
     ]) if poi_data else "（请根据常识推荐）"
     weather_str = "\n".join([
         f"  {w['date']}: {w['dayweather']} {w['daytemp']}°C~{w['nighttemp']}°C"
@@ -82,7 +82,7 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 【天数】{days}天{date_info}{people_info}{budget_info}{pace_info}
 【兴趣】{interest_str}
 
-【高德 POI 真实数据（含坐标）】
+【高德 POI 真实数据（按评分降序排列，评分越高越热门）】
 {poi_str}
 
 【天气预报】
@@ -115,16 +115,18 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 }}
 
 要求：
-1. 优先使用高德POI真实数据，location坐标必须填写
-2. need_booking 标记需要提前预约的景点（如故宫、莫高窟、迪士尼等热门景点设为true）
-3. 结合天气预报合理安排室内外活动
-4. 上午/下午各安排1-2个景点，晚上安排1个
-5. 【最高优先级】景点名绝对不能重复！整个{days}天行程中，每个独立景点名只能出现一次，不允许任何例外。即使同一大型景区，不同天也必须用不同子区域命名（如"张家界(金鞭溪-袁家界)"和"张家界(天子山-杨家界)"），确保景点名不重复，避免走回头路
-6. 对于大型景区（如张家界、黄山、九寨沟、故宫、颐和园等），每天安排不同区域/入口，按地理位置顺序游览，不走回头路：
+1. 【热门景点优先】优先选择评分高（≥4.0）的著名景点，确保行程中至少80%的景点来自高评分榜单。POI列表已按评分降序排列，排在前面的优先选择
+2. 优先使用高德POI真实数据，location坐标必须填写
+3. need_booking 标记需要提前预约的景点（如故宫、莫高窟、迪士尼等热门景点设为true）
+4. 结合天气预报合理安排室内外活动
+5. 上午/下午各安排1-2个景点，晚上安排1个
+6. 【最高优先级】景点名绝对不能重复！整个{days}天行程中，每个独立景点名只能出现一次，不允许任何例外。即使同一大型景区，不同天也必须用不同子区域命名（如"张家界(金鞭溪-袁家界)"和"张家界(天子山-杨家界)"），确保景点名不重复，避免走回头路
+7. 【交通便利性】安排景点顺序时需考虑地理位置和商区分布，将同一商区/相邻区域的景点安排在同一天，减少不必要的交通时间。每天景点之间距离不宜过远
+8. 对于大型景区（如张家界、黄山、九寨沟、故宫、颐和园等），每天安排不同区域/入口，按地理位置顺序游览，不走回头路：
    - route_detail 字段中描述当天的具体游览路线（如"南门进→金鞭溪→袁家界→百龙天梯→东门出"）
    - recommended_routes 字段中提供2-3条该景点的经典游览路线方案供用户参考（每条路线一句话描述，如"经典一日游：南门进→金鞭溪→袁家界→天子山→东门出（约6小时）"）
    - 普通景点 recommended_routes 设为空数组 []
-7. 只输出JSON，不要markdown代码块"""
+9. 只输出JSON，不要markdown代码块"""
 
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,

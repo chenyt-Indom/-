@@ -4,11 +4,11 @@ from config import AMAP_KEY, AMAP_POI_URL, AMAP_WEATHER_URL, AMAP_GEO_URL
 
 
 async def amap_poi_search(keywords: str, city: str) -> list:
-    """高德 POI 搜索，返回景点列表含名称、地址、坐标"""
+    """高德 POI 搜索，返回景点列表含名称、地址、坐标、评分、商区"""
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(AMAP_POI_URL, params={
             "key": AMAP_KEY, "keywords": keywords, "city": city,
-            "offset": 10, "extensions": "all",
+            "offset": 15, "extensions": "all",
         })
         data = resp.json()
         if data.get("status") == "1":
@@ -17,6 +17,9 @@ async def amap_poi_search(keywords: str, city: str) -> list:
                 "address": p.get("address"),
                 "type": p.get("type"),
                 "location": p.get("location", ""),
+                "rating": p.get("biz_ext", {}).get("rating", "") or "",
+                "cost": p.get("biz_ext", {}).get("cost", "") or "",
+                "business_area": p.get("business_area", "") or "",
                 "photos": [pic.get("url") for pic in (p.get("photos", []) or []) if pic.get("url")],
             } for p in data.get("pois", [])]
         return []
