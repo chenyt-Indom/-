@@ -25,24 +25,24 @@ def _init_weather_files():
     return WEATHER_TO_FILE
 
 
-def _resolve_compound_weather(desc: str) -> str:
-    """处理"X转Y"组合天气：优先选用更具视觉冲击力的天气类型"""
-    if "转" not in desc:
-        return desc
-    parts = desc.split("转")
-    strong = ["暴雨", "大暴雨", "特大暴雨", "暴雪", "大雪", "雷阵雨", "雨", "雪", "大雨", "中雨", "中雪", "小雨", "小雪"]
-    for part in parts:
-        for strong_type in strong:
-            if strong_type in part:
-                return part
-    return parts[-1] if parts[-1] else parts[0]
-
-
 def get_weather_img_path(weather_desc: str) -> str:
     """根据天气描述获取本地图片路径，找不到返回空字符串"""
     _init_weather_files()
     desc = weather_desc or "晴"
-    desc = _resolve_compound_weather(desc)
+    # 处理"X转Y"：优先用更具视觉冲击力的天气
+    if "转" in desc:
+        parts = desc.split("转")
+        strong = ["暴雨", "大暴雨", "特大暴雨", "暴雪", "大雪", "雷阵雨", "雨", "雪", "大雨", "中雨", "中雪", "小雨", "小雪"]
+        for p in parts:
+            for s in strong:
+                if s in p:
+                    desc = p
+                    break
+            else:
+                continue
+            break
+        else:
+            desc = parts[-1] if parts[-1] else parts[0]
     # 直接匹配
     if desc in WEATHER_TO_FILE:
         return "/app/weather/" + WEATHER_TO_FILE[desc]
@@ -61,7 +61,19 @@ def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
         return local
     # fallback到text_to_image API
     desc = weather_desc or "晴"
-    desc = _resolve_compound_weather(desc)
+    if "转" in desc:
+        parts = desc.split("转")
+        strong = ["暴雨", "大暴雨", "特大暴雨", "暴雪", "大雪", "雷阵雨", "雨", "雪", "大雨", "中雨", "中雪", "小雨", "小雪"]
+        for p in parts:
+            for s in strong:
+                if s in p:
+                    desc = p
+                    break
+            else:
+                continue
+            break
+        else:
+            desc = parts[-1] if parts[-1] else parts[0]
     weather_map = {
         "晴": "sunny day, clear blue sky, bright sunlight, photorealistic landscape, 4K",
         "少云": "mostly clear sky, few clouds, bright sunlight, photorealistic landscape, 4K",
@@ -125,50 +137,39 @@ async def resolve_hotel_image(name: str, area: str) -> str:
     return url
 
 
-def _fill_spot_images(trip_data: dict, dest: str) -> list:
-    """为行程中所有景点获取真实照片URL，返回景点图片填充协程列表"""
+async def fill_images(trip_data: dict, dest: str):
+    """为行程中的景点和天气补全图片URL"""
     tasks = []
+    spot_items = []
+    weather_items = []
     for day in trip_data.get("itinerary", []):
         for slot_name in ["morning", "afternoon", "evening"]:
             spot_data = day.get(slot_name)
             if spot_data and spot_data.get("spot"):
+                spot_items.append(spot_data)
                 tasks.append(_fill_spot_image(spot_data, dest))
-    return tasks
-
-
-def _fill_weather_images(trip_data: dict) -> list:
-    """为行程中每天补全天气图片URL，返回天气数据列表"""
-    weather_items = []
-    for day in trip_data.get("itinerary", []):
-        weather_item = day.get("weather", {})
-        if weather_item:
-            desc = weather_item.get("desc", "晴")
+        w = day.get("weather", {})
+        if w:
+            desc = w.get("desc", "晴")
             # 优先使用本地天气图片
             local_img = get_weather_img_path(desc)
             if local_img:
-                weather_item["image"] = local_img
-                weather_item["image_fallback"] = local_img
+                w["image"] = local_img
+                w["image_fallback"] = local_img  # 本地图片不需要fallback
             else:
-                weather_item["image"] = weather_image_url(desc)
-                weather_item["image_fallback"] = weather_image_url(
+                # fallback到text_to_image API
+                w["image"] = weather_image_url(desc)
+                w["image_fallback"] = weather_image_url(
                     (desc + " landscape").replace("转", " "), "portrait_4_3")
-            weather_items.append(weather_item)
-    return weather_items
-
-
-async def fill_images(trip_data: dict, dest: str):
-    """为行程中的景点和天气补全图片URL"""
-    spot_tasks = _fill_spot_images(trip_data, dest)
-    weather_items = _fill_weather_images(trip_data)
-
-    if spot_tasks:
-        await asyncio.gather(*spot_tasks)
-
+            weather_items.append(w)
+    if tasks:
+        await asyncio.gather(*tasks)
+    # 只解析非本地图片的text_to_image URL
     resolve_tasks = []
-    for weather_item in weather_items:
-        img = weather_item.get("image", "")
+    for w in weather_items:
+        img = w.get("image", "")
         if IMG_BASE in img:
-            resolve_tasks.append(_resolve_and_set(weather_item, "image", img))
+            resolve_tasks.append(_resolve_and_set(w, "image", img))
     if resolve_tasks:
         await asyncio.gather(*resolve_tasks)
 

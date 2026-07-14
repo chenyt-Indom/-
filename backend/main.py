@@ -12,17 +12,10 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import (
-    judge_transport, search_flights, build_flight_query_text,
-    get_route_schedule, get_nearest_hub, get_transfer_routes,
-    sanitize_airport_name, is_airport_valid, DECOMMISSIONED_AIRPORTS
-)
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
-from route_service import (
-    get_route_plan, calculate_self_drive_plan,
-    calculate_transit_to_station, get_route_time, calculate_station_to_hotel
-)
+from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
 
 app = FastAPI(title="行旅白 AI 旅行规划")
 app.add_middleware(
@@ -34,199 +27,60 @@ _static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(_static_dir, exist_ok=True)
 app.mount("/app", StaticFiles(directory=_static_dir, html=True), name="static")
 
-
-# ===================== 辅助函数 =====================
-
-def _parse_ai_json(raw_text: str) -> dict:
-    """解析AI返回的JSON文本，清理markdown代码块前缀后缀"""
-    return json.loads(
-        raw_text.strip().removeprefix("```json").removeprefix("```")
-        .removesuffix("```").strip()
-    )
-
-
-def _map_deepseek_error(status_code: int) -> str:
-    """将DeepSeek HTTP状态码映射为用户友好的错误消息"""
-    error_map = {
-        402: "DeepSeek API 余额不足，请充值后重试",
-        401: "DeepSeek API Key 无效",
-        429: "请求过于频繁，请稍后重试",
-    }
-    return error_map.get(status_code, "AI服务调用失败")
-
-
-async def _call_deepseek_safely(system_prompt: str, user_prompt: str,
-                                 max_tokens: int = 4000) -> str:
-    """安全调用DeepSeek API，统一处理HTTP错误"""
-    try:
-        return await call_deepseek(system_prompt, user_prompt, max_tokens)
-    except httpx.HTTPStatusError as error:
-        raise ValueError(_map_deepseek_error(error.response.status_code))
-    except Exception:
-        raise ValueError("AI服务调用失败，请重试")
-
-
-async def _gather_poi_and_weather(dest: str, interests: list) -> tuple:
-    """并行查询高德POI和天气数据，返回去重排序后的POI列表和天气数据"""
-    poi_tasks = [
-        amap_poi_search(f"{dest}景点", dest),
-        amap_poi_search(f"{dest}美食", dest),
-    ]
-    if interests:
-        poi_tasks.append(amap_poi_search(f"{dest}{' '.join(interests)}", dest))
-
-    poi_results, weather_data = await asyncio.gather(
-        asyncio.gather(*poi_tasks),
-        amap_weather(dest)
-    )
-
-    # 合并POI结果
-    all_pois = []
-    for poi_result in poi_results:
-        if isinstance(poi_result, list):
-            all_pois.extend(poi_result)
-
-    # 去重并按评分降序排列
-    seen_names = set()
-    unique_pois = []
-    for poi_item in all_pois:
-        if poi_item["name"] not in seen_names:
-            seen_names.add(poi_item["name"])
-            unique_pois.append(poi_item)
-    unique_pois.sort(key=lambda x: float(x["rating"]) if x["rating"] else 0, reverse=True)
-    return unique_pois[:20], weather_data
-
-
-async def _build_transport_info(departure_city: str, dest: str,
-                                 start_date: str, end_date: str,
-                                 is_self_drive: bool) -> dict:
-    """构建交通信息字典，供AI生成行程使用"""
-    transport_info = {}
-    if not departure_city:
-        return transport_info
-
-    # 判断交通工具
-    transport_judgment = judge_transport(departure_city, dest)
-    transport_info["transport"] = transport_judgment
-
-    # 查询真实航班/火车班次数据
-    transport_info["route_schedule"] = get_route_schedule(departure_city, dest, start_date)
-    transport_info["transfer_info"] = get_transfer_routes(departure_city, dest, start_date)
-
-    # 检查邻近枢纽
-    transport_info["dep_hub"] = get_nearest_hub(departure_city)
-    transport_info["dest_hub"] = get_nearest_hub(dest)
-
-    # 计算前往/离开机场车站的时间
-    station_type = "airport" if transport_judgment.get("need_flight") else "train"
-    transport_info["to_station"] = await calculate_transit_to_station(departure_city, station_type)
-    transport_info["from_station"] = await calculate_station_to_hotel(dest, station_type)
-
-    # 生成票务查询指引
-    transport_info["flight_query_text"] = build_flight_query_text(
-        departure_city, dest, start_date)
-
-    # 自驾模式：计算自驾路线
-    if is_self_drive:
-        transport_info["self_drive_plan"] = await calculate_self_drive_plan(
-            departure_city, dest, start_date, end_date)
-
-    # 飞常准航班查询
-    if transport_judgment.get("need_flight"):
-        flight_result = await search_flights(departure_city, dest, start_date)
-        transport_info["flight_data"] = flight_result.get("flights", [])
-        transport_info["flight_query"] = flight_result.get("query", {})
-
-    return transport_info
-
-
-async def _fill_booking_coordinates(booking_info: dict, dest: str):
-    """为酒店和门票补全坐标"""
-    for hotel in booking_info.get("hotels", []):
-        if hotel.get("name") and not hotel.get("location"):
-            hotel["location"] = await amap_geocode(hotel["name"], dest)
-    for change in booking_info.get("hotel_changes", []):
-        if change.get("to_hotel") and not change.get("location"):
-            change["location"] = await amap_geocode(change["to_hotel"], dest)
-    for ticket in booking_info.get("tickets", []):
-        if ticket.get("spot") and not ticket.get("location"):
-            ticket["location"] = await amap_geocode(ticket["spot"], dest)
-
-
-async def _fill_images_safely(trip_data: dict, booking_info: dict, dest: str):
-    """超时保护下获取景点和酒店图片"""
-    try:
-        await asyncio.wait_for(fill_images(trip_data, dest), timeout=25.0)
-    except (asyncio.TimeoutError, Exception):
-        pass
-    try:
-        await asyncio.wait_for(fill_booking_images(booking_info, dest), timeout=25.0)
-    except (asyncio.TimeoutError, Exception):
-        pass
+@app.get("/api/health")
+async def health_check():
+    """健康检查：返回API密钥配置状态"""
+    return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY)}
 
 
 def _validate_transport_airports(trip_data: dict):
     """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名"""
-
-    def _check_and_sanitize_station(transport: dict, station_key: str = "station"):
-        """检查单个transport的station字段，修正非法机场名"""
-        station = transport.get(station_key, "")
-        # 检查黑名单
-        for banned in DECOMMISSIONED_AIRPORTS:
-            if banned in station:
-                print(f"[WARN] AI使用了停用机场: {station}，已清空{station_key}字段")
-                transport[station_key] = ""
-                transport["note"] = (transport.get("note", "") +
-                                     "（原机场已停用，请自行查询当前运营机场）").strip()
-                return
-
-        # 如果station不为空但不在白名单中
-        if transport.get(station_key) and not is_airport_valid(transport.get(station_key, "")):
-            sanitized = sanitize_airport_name(transport.get(station_key, ""))
-            if sanitized:
-                transport[station_key] = sanitized
-            else:
-                print(f"[WARN] AI使用了未知机场: {station}，已清空{station_key}字段")
-                transport[station_key] = ""
-                transport["note"] = (transport.get("note", "") +
-                                     "（机场信息未验证，请核实）").strip()
-
-    def _validate_transfers(transport: dict):
-        """检查transfers中的机场名"""
-        for transfer in transport.get("transfers", []):
-            for trans_key in ("from_station", "to_station"):
-                trans_station = transfer.get(trans_key, "")
-                for banned in DECOMMISSIONED_AIRPORTS:
-                    if banned in trans_station:
-                        transfer[trans_key] = ""
-                        break
-                if transfer.get(trans_key) and not is_airport_valid(transfer.get(trans_key, "")):
-                    sanitized = sanitize_airport_name(transfer.get(trans_key, ""))
-                    transfer[trans_key] = sanitized if sanitized else ""
-
-    def _validate_flight_number(transport: dict):
-        """如果flight_number非空但station为空，清空flight_number"""
-        if transport.get("flight_number") and not transport.get("station"):
-            print(f"[WARN] AI编造了航班号但无有效机场: {transport.get('flight_number')}，已清空")
-            transport["flight_number"] = ""
-            transport["note"] = (transport.get("note", "") +
-                                 "（航班信息未验证，请自行查询）").strip()
+    from feichangzhun_service import sanitize_airport_name, is_airport_valid, DECOMMISSIONED_AIRPORTS
 
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
         if not transport:
             continue
-        _check_and_sanitize_station(transport)
-        _validate_transfers(transport)
-        _validate_flight_number(transport)
 
+        station = transport.get("station", "")
+        # 检查黑名单
+        for banned in DECOMMISSIONED_AIRPORTS:
+            if banned in station:
+                print(f"[WARN] AI使用了停用机场: {station}，已清空station字段")
+                transport["station"] = ""
+                transport["note"] = (transport.get("note", "") + "（原机场已停用，请自行查询当前运营机场）").strip()
+                break
 
-# ===================== API 路由 =====================
+        # 如果station不为空但不在白名单中
+        if transport.get("station") and not is_airport_valid(transport.get("station", "")):
+            sanitized = sanitize_airport_name(transport.get("station", ""))
+            if sanitized:
+                transport["station"] = sanitized
+            else:
+                print(f"[WARN] AI使用了未知机场: {station}，已清空station字段")
+                transport["station"] = ""
+                transport["note"] = (transport.get("note", "") + "（机场信息未验证，请核实）").strip()
 
-@app.get("/api/health")
-async def health_check():
-    """健康检查：返回API密钥配置状态"""
-    return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY)}
+        # 检查transfers中的机场名
+        for transfer in transport.get("transfers", []):
+            for tk in ("from_station", "to_station"):
+                ts = transfer.get(tk, "")
+                for banned in DECOMMISSIONED_AIRPORTS:
+                    if banned in ts:
+                        transfer[tk] = ""
+                        break
+                if transfer.get(tk) and not is_airport_valid(transfer.get(tk, "")):
+                    sanitized = sanitize_airport_name(transfer.get(tk, ""))
+                    if sanitized:
+                        transfer[tk] = sanitized
+                    else:
+                        transfer[tk] = ""
+
+        # 如果flight_number非空但station为空（说明AI编造了），清空flight_number
+        if transport.get("flight_number") and not transport.get("station"):
+            print(f"[WARN] AI编造了航班号但无有效机场: {transport.get('flight_number')}，已清空")
+            transport["flight_number"] = ""
+            transport["note"] = (transport.get("note", "") + "（航班信息未验证，请自行查询）").strip()
 
 
 @app.get("/api/locate")
@@ -241,31 +95,32 @@ async def locate_city(request: Request):
     is_private = bool(re.match(
         r'^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)', client_ip
     )) or client_ip == "::1"
-
     async with httpx.AsyncClient(timeout=10.0) as client:
         # 方案1：高德IP定位
         params = {"key": AMAP_KEY}
         if not is_private and client_ip:
             params["ip"] = client_ip
-        response = await client.get("https://restapi.amap.com/v3/ip", params=params)
-        amap_data = response.json()
+        resp = await client.get("https://restapi.amap.com/v3/ip", params=params)
+        amap_data = resp.json()
         if amap_data.get("status") == "1" and amap_data.get("city"):
             amap_city = amap_data["city"].replace("市", "")
-            # 方案3：用ipapi.co交叉验证
+            amap_source = "amap"
+            # 方案3：用ipapi.co交叉验证（仅在高德返回了结果时）
             try:
-                ipapi_response = await client.get(
-                    f"https://ipapi.co/{client_ip}/json/", follow_redirects=True)
-                ipapi_data = ipapi_response.json()
+                ipapi_resp = await client.get(f"https://ipapi.co/{client_ip}/json/", follow_redirects=True)
+                ipapi_data = ipapi_resp.json()
                 ipapi_city = (ipapi_data.get("city", "") or "").replace("市", "")
+                # 如果两个服务返回不同城市，用ipapi.co的结果（对移动端更准）
                 if ipapi_city and ipapi_city != amap_city and len(ipapi_city) >= 2:
                     # 再用ip-api.com作为决胜票
                     try:
-                        ipapi2_response = await client.get(
+                        ipapi2_resp = await client.get(
                             f"http://ip-api.com/json/{client_ip}?lang=zh-CN&fields=city,regionName",
                             follow_redirects=True)
-                        ipapi2_data = ipapi2_response.json()
+                        ipapi2_data = ipapi2_resp.json()
                         ipapi2_city = (ipapi2_data.get("city", "") or "").replace("市", "")
                         if ipapi2_city and ipapi2_city == ipapi_city:
+                            # 两个都不同意高德，用新结果
                             return {"success": True, "city": ipapi_city,
                                     "province": ipapi_data.get("region", ""),
                                     "adcode": "", "source": "ipapi_co"}
@@ -278,28 +133,25 @@ async def locate_city(request: Request):
                 pass
             return {"success": True, "city": amap_city,
                     "province": amap_data.get("province", ""),
-                    "adcode": amap_data.get("adcode", ""), "source": "amap"}
-
+                    "adcode": amap_data.get("adcode", ""), "source": amap_source}
         # 方案2：ip-api.com 兜底
         try:
             ip_url = "http://ip-api.com/json/?lang=zh-CN&fields=city,regionName,country"
             if not is_private and client_ip:
                 ip_url = f"http://ip-api.com/json/{client_ip}?lang=zh-CN&fields=city,regionName,country"
-            response2 = await client.get(ip_url, follow_redirects=True)
-            data2 = response2.json()
+            resp2 = await client.get(ip_url, follow_redirects=True)
+            data2 = resp2.json()
             if isinstance(data2, dict) and data2.get("city"):
                 return {"success": True, "city": data2["city"].replace("市", ""),
                         "province": data2.get("regionName", ""), "adcode": "",
                         "source": "ip-api"}
         except Exception:
             pass
-
         # 方案4：ipapi.co 最后兜底
         try:
             if not is_private and client_ip:
-                ipapi_response = await client.get(
-                    f"https://ipapi.co/{client_ip}/json/", follow_redirects=True)
-                ipapi_data = ipapi_response.json()
+                ipapi_resp = await client.get(f"https://ipapi.co/{client_ip}/json/", follow_redirects=True)
+                ipapi_data = ipapi_resp.json()
                 ipapi_city = (ipapi_data.get("city", "") or "").replace("市", "")
                 if ipapi_city:
                     return {"success": True, "city": ipapi_city,
@@ -314,10 +166,10 @@ async def locate_city(request: Request):
 async def reverse_geocode(lat: float, lng: float):
     """GPS坐标逆地理编码：通过高德API将经纬度转换为城市名"""
     async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(AMAP_REGEO_URL, params={
+        resp = await client.get(AMAP_REGEO_URL, params={
             "key": AMAP_KEY, "location": f"{lng},{lat}", "extensions": "base",
         })
-        data = response.json()
+        data = resp.json()
         if data.get("status") == "1":
             regeo = data.get("regeocode", {})
             addr = regeo.get("addressComponent", {})
@@ -339,60 +191,148 @@ async def generate_trip(req: TripRequest):
         end_date = req.end_date or ""
 
         # 1. 并行查询高德 POI 和天气
-        ranked_pois, weather_data = await _gather_poi_and_weather(dest, req.interests)
+        poi_tasks = [
+            amap_poi_search(f"{dest}景点", dest),
+            amap_poi_search(f"{dest}美食", dest),
+        ]
+        if req.interests:
+            poi_tasks.append(amap_poi_search(f"{dest}{' '.join(req.interests)}", dest))
+        weather_task = amap_weather(dest)
 
-        # 2. 构建交通信息
-        transport_info = await _build_transport_info(
-            req.departure_city, dest, start_date, end_date, req.is_self_drive)
+        poi_results = await asyncio.gather(*poi_tasks)
+        weather_data = await weather_task
 
-        # 3. 调用 DeepSeek 生成行程
-        prompt = build_trip_prompt(dest, days, req.budget, req.interests, ranked_pois,
-                                   weather_data, start_date, end_date, req.travelers,
-                                   req.budget_type, req.pace, req.is_self_drive,
-                                   req.departure_city, transport_info)
+        all_pois = []
+        for r in poi_results:
+            if isinstance(r, list):
+                all_pois.extend(r)
+
+        # 去重并按评分降序排列（高评分优先），取前20个
+        seen_names = set()
+        unique_pois = []
+        for p in all_pois:
+            if p["name"] not in seen_names:
+                seen_names.add(p["name"])
+                unique_pois.append(p)
+        unique_pois.sort(key=lambda x: float(x["rating"]) if x["rating"] else 0, reverse=True)
+        ranked_pois = unique_pois[:20]
+
+        # 1.5 出发/返程交通规划（自驾/公共交通）
+        transport_info = {}
+        if req.departure_city:
+            # 判断交通工具
+            ti = judge_transport(req.departure_city, dest)
+            transport_info["transport"] = ti
+            # 查询真实航班/火车班次数据（传入日期校准）
+            schedule = get_route_schedule(req.departure_city, dest, start_date)
+            transport_info["route_schedule"] = schedule
+            # 查询中转方案（当无直飞时）
+            transfer_info = get_transfer_routes(req.departure_city, dest, start_date)
+            transport_info["transfer_info"] = transfer_info
+            # 检查出发/目的城市是否需要去邻近枢纽
+            dep_hub = get_nearest_hub(req.departure_city)
+            dest_hub = get_nearest_hub(dest)
+            transport_info["dep_hub"] = dep_hub
+            transport_info["dest_hub"] = dest_hub
+            # 计算前往机场/车站的时间
+            if ti.get("need_flight"):
+                to_station = await calculate_transit_to_station(req.departure_city, "airport")
+                from_station = await calculate_station_to_hotel(dest, "airport")
+                transport_info["to_station"] = to_station
+                transport_info["from_station"] = from_station
+                # 生成航班查询指引
+                transport_info["flight_query_text"] = build_flight_query_text(
+                    req.departure_city, dest, start_date)
+            else:
+                to_station = await calculate_transit_to_station(req.departure_city, "train")
+                from_station = await calculate_station_to_hotel(dest, "train")
+                transport_info["to_station"] = to_station
+                transport_info["from_station"] = from_station
+                # 生成火车票查询指引
+                transport_info["flight_query_text"] = build_flight_query_text(
+                    req.departure_city, dest, start_date)
+            # 自驾模式：计算自驾路线
+            if req.is_self_drive:
+                sd_plan = await calculate_self_drive_plan(
+                    req.departure_city, dest, start_date, end_date)
+                transport_info["self_drive_plan"] = sd_plan
+            # 飞常准航班查询
+            if ti.get("need_flight"):
+                flight_result = await search_flights(req.departure_city, dest, start_date)
+                transport_info["flight_data"] = flight_result.get("flights", [])
+                transport_info["flight_query"] = flight_result.get("query", {})
+
+        # 2. 调用 DeepSeek 生成行程
+        prompt = build_trip_prompt(dest, days, req.budget, req.interests, ranked_pois, weather_data,
+                                   start_date, end_date, req.travelers, req.budget_type, req.pace,
+                                   req.is_self_drive, req.departure_city, transport_info)
         try:
-            raw = await _call_deepseek_safely("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
-        except ValueError as error:
-            return {"success": False, "error": str(error)}
+            raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
+        except httpx.HTTPStatusError as e:
+            err_msg = "AI服务调用失败"
+            if e.response.status_code == 402:
+                err_msg = "DeepSeek API 余额不足，请充值后重试"
+            elif e.response.status_code == 401:
+                err_msg = "DeepSeek API Key 无效"
+            elif e.response.status_code == 429:
+                err_msg = "请求过于频繁，请稍后重试"
+            return {"success": False, "error": err_msg}
+        except Exception:
+            return {"success": False, "error": "AI服务调用失败，请重试"}
 
+        raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
-            trip_data = _parse_ai_json(raw)
+            trip_data = json.loads(raw_clean)
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 后处理验证：检查并修正AI生成的机场名
         _validate_transport_airports(trip_data)
 
-        # 4. 补全景点坐标
+        # 3. 补全景点坐标
         await fill_coordinates(trip_data, dest)
 
-        # 5. 调用 DeepSeek 查询订票/酒店信息
+        # 4. 调用 DeepSeek 查询订票/酒店信息
         itinerary = trip_data.get("itinerary", [])
-        booking_prompt = build_booking_prompt(dest, start_date, end_date, req.budget,
-                                              itinerary, req.departure_city, transport_info)
+        booking_prompt = build_booking_prompt(dest, start_date, end_date, req.budget, itinerary,
+                                              req.departure_city, transport_info)
         try:
-            booking_raw = await _call_deepseek_safely(
-                "你是一个旅行服务顾问，只输出JSON格式数据。", booking_prompt, 3000)
-            booking_info = _parse_ai_json(booking_raw)
+            booking_raw = await call_deepseek("你是一个旅行服务顾问，只输出JSON格式数据。", booking_prompt, 3000)
+            booking_clean = booking_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            booking_info = json.loads(booking_clean)
         except Exception:
             booking_info = {"flights": [], "hotels": [], "tickets": [], "booking_tips": []}
 
         # 6. 为酒店和门票补全坐标
-        await _fill_booking_coordinates(booking_info, dest)
+        for hotel in booking_info.get("hotels", []):
+            if hotel.get("name") and not hotel.get("location"):
+                hotel["location"] = await amap_geocode(hotel["name"], dest)
+        for change in booking_info.get("hotel_changes", []):
+            if change.get("to_hotel") and not change.get("location"):
+                change["location"] = await amap_geocode(change["to_hotel"], dest)
+        for ticket in booking_info.get("tickets", []):
+            if ticket.get("spot") and not ticket.get("location"):
+                ticket["location"] = await amap_geocode(ticket["spot"], dest)
 
-        # 7. 获取图片
-        await _fill_images_safely(trip_data, booking_info, dest)
+        # 7. 为景点和天气获取真实图片URL（带超时，不阻塞主流程）
+        try:
+            await asyncio.wait_for(fill_images(trip_data, dest), timeout=25.0)
+        except (asyncio.TimeoutError, Exception):
+            pass  # 图片获取超时或失败不阻塞攻略生成
+        # 为酒店获取真实门面图片（带超时）
+        try:
+            await asyncio.wait_for(fill_booking_images(booking_info, dest), timeout=25.0)
+        except (asyncio.TimeoutError, Exception):
+            pass  # 酒店图片获取超时或失败不阻塞攻略生成
 
         trip_data["booking_info"] = booking_info
         trip_data["transport_info"] = transport_info
         return {"success": True, "data": trip_data}
-    except Exception as error:
+    except Exception as e:
         import traceback
         traceback.print_exc()
-        return {"success": False, "error": f"服务异常：{str(error)}"}
+        return {"success": False, "error": f"服务异常：{str(e)}"}
 
-
-# ===================== 天气相关 API =====================
 
 @app.get("/api/weather-hourly")
 async def weather_hourly(city: str, date: str):
@@ -430,8 +370,6 @@ async def china_weather_chat(city: str, query: str = ""):
     return await get_weather_chat(city, query)
 
 
-# ===================== 景点/酒店详情 API =====================
-
 @app.get("/api/spot-detail")
 async def spot_detail(name: str, city: str, reason: str = "", route_detail: str = ""):
     """DeepSeek 生成景点详细介绍（≥500字），含著名小景点"""
@@ -447,10 +385,8 @@ async def spot_detail(name: str, city: str, reason: str = "", route_detail: str 
     try:
         raw = await call_deepseek("你是一个资深旅行编辑，擅长撰写景点深度介绍。", prompt, 2000)
         return {"success": True, "content": raw.strip()}
-    except Exception as error:
-        return {"success": False,
-                "content": reason or f"{name}是{city}的著名景点，值得一游。",
-                "error": str(error)}
+    except Exception as e:
+        return {"success": False, "content": reason or f"{name}是{city}的著名景点，值得一游。", "error": str(e)}
 
 
 @app.get("/api/hotel-detail")
@@ -468,13 +404,9 @@ async def hotel_detail(name: str, city: str, area: str = "", reason: str = ""):
     try:
         raw = await call_deepseek("你是一个资深旅行编辑，擅长撰写酒店深度介绍。", prompt, 2000)
         return {"success": True, "content": raw.strip()}
-    except Exception as error:
-        return {"success": False,
-                "content": reason or f"{name}位于{city}{area}，地理位置优越，是旅途中的理想下榻之选。",
-                "error": str(error)}
+    except Exception as e:
+        return {"success": False, "content": reason or f"{name}位于{city}{area}，地理位置优越，是旅途中的理想下榻之选。", "error": str(e)}
 
-
-# ===================== 路线规划与监控 API =====================
 
 @app.post("/api/route-plan")
 async def route_plan(request: Request):
@@ -492,8 +424,8 @@ async def monitor_trip(request: Request):
     """DeepSeek实时监测：检查路况/天气变化，给出突发情况建议"""
     body = await request.json()
     trip_data = body.get("trip_data", {})
-    current_location = body.get("current_location", {})
-    rejected = body.get("rejected", False)
+    current_location = body.get("current_location", {})  # {lng, lat}
+    rejected = body.get("rejected", False)  # 用户是否已拒绝过
 
     if rejected:
         return {"success": True, "has_alert": False, "message": ""}
@@ -505,26 +437,24 @@ async def monitor_trip(request: Request):
     alerts = []
     # 1. 检查天气预警
     try:
-        weather_alerts_result = await check_weather_alerts(dest)
-        if weather_alerts_result.get("alerts"):
-            alerts.append({"type": "weather",
-                           "message": f"目的地{dest}天气预警：" +
-                           weather_alerts_result["alerts"][0]["message"]})
+        w_alerts = await check_weather_alerts(dest)
+        if w_alerts.get("alerts"):
+            alerts.append({"type": "weather", "message": f"目的地{dest}天气预警：" + w_alerts["alerts"][0]["message"]})
     except Exception:
         pass
 
-    # 2. 检查实时路况
+    # 2. 检查实时路况（如果用户提供了当前位置）
     if current_location.get("lng") and current_location.get("lat"):
         try:
+            # 获取目的地坐标
             dest_loc = await amap_geocode(dest, dest)
             if dest_loc:
-                dest_lng, dest_lat = map(float, dest_loc.split(","))
+                dlng, dlat = map(float, dest_loc.split(","))
                 route = await get_route_time(
-                    current_location["lng"], current_location["lat"], dest_lng, dest_lat)
+                    current_location["lng"], current_location["lat"], dlng, dlat)
                 if route.get("traffic") in ("拥堵", "缓行"):
                     alerts.append({"type": "traffic",
-                                   "message": f"当前路况{route['traffic']}，"
-                                   f"预计耗时{route['duration']}分钟，建议提前出发或调整路线"})
+                                   "message": f"当前路况{route['traffic']}，预计耗时{route['duration']}分钟，建议提前出发或调整路线"})
         except Exception:
             pass
 
@@ -532,7 +462,7 @@ async def monitor_trip(request: Request):
         return {"success": True, "has_alert": False, "message": ""}
 
     # 3. 调用DeepSeek给出建议方案
-    alert_text = "\n".join([alert["message"] for alert in alerts])
+    alert_text = "\n".join([a["message"] for a in alerts])
     prompt = f"""旅行目的地：{dest}。检测到以下突发情况：
 {alert_text}
 
@@ -563,8 +493,6 @@ async def real_time_traffic(request: Request):
     return {"success": True, "route": route}
 
 
-# ===================== 收藏/图片/重新生成 API =====================
-
 @app.get("/api/saved-trips/refresh")
 async def refresh_saved_trip(city: str, days: int):
     """刷新收藏行程的实时天气和景点信息"""
@@ -572,8 +500,8 @@ async def refresh_saved_trip(city: str, days: int):
         weather_data = await amap_weather(city)
         return {"success": True, "weather": weather_data, "city": city,
                 "updated_at": __import__("datetime").datetime.now().isoformat()}
-    except Exception as error:
-        return {"success": False, "error": str(error)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/spot-images")
@@ -591,38 +519,8 @@ async def resolve_image(name: str, city: str = "", type: str = "spot"):
         else:
             url = await resolve_spot_image(name, city)
         return {"success": True, "url": url}
-    except Exception as error:
-        return {"success": False, "url": "", "error": str(error)}
-
-
-async def _build_transport_info_light(departure_city: str, dest: str,
-                                       start_date: str) -> dict:
-    """构建轻量交通信息（用于regenerate），容错处理"""
-    transport_info = {}
-    if not departure_city:
-        return transport_info
-
-    try:
-        transport_info["transport"] = judge_transport(departure_city, dest)
-    except Exception:
-        pass
-    try:
-        transport_info["route_schedule"] = get_route_schedule(departure_city, dest, start_date)
-    except Exception:
-        pass
-    try:
-        transport_info["transfer_info"] = get_transfer_routes(departure_city, dest, start_date)
-    except Exception:
-        pass
-    try:
-        transport_info["dep_hub"] = get_nearest_hub(departure_city)
-    except Exception:
-        pass
-    try:
-        transport_info["dest_hub"] = get_nearest_hub(dest)
-    except Exception:
-        pass
-    return transport_info
+    except Exception as e:
+        return {"success": False, "url": "", "error": str(e)}
 
 
 @app.post("/api/regenerate-trip")
@@ -653,33 +551,69 @@ async def regenerate_trip(request: Request):
         except Exception:
             weather_data = []
 
-        # 获取交通信息
-        transport_info = await _build_transport_info_light(
-            departure_city, dest, start_date)
+        # 获取交通判断信息（用于AI选择交通工具）
+        transport_info = {}
+        if departure_city:
+            try:
+                ti = judge_transport(departure_city, dest)
+                transport_info["transport"] = ti
+            except Exception:
+                pass
+            try:
+                schedule = get_route_schedule(departure_city, dest, start_date)
+                transport_info["route_schedule"] = schedule
+            except Exception:
+                pass
+            try:
+                transfer_info = get_transfer_routes(departure_city, dest, start_date)
+                transport_info["transfer_info"] = transfer_info
+            except Exception:
+                pass
+            try:
+                dep_hub = get_nearest_hub(departure_city)
+                transport_info["dep_hub"] = dep_hub
+            except Exception:
+                pass
+            try:
+                dest_hub = get_nearest_hub(dest)
+                transport_info["dest_hub"] = dest_hub
+            except Exception:
+                pass
 
-        # 构建prompt并调用DeepSeek
+        # 构建regenerate prompt
         prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
                                          weather_data, start_date, end_date,
                                          is_self_drive, departure_city, transport_info)
+        # 调用DeepSeek
         try:
-            raw = await _call_deepseek_safely(
-                "你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, 6000)
-        except ValueError as error:
-            return {"success": False, "error": str(error)}
+            raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, 6000)
+        except httpx.HTTPStatusError as e:
+            err_msg = "AI服务调用失败"
+            if e.response.status_code == 402:
+                err_msg = "DeepSeek API 余额不足，请充值后重试"
+            elif e.response.status_code == 401:
+                err_msg = "DeepSeek API Key 无效"
+            elif e.response.status_code == 429:
+                err_msg = "请求过于频繁，请稍后重试"
+            return {"success": False, "error": err_msg}
+        except Exception:
+            return {"success": False, "error": "AI服务调用失败，请重试"}
 
+        # 解析DeepSeek返回的JSON
+        raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
-            new_trip = _parse_ai_json(raw)
+            new_trip = json.loads(raw_clean)
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
-        # 后处理验证
+        # 后处理验证：检查并修正AI生成的机场名
         _validate_transport_airports(new_trip)
 
         # 补全坐标
         try:
             await fill_coordinates(new_trip, dest)
         except Exception:
-            pass
+            pass  # 坐标补全失败不影响主流程
 
         # 获取图片
         try:
@@ -692,10 +626,10 @@ async def regenerate_trip(request: Request):
         new_trip["transport_info"] = trip_data.get("transport_info", {})
 
         return {"success": True, "data": new_trip}
-    except Exception as error:
+    except Exception as e:
         import traceback
         traceback.print_exc()
-        return {"success": False, "error": f"重新生成失败：{str(error)}"}
+        return {"success": False, "error": f"重新生成失败：{str(e)}"}
 
 
 if __name__ == "__main__":
