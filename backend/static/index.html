@@ -71,11 +71,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .overview-container{max-width:420px;margin:0 auto;display:none;flex-direction:column;height:100vh}
 .overview-header{text-align:center;padding:16px;background:#4A90D9;color:#fff;position:relative}
 .overview-header h2{font-size:22px;font-weight:500}
-.fav-btn{position:absolute;top:12px;right:16px;font-size:28px;cursor:pointer;background:none;border:none;color:rgba(255,255,255,.5);transition:color .3s,transform .2s;z-index:1}
+.fav-btn{position:absolute;top:12px;right:16px;font-size:28px;cursor:pointer;background:none;border:none;color:rgba(255,255,255,.5);transition:color .3s,transform .2s;z-index:1;line-height:1}
 .fav-btn:hover{transform:scale(1.2)}
 .fav-btn.favorited{color:#FFD700;animation:favPop .3s ease}
+.fav-btn .fav-star{display:inline-block;transition:transform .2s}
+.fav-btn.favorited .fav-star{transform:scale(1.1)}
 @keyframes favPop{0%{transform:scale(1)}50%{transform:scale(1.4)}100%{transform:scale(1)}}
-.fav-hint{position:absolute;top:48px;right:8px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:2px 8px;border-radius:8px;opacity:0;transition:opacity .3s;pointer-events:none}
+.fav-hint{position:absolute;top:48px;right:8px;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:2px 8px;border-radius:8px;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
 .fav-btn:hover .fav-hint,.fav-hint.show{opacity:1}
 .day-list{flex:0 0 42%;background:#fff;overflow-y:auto;padding:0 20px}
 .day-summary{border-bottom:1px solid #f0f0f0}
@@ -140,10 +142,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .weather-img{width:100%;height:150px;object-fit:cover;margin-top:12px;border-radius:12px}
 /* 天气渐变卡片（替代不可靠的图片API） */
 .weather-card{width:100%;height:150px;margin-top:12px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;cursor:pointer;position:relative;overflow:hidden;text-shadow:0 2px 8px rgba(0,0,0,.3)}
-.weather-card .wc-icon{font-size:48px;margin-bottom:4px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))}
-.weather-card .wc-desc{font-size:20px;font-weight:600;margin-bottom:2px}
-.weather-card .wc-temp{font-size:16px;opacity:.9}
-.weather-card .wc-hint{position:absolute;bottom:8px;right:12px;font-size:12px;opacity:.7}
+.weather-card::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(rgba(0,0,0,0.2),rgba(0,0,0,0.45));z-index:0;border-radius:12px;pointer-events:none}
+.weather-card .wc-icon{font-size:48px;margin-bottom:4px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3));position:relative;z-index:1}
+.weather-card .wc-desc{font-size:20px;font-weight:600;margin-bottom:2px;position:relative;z-index:1}
+.weather-card .wc-temp{font-size:16px;opacity:.9;position:relative;z-index:1}
+.weather-card .wc-hint{position:absolute;bottom:8px;right:12px;font-size:12px;opacity:.7;z-index:1}
 .time-slot{padding:16px 20px 0 20px}
 .slot-header{display:flex;align-items:center;margin-bottom:10px}
 .slot-dot{width:8px;height:8px;border-radius:50%;margin-right:8px}
@@ -1004,13 +1007,20 @@ function renderOverview(data){
   if (dayMap) { dayMap.destroy(); dayMap = null; }
 
   document.getElementById('overviewTitle').textContent = data.destination + data.days + '日游行程总览';
-  // 收藏按钮
+  // 收藏按钮：先移除旧按钮再创建新按钮，避免重复
+  var oldBtn = document.getElementById('favBtn');
+  if (oldBtn) oldBtn.remove();
   const favKey = `saved_trip_${data.destination}_${data.days}`;
   const isFav = !!localStorage.getItem(favKey);
-  document.getElementById('overviewTitle').insertAdjacentHTML('afterend', 
-    `<button class="fav-btn${isFav?' favorited':''}" id="favBtn" onclick="toggleFavorite()" title="收藏行程">
-      ${isFav?'⭐':'☆'}<span class="fav-hint">${isFav?'已收藏':'点击收藏'}</span>
-    </button>`);
+  var favBtn = document.createElement('button');
+  favBtn.className = 'fav-btn' + (isFav ? ' favorited' : '');
+  favBtn.id = 'favBtn';
+  favBtn.title = isFav ? '取消收藏' : '收藏行程';
+  favBtn.innerHTML = '<span class="fav-star" id="favStar">' + (isFav ? '★' : '☆') + '</span><span class="fav-hint" id="favHint">' + (isFav ? '已收藏' : '点击收藏') + '</span>';
+  favBtn.addEventListener('click', toggleFavorite);
+  // 插入到overview-header中（overviewTitle的父元素）
+  var header = document.getElementById('overviewTitle').parentNode;
+  header.appendChild(favBtn);
 
   // 按天构建列表 + 收集所有景点坐标
   let allSpots = 0;
@@ -1181,23 +1191,30 @@ function toggleFavorite() {
   if (!tripData) return;
   const favKey = `saved_trip_${tripData.destination}_${tripData.days}`;
   const btn = document.getElementById('favBtn');
-  const hint = btn ? btn.querySelector('.fav-hint') : null;
+  const star = document.getElementById('favStar');
+  const hint = document.getElementById('favHint');
+  if (!btn || !star || !hint) return;
   if (btn.classList.contains('favorited')) {
+    // 取消收藏
     localStorage.removeItem(favKey);
     btn.classList.remove('favorited');
-    btn.innerHTML = '☆<span class="fav-hint">已取消收藏</span>';
-    setTimeout(() => { if (hint) hint.classList.remove('show'); }, 1500);
-    hint && hint.classList.add('show');
+    btn.title = '收藏行程';
+    star.textContent = '☆';
+    hint.textContent = '已取消收藏';
+    hint.classList.add('show');
+    setTimeout(function() { hint.classList.remove('show'); }, 1500);
   } else {
-    // 保存完整行程数据
-    const saved = {destination: tripData.destination, days: tripData.days, itinerary: tripData.itinerary,
+    // 收藏行程
+    var saved = {destination: tripData.destination, days: tripData.days, itinerary: tripData.itinerary,
       weather: tripData.weather, budget_breakdown: tripData.budget_breakdown,
       booking_info: tripData.booking_info, tips: tripData.tips, saved_at: new Date().toISOString()};
     localStorage.setItem(favKey, JSON.stringify(saved));
     btn.classList.add('favorited');
-    btn.innerHTML = '⭐<span class="fav-hint">已收藏</span>';
-    hint && hint.classList.add('show');
-    setTimeout(() => { if (hint) hint.classList.remove('show'); }, 1500);
+    btn.title = '取消收藏';
+    star.textContent = '★';
+    hint.textContent = '已收藏';
+    hint.classList.add('show');
+    setTimeout(function() { hint.classList.remove('show'); }, 1500);
   }
 }
 
@@ -1374,12 +1391,15 @@ function renderTrip(data){
     const wIcon = w.icon||'☀️';
     const wTemp = w.temp||'';
     // 天气图片：优先使用本地天气图片，渐变作为fallback底层
-    const wImg = w.image || '';
-    const wGrad = getWeatherGradient(wDesc);
-    const wImgEncoded = wImg ? encodeURI(wImg) : '';
-    const wBgStyle = wImgEncoded
-      ? `background:linear-gradient(rgba(0,0,0,0.2),rgba(0,0,0,0.45)),url(${wImgEncoded}) center/cover no-repeat,${wGrad};`
-      : `background:${wGrad}`;
+    // 半透明遮罩由.weather-card::before伪元素处理，此处只需设置背景图和渐变fallback
+    var wImg = w.image || '';
+    var wGrad = getWeatherGradient(wDesc);
+    var wBgStyle;
+    if (wImg) {
+      wBgStyle = 'background-image:url(' + encodeURI(wImg) + '),' + wGrad + ';background-size:cover,auto;background-position:center,0 0;background-repeat:no-repeat,repeat;';
+    } else {
+      wBgStyle = 'background:' + wGrad + ';';
+    }
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${wIcon} ${wDesc} ${wTemp}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
       <div class="weather-card" style="${wBgStyle}" onclick="showWeatherHourly(${dayIdx})">
