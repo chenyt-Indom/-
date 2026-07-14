@@ -1,175 +1,175 @@
-"""图片搜索服务：真实照片搜索链 — 高德POI → Wikimedia Commons → Wikipedia → Flickr"""
+"""图片搜索服务：真实照片搜索链 — 高德POI(多策略) → Bing → Wikimedia → Wikipedia → Flickr → text_to_image兜底"""
 import asyncio
 import httpx
 import urllib.parse
 import re
-from config import AMAP_KEY, AMAP_POI_URL
+from config import AMAP_KEY, AMAP_POI_URL, IMG_BASE
 
 
 async def search_amap_photos(name: str, city: str) -> list:
-    """通过高德POI API搜索景点/酒店真实照片（最可靠的中文景点图片源）"""
+    """高德POI照片搜索：多策略尝试（精确名→简化名→去括号→加景区后缀）"""
     images = []
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(AMAP_POI_URL, params={
-                "key": AMAP_KEY, "keywords": name, "city": city,
-                "offset": 5, "extensions": "all",
-            })
-            data = resp.json()
-            if data.get("status") == "1":
+    # 生成多种搜索关键词
+    clean = re.sub(r'[（(].*?[）)]', '', name).strip()  # 去括号内容
+    simple = re.sub(r'(风景区|景区|公园|博物馆|寺|庙|塔|阁|楼)$', '', clean).strip()
+    keywords_list = [name]
+    if clean != name: keywords_list.append(clean)
+    if simple and simple != clean and len(simple) >= 2: keywords_list.append(simple)
+    if city and len(city) > 0: keywords_list.append(f"{name} {city}")
+    seen = set()
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for kw in keywords_list[:5]:
+            if kw in seen: continue
+            seen.add(kw)
+            try:
+                resp = await client.get(AMAP_POI_URL, params={
+                    "key": AMAP_KEY, "keywords": kw, "offset": 10, "extensions": "all",
+                })
+                data = resp.json()
+                if data.get("status") != "1": continue
                 for p in data.get("pois", []):
                     for pic in (p.get("photos", []) or []):
                         url = pic.get("url", "")
-                        if url and (url.startswith("http://") or url.startswith("https://")):
-                            images.append({
-                                "url": url, "title": p.get("name", name),
-                                "quality": 85, "source": "amap",
-                            })
-                            if len(images) >= 5:
-                                return images
-    except Exception:
-        pass
+                        if url and url.startswith("http"):
+                            images.append({"url": url, "title": p.get("name", name),
+                                           "quality": 85, "source": "amap"})
+                            if len(images) >= 5: return images
+            except Exception:
+                continue
     return images
 
 
 async def search_wikipedia_image(query: str, lang: str = "zh") -> list:
-    """通过Wikipedia API搜索页面主图，返回真实图片URL列表"""
+    """Wikipedia API搜索页面主图"""
     images = []
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             search_url = f"https://{lang}.wikipedia.org/w/api.php"
             resp = await client.get(search_url, params={
-                "action": "query", "list": "search",
-                "srsearch": query, "srlimit": "3", "format": "json",
+                "action": "query", "list": "search", "srsearch": query,
+                "srlimit": "3", "format": "json",
             })
             data = resp.json()
             pages = data.get("query", {}).get("search", [])
-            if not pages:
-                return images
+            if not pages: return images
             titles = "|".join([p["title"] for p in pages])
             resp2 = await client.get(search_url, params={
                 "action": "query", "titles": titles,
-                "prop": "pageimages", "format": "json",
-                "pithumbsize": "800",
+                "prop": "pageimages", "format": "json", "pithumbsize": "800",
             })
             data2 = resp2.json()
-            pgs = data2.get("query", {}).get("pages", {})
-            for pid, pg in pgs.items():
+            for pid, pg in data2.get("query", {}).get("pages", {}).items():
                 thumb = pg.get("thumbnail", {}).get("source", "")
-                if thumb:
-                    images.append({
-                        "url": thumb, "title": pg.get("title", ""),
-                        "quality": 70, "source": f"wikipedia_{lang}",
-                    })
-    except Exception:
-        pass
+                if thumb: images.append({"url": thumb, "title": pg.get("title", ""),
+                                         "quality": 70, "source": f"wikipedia_{lang}"})
+    except Exception: pass
     return images
 
 
 async def search_wikimedia(query: str, limit: int = 8) -> list:
-    """搜索Wikimedia Commons真实图片，按质量评分排序"""
+    """Wikimedia Commons图片搜索，按质量评分排序"""
     images = []
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             search_url = "https://commons.wikimedia.org/w/api.php"
-            # 搜索图片文件
             resp = await client.get(search_url, params={
-                "action": "query", "list": "search",
-                "srsearch": query, "srnamespace": "6",
-                "srlimit": str(limit), "format": "json",
+                "action": "query", "list": "search", "srsearch": query,
+                "srnamespace": "6", "srlimit": str(limit), "format": "json",
             })
             data = resp.json()
             pages = data.get("query", {}).get("search", [])
-            if not pages:
-                return images
+            if not pages: return images
             titles = "|".join([p["title"] for p in pages])
             resp2 = await client.get(search_url, params={
                 "action": "query", "titles": titles,
                 "prop": "imageinfo|pageassessments",
-                "iiprop": "url|size|extmetadata",
-                "iiurlwidth": "800", "format": "json",
+                "iiprop": "url|size|extmetadata", "iiurlwidth": "800", "format": "json",
             })
-            data2 = resp2.json()
-            pgs = data2.get("query", {}).get("pages", {})
-            for pid, pg in pgs.items():
-                if "missing" in pg or "imageinfo" not in pg:
-                    continue
+            for pid, pg in resp2.json().get("query", {}).get("pages", {}).items():
+                if "missing" in pg or "imageinfo" not in pg: continue
                 info = pg["imageinfo"][0]
                 url = info.get("thumburl") or info.get("url", "")
-                if not url:
-                    continue
-                # 过滤非照片文件（图标、标志、SVG等）
+                if not url: continue
                 mime = info.get("mime", "")
-                if "svg" in mime or "gif" in mime:
-                    continue
+                if "svg" in mime or "gif" in mime: continue
                 meta = info.get("extmetadata", {})
-                # 质量评分
                 quality = 0
-                if meta.get("QualityAssessment"):
-                    qa = meta["QualityAssessment"].get("value", "")
-                    if "featured" in qa.lower():
-                        quality = 100
-                    elif "quality" in qa.lower():
-                        quality = 80
-                    elif "valued" in qa.lower():
-                        quality = 60
+                qa = (meta.get("QualityAssessment") or {}).get("value", "")
+                if "featured" in qa.lower(): quality = 100
+                elif "quality" in qa.lower(): quality = 80
+                elif "valued" in qa.lower(): quality = 60
                 w = int(info.get("width", 0))
                 if w >= 2000: quality += 30
                 elif w >= 1000: quality += 20
                 elif w >= 500: quality += 10
-                # 图片描述相关性加分
-                desc = meta.get("ImageDescription", {}).get("value", "")
-                if any(kw in desc.lower() for kw in ["china", "landmark", "building", "temple", "mountain"]):
-                    quality += 10
-                images.append({
-                    "url": url, "title": pg.get("title", ""),
-                    "width": w, "height": info.get("height", 0),
-                    "quality": quality, "source": "wikimedia",
-                })
+                images.append({"url": url, "title": pg.get("title", ""),
+                               "width": w, "height": info.get("height", 0),
+                               "quality": quality, "source": "wikimedia"})
             images.sort(key=lambda x: x["quality"], reverse=True)
-    except Exception:
-        pass
+    except Exception: pass
     return images
 
 
 async def search_flickr(query: str, limit: int = 5) -> list:
-    """搜索Flickr公开图片（通过网页搜索，无需API key）"""
+    """Flickr公开图片搜索"""
     images = []
     try:
-        # 使用Flickr的公开搜索页面
         search_url = f"https://www.flickr.com/search/?text={urllib.parse.quote(query)}&license=4,5,6,7,8,9,10"
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
             resp = await client.get(search_url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
-            # 提取图片URL
-            html = resp.text
-            img_urls = re.findall(r'//live\.staticflickr\.com/\d+/\d+_[a-f0-9]+_[a-z]\.jpg', html)
+            img_urls = re.findall(r'//live\.staticflickr\.com/\d+/\d+_[a-f0-9]+_[a-z]\.jpg', resp.text)
             seen = set()
             for url in img_urls:
                 full_url = "https:" + url
                 if full_url not in seen:
                     seen.add(full_url)
-                    images.append({
-                        "url": full_url, "quality": 60,
-                        "source": "flickr",
-                    })
-                    if len(images) >= limit:
-                        break
-    except Exception:
-        pass
+                    images.append({"url": full_url, "quality": 60, "source": "flickr"})
+                    if len(images) >= limit: break
+    except Exception: pass
     return images
 
 
+async def search_bing_images(query: str, limit: int = 8) -> list:
+    """Bing图片搜索（通过网页抓取，对中文景点覆盖好）"""
+    images = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(
+                f"https://www.bing.com/images/search?q={urllib.parse.quote(query)}&first=0",
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            )
+            # 提取图片URL
+            urls = re.findall(r'https?://[^"\s]+\.(?:jpg|jpeg|png|webp)(?:\?[^"\s]*)?', resp.text)
+            seen = set()
+            for url in urls:
+                # 过滤掉小图标和Bing自身域名
+                if any(skip in url.lower() for skip in ['bing.com', 'icon', 'logo', 'favicon', 'avatar', 'th?id=']):
+                    continue
+                if url not in seen:
+                    seen.add(url)
+                    images.append({"url": url, "quality": 55, "source": "bing"})
+                    if len(images) >= limit: break
+    except Exception: pass
+    return images
+
+
+def _make_text_to_image_url(name: str, city: str) -> str:
+    """生成text_to_image API兜底URL"""
+    prompt = urllib.parse.quote(f"{name} {city}, travel photography, realistic, high quality, 4K")
+    return f"{IMG_BASE}?prompt={prompt}&image_size=landscape_16_9"
+
+
 async def _multi_source_search(name: str, city: str, queries: list, limit: int = 8) -> list:
-    """多源真实照片搜索：高德POI(最快最准) → Wikimedia → Wikipedia → Flickr"""
-    # 1. 高德POI照片（国内景点最可靠来源，优先）
+    """多源搜索：高德POI → Bing → Wikimedia → Wikipedia → Flickr → text_to_image兜底"""
+    # 1. 高德POI（多策略，国内景点最可靠）
     imgs = await search_amap_photos(name, city)
-    if imgs:
-        return imgs
-    # 2. 国际源并行搜索
-    for q in queries:
+    if imgs: return imgs
+    # 2. 国际源并行搜索（含Bing）
+    for q in queries[:6]:
         results = await asyncio.gather(
+            search_bing_images(q, limit),
             search_wikimedia(q, limit),
             search_wikipedia_image(q, "zh"),
             search_wikipedia_image(q, "en"),
@@ -177,42 +177,44 @@ async def _multi_source_search(name: str, city: str, queries: list, limit: int =
             return_exceptions=True,
         )
         for r in results:
-            if isinstance(r, list) and r:
-                return r
-    return []
+            if isinstance(r, list) and r: return r
+    # 3. 所有真实源都失败，用text_to_image兜底
+    fallback_url = _make_text_to_image_url(name, city)
+    return [{"url": fallback_url, "quality": 30, "source": "text_to_image"}]
 
 
 async def get_best_spot_image(name: str, city: str) -> str:
-    """获取景点最佳真实照片URL（多源搜索，找不到真实照片时返回空字符串）"""
+    """获取景点最佳真实照片（多源搜索+兜底，确保始终有图）"""
+    clean = re.sub(r'[（(].*?[）)]', '', name).strip()
     queries = [
         f"{name} {city}",
-        f"{name} 景点",
-        f"{name} China landmark",
-        f"{name}",
+        f"{name} 景点 旅游",
+        f"{clean} {city} 旅游",
+        f"{name} China travel landmark",
+        f"{name} 风景",
+        name,
     ]
     imgs = await _multi_source_search(name, city, queries, 8)
-    if imgs:
-        return imgs[0]["url"]
-    return ""  # 找不到真实照片，返回空字符串让前端用占位图
+    return imgs[0]["url"] if imgs else ""
 
 
 async def get_best_hotel_image(name: str, area: str) -> str:
-    """获取酒店最佳真实照片URL（多源搜索，找不到真实照片时返回空字符串）"""
+    """获取酒店最佳真实照片（多源搜索+兜底，确保始终有图）"""
+    clean = re.sub(r'[（(].*?[）)]', '', name).strip()
     queries = [
         f"{name} hotel {area}",
-        f"{name} 酒店",
+        f"{name} 酒店 外观",
+        f"{clean} 酒店",
         f"{name} {area}",
-        f"{name}",
+        f"{name} hotel exterior",
+        name,
     ]
     imgs = await _multi_source_search(name, area, queries, 8)
-    if imgs:
-        return imgs[0]["url"]
-    return ""  # 找不到真实照片，返回空字符串让前端用占位图
+    return imgs[0]["url"] if imgs else ""
 
 
 async def search_images(query: str, limit: int = 5) -> dict:
-    """综合图片搜索API：多源搜索真实照片"""
+    """综合图片搜索API"""
     imgs = await _multi_source_search(query, "", [query], limit)
-    if imgs:
-        return {"success": True, "images": imgs, "source": imgs[0].get("source", "unknown")}
+    if imgs: return {"success": True, "images": imgs, "source": imgs[0].get("source", "unknown")}
     return {"success": True, "images": [], "source": "none"}

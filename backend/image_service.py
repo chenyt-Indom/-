@@ -7,31 +7,57 @@ from config import IMG_BASE
 
 
 def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
-    """生成天气写实风景照片URL"""
+    """生成天气写实风景照片URL，覆盖所有高德天气类型"""
     desc = weather_desc or "晴"
+    # 处理"X转Y"：优先用更具视觉冲击力的天气
     if "转" in desc:
         parts = desc.split("转")
-        desc = parts[-1] if parts[-1] else parts[0]
+        # 优先选择雨/雪/雷暴等视觉效果强的天气
+        strong = ["暴雨", "大暴雨", "特大暴雨", "暴雪", "大雪", "雷阵雨", "雨", "雪", "大雨", "中雨", "中雪", "小雨", "小雪"]
+        for p in parts:
+            for s in strong:
+                if s in p:
+                    desc = p
+                    break
+            else: continue
+            break
+        else:
+            desc = parts[-1] if parts[-1] else parts[0]
     weather_map = {
+        # 晴/多云/阴系列
         "晴": "sunny day, clear blue sky, bright sunlight, photorealistic landscape, 4K",
+        "少云": "mostly clear sky, few clouds, bright sunlight, photorealistic landscape, 4K",
+        "晴间多云": "sunny with scattered clouds, beautiful landscape, photorealistic, 4K",
         "多云": "partly cloudy sky, soft sunlight, realistic landscape, 4K",
         "阴": "overcast sky, dramatic clouds, moody landscape, photorealistic, 4K",
-        "雨": "rainy weather, wet streets, realistic rain scene, 4K photography",
+        # 雨系列
+        "阵雨": "rain shower, wet landscape, photorealistic, 4K",
+        "雷阵雨": "thunderstorm, lightning, dramatic storm sky, photorealistic, 4K",
+        "雷阵雨伴有冰雹": "thunderstorm with hail, dramatic sky, lightning, photorealistic, 4K",
         "小雨": "light rain, drizzle, wet pavement, photorealistic, 4K",
         "中雨": "moderate rain, rainy cityscape, realistic, 4K",
         "大雨": "heavy rain, storm, dramatic rain scene, photorealistic, 4K",
         "暴雨": "heavy rainstorm, dramatic storm, photorealistic, 4K",
-        "雷阵雨": "thunderstorm, lightning, dramatic storm sky, photorealistic, 4K",
-        "阵雨": "rain shower, wet landscape, photorealistic, 4K",
-        "雪": "snowy landscape, winter scenery, photorealistic snow, 4K",
+        "大暴雨": "torrential rain, extreme storm, dramatic weather, photorealistic, 4K",
+        "特大暴雨": "extreme rainstorm, catastrophic weather, dramatic scene, photorealistic, 4K",
+        "冻雨": "freezing rain, ice storm, glazed tree branches, photorealistic, 4K",
+        # 雪系列
+        "雨夹雪": "sleet, rain and snow mixed, winter weather, photorealistic, 4K",
         "小雪": "light snow, winter wonderland, photorealistic, 4K",
         "中雪": "snowy scenery, winter landscape, photorealistic, 4K",
-        "大雪": "heavy snow, snowstorm, winter wonderland, photorealistic, 4K",
-        "雨夹雪": "sleet, rain and snow mixed, winter weather, photorealistic, 4K",
+        "大雪": "heavy snow, winter wonderland, photorealistic, 4K",
+        "暴雪": "blizzard, heavy snowstorm, dramatic winter scene, photorealistic, 4K",
+        # 雾/霾/沙尘系列
         "雾": "foggy morning, misty landscape, atmospheric fog, photorealistic, 4K",
         "霾": "hazy cityscape, smog, atmospheric haze, photorealistic, 4K",
-        "沙尘": "dust storm, sandstorm, dramatic weather, photorealistic, 4K",
-        "风": "windy weather, trees swaying, dramatic wind, photorealistic, 4K",
+        "浮尘": "floating dust, hazy atmosphere, muted landscape, photorealistic, 4K",
+        "扬沙": "blowing sand, dusty wind, desert landscape, photorealistic, 4K",
+        "沙尘暴": "sandstorm, dramatic dust storm, apocalyptic sky, photorealistic, 4K",
+        "强沙尘暴": "severe sandstorm, dramatic dust wall, apocalyptic scene, photorealistic, 4K",
+        # 风系列
+        "大风": "strong wind, trees swaying, dramatic clouds, photorealistic, 4K",
+        "台风": "typhoon, hurricane, extreme wind, dramatic stormy sea, photorealistic, 4K",
+        "热带风暴": "tropical storm, powerful winds, dramatic ocean waves, photorealistic, 4K",
     }
     prompt = weather_map.get(desc, f"{desc} weather landscape, photorealistic, 4K")
     return f"{IMG_BASE}?prompt={urllib.parse.quote(prompt)}&image_size={size}"
