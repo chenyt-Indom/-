@@ -212,3 +212,28 @@ async def calculate_transit_to_station(city: str, station_type: str = "airport")
         "drive_traffic": drive.get("traffic", ""),
         "advice": f"建议提前{max(60, drive.get('duration', 30) + 30)}分钟出发前往{station_name}"
     }
+
+
+async def calculate_station_to_hotel(city: str, station_type: str = "airport") -> dict:
+    """计算从机场/火车站到市中心酒店的时间和交通方式"""
+    station_name = f"{city}机场" if station_type == "airport" else f"{city}站"
+    station_loc = await amap_geocode(station_name, city)
+    city_loc = await amap_geocode(city)
+
+    if not city_loc or not station_loc:
+        return {"success": False, "drive_min": 30, "transit_min": 45, "advice": "建议打车前往酒店"}
+
+    slng, slat = map(float, station_loc.split(","))
+    clng, clat = map(float, city_loc.split(","))
+
+    drive = await get_route_time(slng, slat, clng, clat)
+    transit = await get_transit_time(slng, slat, clng, clat, city)
+
+    return {
+        "success": True,
+        "station": station_name,
+        "drive_min": drive.get("duration", 30),
+        "transit_min": transit.get("duration", 45),
+        "drive_traffic": drive.get("traffic", ""),
+        "advice": f"从{station_name}到市中心酒店，驾车约{drive.get('duration', 30)}分钟，公交约{transit.get('duration', 45)}分钟"
+    }
