@@ -215,8 +215,6 @@ async def generate_trip(req: TripRequest):
                                    req.is_self_drive, req.departure_city, transport_info)
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
-            raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            trip_data = json.loads(raw_clean)
         except httpx.HTTPStatusError as e:
             err_msg = "AI服务调用失败"
             if e.response.status_code == 402:
@@ -226,10 +224,14 @@ async def generate_trip(req: TripRequest):
             elif e.response.status_code == 429:
                 err_msg = "请求过于频繁，请稍后重试"
             return {"success": False, "error": err_msg}
-        except (json.JSONDecodeError, ValueError) as e:
-            return {"success": False, "error": "AI返回数据格式异常，请重试"}
         except Exception:
-            return {"success": False, "error": "攻略生成失败，请检查网络后重试"}
+            return {"success": False, "error": "AI服务调用失败，请重试"}
+
+        raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        try:
+            trip_data = json.loads(raw_clean)
+        except Exception:
+            return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 3. 补全景点坐标
         await fill_coordinates(trip_data, dest)
@@ -508,10 +510,9 @@ async def regenerate_trip(request: Request):
         prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
                                          weather_data, start_date, end_date,
                                          is_self_drive, departure_city, transport_info)
+        # 调用DeepSeek
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, 6000)
-            raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            new_trip = json.loads(raw_clean)
         except httpx.HTTPStatusError as e:
             err_msg = "AI服务调用失败"
             if e.response.status_code == 402:
@@ -521,10 +522,15 @@ async def regenerate_trip(request: Request):
             elif e.response.status_code == 429:
                 err_msg = "请求过于频繁，请稍后重试"
             return {"success": False, "error": err_msg}
-        except (json.JSONDecodeError, ValueError) as e:
-            return {"success": False, "error": f"AI返回数据格式异常，请重试"}
         except Exception:
-            return {"success": False, "error": "AI重新规划失败，请重试"}
+            return {"success": False, "error": "AI服务调用失败，请重试"}
+
+        # 解析DeepSeek返回的JSON
+        raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        try:
+            new_trip = json.loads(raw_clean)
+        except Exception:
+            return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 补全坐标
         try:
