@@ -508,9 +508,20 @@ async def regenerate_trip(request: Request):
                                      weather_data, start_date, end_date,
                                      is_self_drive, departure_city, transport_info)
     try:
-        raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
+        raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, 6000)
         raw_clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         new_trip = json.loads(raw_clean)
+    except httpx.HTTPStatusError as e:
+        err_msg = "AI服务调用失败"
+        if e.response.status_code == 402:
+            err_msg = "DeepSeek API 余额不足，请充值后重试"
+        elif e.response.status_code == 401:
+            err_msg = "DeepSeek API Key 无效"
+        elif e.response.status_code == 429:
+            err_msg = "请求过于频繁，请稍后重试"
+        return {"success": False, "error": err_msg}
+    except json.JSONDecodeError:
+        return {"success": False, "error": "AI返回数据格式异常，请重试"}
     except Exception:
         return {"success": False, "error": "AI重新规划失败，请重试"}
 

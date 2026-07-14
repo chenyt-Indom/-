@@ -296,6 +296,7 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                             is_self_drive: bool, departure_city: str,
                             transport_info: dict = None) -> str:
     """构建重新生成计划的提示词，重点参考用户输入的新需求"""
+    transport_info = transport_info or {}  # 防止为None时报错
     old_summary = ""
     for day in old_itinerary:
         spots = []
@@ -322,13 +323,13 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             if transport_info:
                 ti = transport_info.get("transport", {})
                 transport_section += f"\n【交通建议】{ti.get('mode','')} - {ti.get('reason','')}"
-            # 邻近枢纽提示
-            dep_hub = transport_info.get("dep_hub", {})
-            dest_hub = transport_info.get("dest_hub", {})
-            if dep_hub.get("has_hub"):
-                transport_section += f"\n【出发地枢纽】{dep_hub['note']}"
-            if dest_hub.get("has_hub"):
-                transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
+                # 邻近枢纽提示
+                dep_hub = transport_info.get("dep_hub", {})
+                dest_hub = transport_info.get("dest_hub", {})
+                if dep_hub.get("has_hub"):
+                    transport_section += f"\n【出发地枢纽】{dep_hub['note']}"
+                if dest_hub.get("has_hub"):
+                    transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
     transport_section += f"""
 【交通选择原则】根据距离选择：≤5km步行，≤30km公交/地铁/打车，≤100km地铁/城际，≤300km高铁/动车，≤800km高铁优先，>800km飞机/高铁
 第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。

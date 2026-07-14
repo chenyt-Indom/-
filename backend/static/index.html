@@ -1376,8 +1376,9 @@ function renderTrip(data){
     // 天气图片：优先使用本地天气图片，渐变作为fallback底层
     const wImg = w.image || '';
     const wGrad = getWeatherGradient(wDesc);
-    const wBgStyle = wImg
-      ? `background:linear-gradient(rgba(0,0,0,0.2),rgba(0,0,0,0.45)),url(${wImg}) center/cover no-repeat,${wGrad};`
+    const wImgEncoded = wImg ? encodeURI(wImg) : '';
+    const wBgStyle = wImgEncoded
+      ? `background-image:linear-gradient(rgba(0,0,0,0.2),rgba(0,0,0,0.45)),url(${wImgEncoded}),${wGrad};background-size:cover,auto,auto;background-position:center,center,center;background-repeat:no-repeat,no-repeat,no-repeat;`
       : `background:${wGrad}`;
     dHtml += `<div class="day-card">
       <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${wIcon} ${wDesc} ${wTemp}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
