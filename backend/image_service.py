@@ -1,37 +1,86 @@
-"""图片服务：真实照片搜索 + 天气图片生成 + URL解析"""
+"""图片服务：真实照片搜索 + 天气图片本地数据库 + URL解析"""
 import asyncio
 import urllib.parse
+import os
 import httpx
 from image_search_service import get_best_spot_image, get_best_hotel_image
 from config import IMG_BASE
 
+# 天气图片本地数据库路径
+WEATHER_IMG_DIR = os.path.join(os.path.dirname(__file__), "static", "weather")
+# 天气类型到本地文件名的映射（处理"X转Y"组合天气）
+WEATHER_TO_FILE = {}
 
-def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
-    """生成天气写实风景照片URL，覆盖所有高德天气类型"""
+
+def _init_weather_files():
+    """初始化天气图片文件映射"""
+    global WEATHER_TO_FILE
+    if WEATHER_TO_FILE:
+        return WEATHER_TO_FILE
+    if os.path.isdir(WEATHER_IMG_DIR):
+        for fname in os.listdir(WEATHER_IMG_DIR):
+            if fname.endswith(".jpg"):
+                name = fname[:-4]  # 去掉.jpg后缀
+                WEATHER_TO_FILE[name] = fname
+    return WEATHER_TO_FILE
+
+
+def get_weather_img_path(weather_desc: str) -> str:
+    """根据天气描述获取本地图片路径，找不到返回空字符串"""
+    _init_weather_files()
     desc = weather_desc or "晴"
     # 处理"X转Y"：优先用更具视觉冲击力的天气
     if "转" in desc:
         parts = desc.split("转")
-        # 优先选择雨/雪/雷暴等视觉效果强的天气
         strong = ["暴雨", "大暴雨", "特大暴雨", "暴雪", "大雪", "雷阵雨", "雨", "雪", "大雨", "中雨", "中雪", "小雨", "小雪"]
         for p in parts:
             for s in strong:
                 if s in p:
                     desc = p
                     break
-            else: continue
+            else:
+                continue
+            break
+        else:
+            desc = parts[-1] if parts[-1] else parts[0]
+    # 直接匹配
+    if desc in WEATHER_TO_FILE:
+        return "/app/weather/" + WEATHER_TO_FILE[desc]
+    # 模糊匹配
+    for key in WEATHER_TO_FILE:
+        if key in desc or desc in key:
+            return "/app/weather/" + WEATHER_TO_FILE[key]
+    return ""
+
+
+def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
+    """生成天气图片URL：优先使用本地图片，fallback到text_to_image"""
+    # 优先使用本地图片
+    local = get_weather_img_path(weather_desc)
+    if local:
+        return local
+    # fallback到text_to_image API
+    desc = weather_desc or "晴"
+    if "转" in desc:
+        parts = desc.split("转")
+        strong = ["暴雨", "大暴雨", "特大暴雨", "暴雪", "大雪", "雷阵雨", "雨", "雪", "大雨", "中雨", "中雪", "小雨", "小雪"]
+        for p in parts:
+            for s in strong:
+                if s in p:
+                    desc = p
+                    break
+            else:
+                continue
             break
         else:
             desc = parts[-1] if parts[-1] else parts[0]
     weather_map = {
-        # 晴/多云/阴系列
         "晴": "sunny day, clear blue sky, bright sunlight, photorealistic landscape, 4K",
         "少云": "mostly clear sky, few clouds, bright sunlight, photorealistic landscape, 4K",
         "晴间多云": "sunny with scattered clouds, beautiful landscape, photorealistic, 4K",
         "多云": "partly cloudy sky, soft sunlight, realistic landscape, 4K",
         "阴": "overcast sky, dramatic clouds, moody landscape, photorealistic, 4K",
         "阴天": "overcast sky, grey clouds, moody atmosphere, photorealistic, 4K",
-        # 雨系列
         "阵雨": "rain shower, wet landscape, photorealistic, 4K",
         "雷阵雨": "thunderstorm, lightning, dramatic storm sky, photorealistic, 4K",
         "雷阵雨伴有冰雹": "thunderstorm with hail, dramatic sky, lightning, photorealistic, 4K",
@@ -43,26 +92,22 @@ def weather_image_url(weather_desc: str, size: str = "landscape_16_9") -> str:
         "特大暴雨": "extreme rainstorm, catastrophic weather, dramatic scene, photorealistic, 4K",
         "冻雨": "freezing rain, ice storm, glazed tree branches, photorealistic, 4K",
         "雨": "rain, wet landscape, rainy atmosphere, photorealistic, 4K",
-        # 雪系列
         "雨夹雪": "sleet, rain and snow mixed, winter weather, photorealistic, 4K",
         "小雪": "light snow, winter wonderland, photorealistic, 4K",
         "中雪": "snowy scenery, winter landscape, photorealistic, 4K",
         "大雪": "heavy snow, winter wonderland, photorealistic, 4K",
         "暴雪": "blizzard, heavy snowstorm, dramatic winter scene, photorealistic, 4K",
         "雪": "snow, winter scenery, snowy landscape, photorealistic, 4K",
-        # 雾/霾/沙尘系列
         "雾": "foggy morning, misty landscape, atmospheric fog, photorealistic, 4K",
         "霾": "hazy cityscape, smog, atmospheric haze, photorealistic, 4K",
         "浮尘": "floating dust, hazy atmosphere, muted landscape, photorealistic, 4K",
         "扬沙": "blowing sand, dusty wind, desert landscape, photorealistic, 4K",
         "沙尘暴": "sandstorm, dramatic dust storm, apocalyptic sky, photorealistic, 4K",
         "强沙尘暴": "severe sandstorm, dramatic dust wall, apocalyptic scene, photorealistic, 4K",
-        # 风系列
         "大风": "strong wind, trees swaying, dramatic clouds, photorealistic, 4K",
         "台风": "typhoon, hurricane, extreme wind, dramatic stormy sea, photorealistic, 4K",
         "热带风暴": "tropical storm, powerful winds, dramatic ocean waves, photorealistic, 4K",
         "风": "windy weather, swaying trees, dramatic clouds, photorealistic, 4K",
-        # 其他常见
         "热": "hot sunny day, heat wave, bright sun, photorealistic, 4K",
         "冷": "cold winter day, frost, icy landscape, photorealistic, 4K",
     }
@@ -105,15 +150,21 @@ async def fill_images(trip_data: dict, dest: str):
                 tasks.append(_fill_spot_image(spot_data, dest))
         w = day.get("weather", {})
         if w:
-            # 确保天气图片始终有值，先生成text_to_image URL
-            w["image"] = weather_image_url(w.get("desc", "晴"))
-            # 同时生成备用URL（不同prompt，确保有图）
-            w["image_fallback"] = weather_image_url(
-                (w.get("desc", "晴") + " landscape").replace("转", " "), "portrait_4_3")
+            desc = w.get("desc", "晴")
+            # 优先使用本地天气图片
+            local_img = get_weather_img_path(desc)
+            if local_img:
+                w["image"] = local_img
+                w["image_fallback"] = local_img  # 本地图片不需要fallback
+            else:
+                # fallback到text_to_image API
+                w["image"] = weather_image_url(desc)
+                w["image_fallback"] = weather_image_url(
+                    (desc + " landscape").replace("转", " "), "portrait_4_3")
             weather_items.append(w)
     if tasks:
         await asyncio.gather(*tasks)
-    # 解析天气图片text_to_image URL为CDN直链
+    # 只解析非本地图片的text_to_image URL
     resolve_tasks = []
     for w in weather_items:
         img = w.get("image", "")
@@ -121,13 +172,6 @@ async def fill_images(trip_data: dict, dest: str):
             resolve_tasks.append(_resolve_and_set(w, "image", img))
     if resolve_tasks:
         await asyncio.gather(*resolve_tasks)
-    # 如果主图片URL解析失败，使用备用URL
-    for w in weather_items:
-        if not w.get("image") or w["image"] == w.get("image_fallback", ""):
-            continue
-        # 如果主图片URL还是text_to_image格式（说明CDN解析失败），保留它作为fallback
-        if IMG_BASE in w.get("image", ""):
-            w["image"] = w["image"]  # 保持text_to_image URL，浏览器会跟随重定向
 
 
 async def _resolve_and_set(item: dict, key: str, url: str):

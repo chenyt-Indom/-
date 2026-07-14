@@ -136,7 +136,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .day-date{font-size:18px;color:#999}
 .day-weather{font-size:18px;color:#666;margin-left:auto}
 .map-btn{display:flex;align-items:center;gap:4px;padding:6px 14px;background:#EEF4FB;border-radius:16px;cursor:pointer;border:none;font-size:15px;color:#4A90D9;font-weight:500}
-.weather-img{width:100%;height:150px;object-fit:cover;margin-top:12px}
+.weather-img{width:100%;height:150px;object-fit:cover;margin-top:12px;border-radius:12px}
+/* 天气渐变卡片（替代不可靠的图片API） */
+.weather-card{width:100%;height:150px;margin-top:12px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;cursor:pointer;position:relative;overflow:hidden;text-shadow:0 2px 8px rgba(0,0,0,.3)}
+.weather-card .wc-icon{font-size:48px;margin-bottom:4px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))}
+.weather-card .wc-desc{font-size:20px;font-weight:600;margin-bottom:2px}
+.weather-card .wc-temp{font-size:16px;opacity:.9}
+.weather-card .wc-hint{position:absolute;bottom:8px;right:12px;font-size:12px;opacity:.7}
 .time-slot{padding:16px 20px 0 20px}
 .slot-header{display:flex;align-items:center;margin-bottom:10px}
 .slot-dot{width:8px;height:8px;border-radius:50%;margin-right:8px}
@@ -628,41 +634,8 @@ function switchBudgetType(type) {
   });
 }
 
-// 生成图片兜底URL（确保img标签始终有src，避免onerror不触发）
+// 生成图片兜底URL（用于景点/酒店图片）
 function getFallbackImgUrl(name, type) {
-  // 天气图片优先用本地图片
-  if (type === 'weather') {
-    var weatherMap = {
-      '晴':'晴','少云':'少云','晴间多云':'晴间多云','多云':'多云','阴':'阴','阴天':'阴天',
-      '阵雨':'阵雨','雷阵雨':'雷阵雨','雷阵雨伴有冰雹':'雷阵雨伴有冰雹',
-      '小雨':'小雨','中雨':'中雨','大雨':'大雨','暴雨':'暴雨','大暴雨':'大暴雨','特大暴雨':'特大暴雨',
-      '冻雨':'冻雨','雨':'雨','雨夹雪':'雨夹雪',
-      '小雪':'小雪','中雪':'中雪','大雪':'大雪','暴雪':'暴雪','雪':'雪',
-      '雾':'雾','霾':'霾','浮尘':'浮尘','扬沙':'扬沙','沙尘暴':'沙尘暴','强沙尘暴':'强沙尘暴',
-      '大风':'大风','台风':'台风','热带风暴':'热带风暴','风':'风','热':'热','冷':'冷'
-    };
-    var key = weatherMap[name];
-    if (!key) {
-      // 处理"X转Y"组合天气：优先匹配最具视觉冲击力的天气
-      if (name.indexOf('转') >= 0) {
-        var parts = name.split('转');
-        var strongOrder = ['特大暴雨','大暴雨','暴雨','暴雪','大雪','雷阵雨','雷阵雨伴有冰雹','大雨','中雨','中雪','小雨','小雪','台风','热带风暴','沙尘暴','强沙尘暴','扬沙','浮尘','霾','雾','冻雨','雨夹雪','雨','雪','阴','多云','晴','风','大风','热','冷'];
-        for (var si = 0; si < strongOrder.length; si++) {
-          for (var pi = 0; pi < parts.length; pi++) {
-            if (parts[pi].indexOf(strongOrder[si]) >= 0) {
-              key = weatherMap[strongOrder[si]];
-              if (key) return '/app/weather/' + encodeURIComponent(key) + '.jpg';
-            }
-          }
-        }
-      }
-      // 模糊匹配
-      for (var k in weatherMap) { 
-        if (name.indexOf(k)>=0 || k.indexOf(name)>=0) { key = weatherMap[k]; break; } 
-      }
-    }
-    if (key) return '/app/weather/' + encodeURIComponent(key) + '.jpg';
-  }
   const dest = tripData ? tripData.destination : '';
   const prompt = type === 'weather'
     ? encodeURIComponent('weather landscape ' + name + ', photorealistic, 4K')
@@ -1265,6 +1238,87 @@ function openAmapLink(name, location){
   window.open(uri, '_blank');
 }
 
+// 天气渐变卡片配色方案（100%可靠，不依赖任何外部API）
+function getWeatherGradient(desc) {
+  var d = (desc||'晴').replace(/\s/g,'');
+  // 精确匹配
+  var gradMap = {
+    '晴':'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    '少云':'linear-gradient(135deg, #89CFF0 0%, #4facfe 100%)',
+    '晴间多云':'linear-gradient(135deg, #74b9ff 0%, #a8e6cf 100%)',
+    '多云':'linear-gradient(135deg, #bdc3c7 0%, #dfe6e9 100%)',
+    '阴':'linear-gradient(135deg, #636e72 0%, #b2bec3 100%)',
+    '阴天':'linear-gradient(135deg, #636e72 0%, #95a5a6 100%)',
+    '阵雨':'linear-gradient(135deg, #5f9ea0 0%, #4682b4 100%)',
+    '雷阵雨':'linear-gradient(135deg, #2c3e50 0%, #4a69bd 100%)',
+    '雷阵雨伴有冰雹':'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+    '小雨':'linear-gradient(135deg, #a8c0ff 0%, #6c8cd9 100%)',
+    '中雨':'linear-gradient(135deg, #6c8cd9 0%, #3b5998 100%)',
+    '大雨':'linear-gradient(135deg, #3b5998 0%, #1a237e 100%)',
+    '暴雨':'linear-gradient(135deg, #1a237e 0%, #0d1b2a 100%)',
+    '大暴雨':'linear-gradient(135deg, #0d1b2a 0%, #1b2838 100%)',
+    '特大暴雨':'linear-gradient(135deg, #0d1b2a 0%, #000000 100%)',
+    '冻雨':'linear-gradient(135deg, #8ecae6 0%, #219ebc 100%)',
+    '雨':'linear-gradient(135deg, #5f9ea0 0%, #3b5998 100%)',
+    '雨夹雪':'linear-gradient(135deg, #a8c0ff 0%, #e0e0e0 100%)',
+    '小雪':'linear-gradient(135deg, #e0e0e0 0%, #b0c4de 100%)',
+    '中雪':'linear-gradient(135deg, #c8d6e5 0%, #8395a7 100%)',
+    '大雪':'linear-gradient(135deg, #dfe6e9 0%, #b2bec3 100%)',
+    '暴雪':'linear-gradient(135deg, #b2bec3 0%, #636e72 100%)',
+    '雪':'linear-gradient(135deg, #e8f4f8 0%, #c8d6e5 100%)',
+    '雾':'linear-gradient(135deg, #d4d4d4 0%, #a8a8a8 100%)',
+    '霾':'linear-gradient(135deg, #c9a66b 0%, #8b7355 100%)',
+    '浮尘':'linear-gradient(135deg, #d4c5a9 0%, #a3957c 100%)',
+    '扬沙':'linear-gradient(135deg, #c9a66b 0%, #8b6914 100%)',
+    '沙尘暴':'linear-gradient(135deg, #b8860b 0%, #8b4513 100%)',
+    '强沙尘暴':'linear-gradient(135deg, #8b4513 0%, #4a2000 100%)',
+    '大风':'linear-gradient(135deg, #7f8c8d 0%, #95a5a6 100%)',
+    '台风':'linear-gradient(135deg, #2c3e50 0%, #0d1b2a 100%)',
+    '热带风暴':'linear-gradient(135deg, #34495e 0%, #1a252f 100%)',
+    '风':'linear-gradient(135deg, #95a5a6 0%, #bdc3c7 100%)',
+    '热':'linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%)',
+    '冷':'linear-gradient(135deg, #a8d8ea 0%, #2193b0 100%)'
+  };
+  if (gradMap[d]) return gradMap[d];
+  // 处理"X转Y"组合
+  if (d.indexOf('转')>=0) {
+    var parts = d.split('转');
+    for (var i=0;i<parts.length;i++) {
+      if (gradMap[parts[i]]) return gradMap[parts[i]];
+    }
+  }
+  // 模糊匹配
+  for (var k in gradMap) {
+    if (d.indexOf(k)>=0 || k.indexOf(d)>=0) return gradMap[k];
+  }
+  return 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)';
+}
+
+function getWeatherIcon(desc) {
+  var d = (desc||'晴').replace(/\s/g,'');
+  var iconMap = {
+    '晴':'☀️','少云':'🌤️','晴间多云':'⛅','多云':'⛅','阴':'☁️','阴天':'☁️',
+    '阵雨':'🌦️','雷阵雨':'⛈️','雷阵雨伴有冰雹':'⛈️',
+    '小雨':'🌧️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','大暴雨':'⛈️','特大暴雨':'⛈️',
+    '冻雨':'🌨️','雨':'🌧️','雨夹雪':'🌨️',
+    '小雪':'🌨️','中雪':'❄️','大雪':'❄️','暴雪':'❄️','雪':'❄️',
+    '雾':'🌫️','霾':'🌫️','浮尘':'🌪️','扬沙':'🌪️','沙尘暴':'🌪️','强沙尘暴':'🌪️',
+    '大风':'💨','台风':'🌀','热带风暴':'🌀','风':'💨',
+    '热':'🔥','冷':'🥶'
+  };
+  if (iconMap[d]) return iconMap[d];
+  if (d.indexOf('转')>=0) {
+    var parts = d.split('转');
+    for (var i=0;i<parts.length;i++) {
+      if (iconMap[parts[i]]) return iconMap[parts[i]];
+    }
+  }
+  for (var k in iconMap) {
+    if (d.indexOf(k)>=0 || k.indexOf(d)>=0) return iconMap[k];
+  }
+  return '🌤️';
+}
+
 function renderTrip(data){
   tripData = data;
   document.getElementById('tripTitle').textContent = data.destination + data.days + '日游';
@@ -1281,6 +1335,7 @@ function renderTrip(data){
     transHtml += '<div class="bottom-card"><div class="bottom-title">🚀 出发交通</div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
+    if (dt.flight_number) transHtml += '<div>航班/车次：<b style="color:#4A90D9;font-size:20px">' + dt.flight_number + '</b></div>';
     transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + '</b></div>';
     transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
     var arrivalLabel = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
@@ -1295,6 +1350,7 @@ function renderTrip(data){
     transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
+    if (rt.flight_number) transHtml += '<div>航班/车次：<b style="color:#4A90D9;font-size:20px">' + rt.flight_number + '</b></div>';
     transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + '</b></div>';
     transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
     var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');
@@ -1309,10 +1365,23 @@ function renderTrip(data){
   let dHtml = '';
   (data.itinerary||[]).forEach((day,dayIdx)=>{
     const w = day.weather||{};
-    const wImg = w.image || w.image_fallback || getFallbackImgUrl(w.desc||'晴', 'weather');
+    const wDesc = w.desc||'晴';
+    const wIcon = w.icon||'☀️';
+    const wTemp = w.temp||'';
+    // 天气图片：优先使用本地天气图片，渐变作为fallback底层
+    const wImg = w.image || '';
+    const wGrad = getWeatherGradient(wDesc);
+    const wBgStyle = wImg
+      ? `background:linear-gradient(rgba(0,0,0,0.2),rgba(0,0,0,0.45)),url(${wImg}) center/cover no-repeat,${wGrad};`
+      : `background:${wGrad}`;
     dHtml += `<div class="day-card">
-      <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${w.icon||''} ${w.desc||''} ${w.temp||''}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
-      <img class="weather-img" src="${wImg}" alt="天气" onerror="weatherImgFallback(this,'${(w.desc||'晴').replace(/'/g,"\\'")}')" onclick="showWeatherHourly(${dayIdx})">
+      <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${wIcon} ${wDesc} ${wTemp}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
+      <div class="weather-card" style="${wBgStyle}" onclick="showWeatherHourly(${dayIdx})">
+        <span class="wc-icon">${getWeatherIcon(wDesc)}</span>
+        <span class="wc-desc">${wDesc}</span>
+        <span class="wc-temp">${wTemp}</span>
+        <span class="wc-hint">点击查看逐时天气 ›</span>
+      </div>
       ${renderSlot('上午','morning',day.morning,dayIdx,0)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
       ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
@@ -1439,8 +1508,6 @@ function renderTrip(data){
   tipHtml += '</div>';
   document.getElementById('tipsCard').innerHTML = tipHtml;
   window.scrollTo(0,0);
-  // 启动天气图片加载超时检测
-  startWeatherImgTimeout();
 }
 
 function renderSlot(title, cls, slot, dayIdx, slotIdx){
@@ -2246,102 +2313,6 @@ window._stopMonitorPermanent = function() {
   btn.disabled = true;
 };
 
-// 天气图片加载失败的三级兜底（含超时机制）
-var _weatherImgFallbackCount = {};
-function weatherImgFallback(img, desc) {
-  var imgKey = desc + '_' + Date.now();
-  // 防止同一张图片重复触发兜底
-  if (_weatherImgFallbackCount[desc] > 3) {
-    showGradientFallback(img, 'weather', desc);
-    return;
-  }
-  _weatherImgFallbackCount[desc] = (_weatherImgFallbackCount[desc] || 0) + 1;
-  // 第一级：尝试本地图片（如果原始URL不是本地的）
-  var localUrl = getFallbackImgUrl(desc, 'weather');
-  if (localUrl && localUrl.indexOf('/app/weather/') >= 0 && img.src.indexOf('/app/weather/') < 0) {
-    img.src = localUrl;
-    // 设置8秒超时检测本地图片加载
-    var timeoutId = setTimeout(function() {
-      if (!img.complete || img.naturalWidth === 0) {
-        // 本地图片加载失败，回退到API
-        var altDesc = desc.replace('转', ' ');
-        var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' weather landscape, photorealistic, 4K') + '&image_size=landscape_16_9';
-        img.src = url2;
-        img.onerror = function() {
-          showGradientFallback(img, 'weather', desc);
-        };
-        setTimeout(function() {
-          if (!img.complete || img.naturalWidth === 0) {
-            showGradientFallback(img, 'weather', desc);
-          }
-        }, 5000);
-      }
-    }, 8000);
-    img.onerror = function() {
-      clearTimeout(timeoutId);
-      // 本地图片失败，回退到API
-      var altDesc = desc.replace('转', ' ');
-      var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
-      img.src = url2;
-      img.onerror = function() {
-        showGradientFallback(img, 'weather', desc);
-      };
-    };
-  } else {
-    // 已经是本地图片或本地无匹配，直接回退到API
-    var altDesc = desc.replace('转', ' ');
-    var url1 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' weather landscape, photorealistic, 4K') + '&image_size=landscape_16_9';
-    img.src = url1;
-    var timeoutId = setTimeout(function() {
-      if (!img.complete || img.naturalWidth === 0) {
-        var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
-        img.src = url2;
-        img.onerror = function() {
-          showGradientFallback(img, 'weather', desc);
-        };
-        setTimeout(function() {
-          if (!img.complete || img.naturalWidth === 0) {
-            showGradientFallback(img, 'weather', desc);
-          }
-        }, 5000);
-      }
-    }, 8000);
-    img.onerror = function() {
-      clearTimeout(timeoutId);
-      var url2 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(altDesc + ' scenic view, 4K') + '&image_size=portrait_4_3';
-      img.src = url2;
-      img.onerror = function() {
-        showGradientFallback(img, 'weather', desc);
-      };
-    };
-  }
-}
-
-// 启动天气图片加载超时检测（渲染后调用）
-function startWeatherImgTimeout() {
-  setTimeout(function() {
-    document.querySelectorAll('.weather-img').forEach(function(img) {
-      if (!img.complete || img.naturalWidth === 0) {
-        var desc = img.alt || '天气';
-        // 先尝试本地图片
-        var localUrl = getFallbackImgUrl(desc, 'weather');
-        if (localUrl && localUrl.indexOf('/app/weather/') >= 0 && img.src.indexOf('/app/weather/') < 0) {
-          img.src = localUrl;
-          img.onerror = function() { showGradientFallback(img, 'weather', desc); };
-          // 再给5秒
-          setTimeout(function() {
-            if (!img.complete || img.naturalWidth === 0) {
-              showGradientFallback(img, 'weather', desc);
-            }
-          }, 5000);
-        } else {
-          showGradientFallback(img, 'weather', desc);
-        }
-      }
-    });
-  }, 10000);
-}
-
 // 判断是否为当天
 function checkIfToday(dateStr) {
   if (!dateStr) return false;
@@ -2394,8 +2365,6 @@ window.toggleMonitor = toggleMonitor;
 window.acceptMonitorSuggestion = acceptMonitorSuggestion;
 window.rejectMonitorSuggestion = rejectMonitorSuggestion;
 window.stopMonitor = window._stopMonitorPermanent;
-window.weatherImgFallback = weatherImgFallback;
-window.startWeatherImgTimeout = startWeatherImgTimeout;
 })();
 </script>
 <!-- 城市编辑弹窗 -->

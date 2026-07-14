@@ -12,10 +12,10 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import judge_transport, search_flights
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
-from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time
+from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
 
 app = FastAPI(title="行旅白 AI 旅行规划")
 app.add_middleware(
@@ -173,13 +173,26 @@ async def generate_trip(req: TripRequest):
             # 判断交通工具
             ti = judge_transport(req.departure_city, dest)
             transport_info["transport"] = ti
+            # 查询真实航班/火车班次数据
+            schedule = get_route_schedule(req.departure_city, dest)
+            transport_info["route_schedule"] = schedule
             # 计算前往机场/车站的时间
             if ti.get("need_flight"):
                 to_station = await calculate_transit_to_station(req.departure_city, "airport")
+                from_station = await calculate_station_to_hotel(dest, "airport")
                 transport_info["to_station"] = to_station
+                transport_info["from_station"] = from_station
+                # 生成航班查询指引
+                transport_info["flight_query_text"] = build_flight_query_text(
+                    req.departure_city, dest, start_date)
             else:
                 to_station = await calculate_transit_to_station(req.departure_city, "train")
+                from_station = await calculate_station_to_hotel(dest, "train")
                 transport_info["to_station"] = to_station
+                transport_info["from_station"] = from_station
+                # 生成火车票查询指引
+                transport_info["flight_query_text"] = build_flight_query_text(
+                    req.departure_city, dest, start_date)
             # 自驾模式：计算自驾路线
             if req.is_self_drive:
                 sd_plan = await calculate_self_drive_plan(
@@ -476,6 +489,9 @@ async def regenerate_trip(request: Request):
     if departure_city:
         ti = judge_transport(departure_city, dest)
         transport_info["transport"] = ti
+        # 查询真实航班/火车班次数据
+        schedule = get_route_schedule(departure_city, dest)
+        transport_info["route_schedule"] = schedule
 
     # 构建regenerate prompt
     prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
