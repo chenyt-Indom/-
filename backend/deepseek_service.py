@@ -89,12 +89,31 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                         for t in schedule["trains"]:
                             transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
                     transport_section += "\n【强制要求-班次严格匹配】你必须从以上列出的真实班次中选择一个，并且严格使用该班次的全部信息！"
-                    transport_section += "\n  ① flight_number字段：必须填写所选班次的航班号/车次号（如CA1501、G1），禁止编造"
-                    transport_section += "\n  ② departure_time字段：必须填写所选班次的出发时间（如07:30），与上面列出的时间一致"
-                    transport_section += "\n  ③ arrival_time字段：必须填写所选班次的到达时间（如09:40），与上面列出的时间一致"
-                    transport_section += "\n  ④ duration字段：必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'或'CA1501 2h10min'），不可只写耗时"
+                    transport_section += "\n  ① flight_number字段：必须填写所选班次的航班号/车次号（如CA1515、G1），禁止编造"
+                    transport_section += "\n  ② departure_time字段：必须填写所选班次的出发时间（如08:00），与上面列出的时间一致"
+                    transport_section += "\n  ③ arrival_time字段：必须填写所选班次的到达时间（如10:05），与上面列出的时间一致"
+                    transport_section += "\n  ④ duration字段：必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'或'CA1515 2h10min'），不可只写耗时"
                     transport_section += "\n  ⑤ 以上4个字段必须来自同一个班次，不可交叉混用！如果选择的班次是早上8:00出发，departure_time就必须是8:00，不能改成其他时间"
                     transport_section += "\n  ⑥ 返程如果走相同路线，也必须从以上班次中反向选择合适时间的班次，同样严格匹配"
+                    transport_section += "\n  ⑦ 【机场限制】只能使用首都T2/T3、大兴、虹桥T1/T2、浦东T1/T2等真实民用机场，绝对禁止使用南苑等已关闭/军用机场"
+                # 中转方案
+                transfer_info = transport_info.get("transfer_info", {})
+                if transfer_info.get("transfer_options"):
+                    transport_section += "\n【中转方案参考】如果无合适直飞航班，可考虑以下中转方案："
+                    transfer_note = transfer_info.get("_note", "")
+                    if transfer_note:
+                        transport_section += f"\n  {transfer_note}"
+                    for to in transfer_info["transfer_options"]:
+                        transport_section += f"\n  方案：经{to['transfer_city']}中转"
+                        if to["leg1"]["flights"]:
+                            transport_section += f"\n    第一段 {to['leg1']['from']}→{to['leg1']['to']}："
+                            for f in to["leg1"]["flights"][:2]:
+                                transport_section += f"\n      ✈ {f['num']}：{f['dep']}→{f['arr']}（{f['duration']}）"
+                        if to["leg2"]["flights"]:
+                            transport_section += f"\n    第二段 {to['leg2']['from']}→{to['leg2']['to']}："
+                            for f in to["leg2"]["flights"][:2]:
+                                transport_section += f"\n      ✈ {f['num']}：{f['dep']}→{f['arr']}（{f['duration']}）"
+                        transport_section += f"\n    中转提示：{to['note']}"
             transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。"
             transport_section += """
 【重要-出发时间灵活规则】
@@ -165,27 +184,44 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
   "end_date": "{end_date}",
   "departure_transport": {{
     "type": "出发交通方式（高铁/飞机/自驾/大巴）",
-    "flight_number": "航班号或车次号（如CA1501、G1等，必须从提供的真实班次中选择，自驾则为空字符串）",
+    "flight_number": "航班号或车次号（如CA1515、G1等，必须从提供的真实班次中选择，自驾则为空字符串）",
     "departure_time": "建议出发时间（如8:00，留足缓冲，也可以是14:00、20:00等任意时刻）",
-    "station": "出发站/机场名称",
+    "station": "出发站/机场名称（必须使用真实民用机场名称，禁止使用军用/已关闭机场）",
     "arrival_time": "预计到达目的地时间（跨天到达标注"次日XX:XX"）",
-    "duration": "交通耗时（必须使用'航班号/车次号+耗时'格式，如'G1次 4h29min'或'CA1501 2h10min'）",
+    "duration": "交通耗时（必须使用'航班号/车次号+耗时'格式，如'G1次 4h29min'或'CA1515 2h10min'）",
     "cost": "预估费用",
     "cross_day": false,
     "station_to_hotel": "从机场/车站到酒店的方式和时间（如：打车30分钟约50元，或地铁X号线转X号线约45分钟）",
-    "note": "注意事项（如提前多久到站、中转信息、是否有合适的航班/车次）"
+    "note": "注意事项（如提前多久到站、中转信息、是否有合适的航班/车次）",
+    "transfers": [
+      {{
+        "step": 1,
+        "type": "交通工具类型（飞机/高铁/大巴/出租车/地铁）",
+        "flight_number": "中转段航班号/车次号（如CA1234，如无则留空）",
+        "from_station": "出发站/机场",
+        "to_station": "到达站/机场",
+        "departure_time": "中转段出发时间",
+        "arrival_time": "中转段到达时间",
+        "duration": "中转段耗时",
+        "transfer_time": "中转等待时间（如'1小时30分钟'），必须≥45分钟（飞机）或≥30分钟（火车）",
+        "note": "中转说明"
+      }}
+    ],
+    "vehicle_image": "交通工具配图关键词（如'airplane','high_speed_rail','bus'等）"
   }},
   "return_transport": {{
     "type": "返程交通方式",
     "flight_number": "航班号或车次号（必须从提供的真实班次中选择，自驾则为空字符串）",
     "departure_time": "建议出发时间（根据最后一天游玩安排倒推）",
-    "station": "出发站/机场名称",
+    "station": "出发站/机场名称（必须使用真实民用机场名称）",
     "arrival_time": "预计到达时间（跨天到达标注"次日XX:XX"）",
     "duration": "交通耗时（必须使用'航班号/车次号+耗时'格式）",
     "cost": "预估费用",
     "cross_day": false,
     "station_to_hotel": "从酒店到机场/车站的方式和时间",
-    "note": "注意事项"
+    "note": "注意事项",
+    "transfers": [],
+    "vehicle_image": "交通工具配图关键词"
   }},
   "weather": [
     {{"date": "日期", "weather": "天气", "temp": "温度", "wind": "风力", "icon": "天气图标emoji"}}
@@ -230,9 +266,16 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
    - route_detail 字段中描述当天的具体游览路线（如"南门进→金鞭溪→袁家界→百龙天梯→东门出"）
    - recommended_routes 字段中提供2-3条该景点的经典游览路线方案供用户参考（每条路线一句话描述，如"经典一日游：南门进→金鞭溪→袁家界→天子山→东门出（约6小时）"）
    - 普通景点 recommended_routes 设为空数组 []
-10. 【出发/返程-最高优先级】departure_transport和return_transport必须认真填写。flight_number必须从提供的真实航班/车次班次中选择，不可随意编造！duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'、'CA1501 2h10min'）。出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站。出发时间可以是任意时刻（上午/下午/晚上），根据实际航班/车次时刻表决定。如果下午到达，第一天可安排1个晚间景点；如果晚上到达，仅安排入住酒店。跨天到达必须标注"次日XX:XX"并设置cross_day=true。station_to_hotel字段必须填写从机场/车站到酒店的具体交通方式和时间。
-11. 【时间格式】所有时间必须使用24小时制（如9:00、14:30），绝对禁止出现>23:59的时间（如26:00）。如果活动跨天，请使用"次日8:00"等格式表示。每天上午/下午/晚上的景点安排间隔至少1小时，避免时间冲突
-12. 只输出JSON，不要markdown代码块"""
+10. 【出发/返程-最高优先级】departure_transport和return_transport必须认真填写。flight_number必须从提供的真实航班/车次班次中选择，不可随意编造！duration必须使用'航班号/车次号 + 耗时'格式（如'G1次 4h29min'、'CA1515 2h10min'）。出发时间不能太紧凑，必须留足缓冲时间。飞机需提前2小时到机场，火车需提前1小时到站。出发时间可以是任意时刻（上午/下午/晚上），根据实际航班/车次时刻表决定。如果下午到达，第一天可安排1个晚间景点；如果晚上到达，仅安排入住酒店。跨天到达必须标注"次日XX:XX"并设置cross_day=true。station_to_hotel字段必须填写从机场/车站到酒店的具体交通方式和时间。
+11. 【中转/换乘-最高优先级】如果出发城市到目的城市没有直飞航班，或需要中途换乘，必须填写transfers数组。中转规则：
+   a) 飞机中转：中转等待时间≥1.5小时（国内转国内），必须明确写出第一段航班号→中转机场→第二段航班号的变化
+   b) 火车中转：中转等待时间≥30分钟，必须明确写出第一段车次→中转站→第二段车次的变化
+   c) 飞机转火车/火车转飞机：中转等待时间≥2小时，考虑从机场到火车站的交通时间
+   d) 每个中转段必须填写：step序号、type、flight_number、from_station、to_station、departure_time、arrival_time、duration、transfer_time
+   e) 宁可少安排景点也不能赶时间！中转时间必须充裕，如有跨天中转必须标注
+   f) vehicle_image字段：填写交通工具关键词（直飞填"airplane"，高铁填"high_speed_rail"，自驾填"car"，大巴填"bus"），用于前端显示交通工具配图
+12. 【时间格式】所有时间必须使用24小时制（如9:00、14:30），绝对禁止出现>23:59的时间（如26:00）。如果活动跨天，请使用"次日8:00"等格式表示。每天上午/下午/晚上的景点安排间隔至少1小时，避免时间冲突
+13. 只输出JSON，不要markdown代码块"""
 
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
@@ -364,7 +407,13 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                 transport_section += "\n可选火车/高铁："
                 for t in schedule["trains"]:
                     transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
-            transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！"
+            transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！绝对禁止使用南苑等已关闭/军用机场！"
+            # 中转方案
+            transfer_info = transport_info.get("transfer_info", {})
+            if transfer_info.get("transfer_options"):
+                transport_section += "\n【中转方案参考】如果无合适直飞，可考虑以下中转："
+                for to in transfer_info["transfer_options"]:
+                    transport_section += f"\n  经{to['transfer_city']}中转：{to['note']}"
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 
@@ -388,8 +437,8 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
   "days": {days},
   "start_date": "{start_date}",
   "end_date": "{end_date}",
-  "departure_transport": {{"type": "", "flight_number": "", "departure_time": "", "station": "", "arrival_time": "", "duration": "", "cost": "", "note": ""}},
-  "return_transport": {{"type": "", "flight_number": "", "departure_time": "", "station": "", "arrival_time": "", "duration": "", "cost": "", "note": ""}},
+  "departure_transport": {{"type": "", "flight_number": "", "departure_time": "", "station": "", "arrival_time": "", "duration": "", "cost": "", "note": "", "transfers": [], "vehicle_image": ""}},
+  "return_transport": {{"type": "", "flight_number": "", "departure_time": "", "station": "", "arrival_time": "", "duration": "", "cost": "", "note": "", "transfers": [], "vehicle_image": ""}},
   "itinerary": [
     {{
       "day": 1, "date": "日期",
@@ -412,4 +461,5 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 5. 【时间安排-最高优先级】每个景点必须填写 time_slot 字段（如"9:00-11:30"），严格遵循：上午8:00-12:00，下午13:00-17:30，晚上18:00-21:30；午餐12:00-13:00和晚餐17:30-18:30不可安排景点；景点间预留至少30-60分钟交通损耗；大景点3-4小时，小景点1.5-2.5小时；节奏慢则游玩时间+30%，节奏快可缩短但≥1小时。上午结束与下午开始间隔≥1小时，下午结束与晚上开始间隔≥1小时
 6. 所有时间使用24小时制，禁止>23:59的时间（如26:00），跨天活动使用"次日XX:XX"格式
 7. 公共交通出行时，根据距离选择合适交通工具：短距离步行/公交，中距离地铁/高铁，长距离飞机
-8. 只输出JSON，不要markdown代码块"""
+8. 【中转/换乘】如果无直飞航班需中转，填写transfers数组，中转等待时间必须充裕（飞机≥1.5小时，火车≥30分钟，跨类型≥2小时），列明班次编号变化，宁可少玩景点也不赶时间
+9. 只输出JSON，不要markdown代码块"""

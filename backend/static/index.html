@@ -173,6 +173,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .footer-text{color:#333}
 .bottom-card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
 .bottom-title{font-size:24px;font-weight:600;color:#333;margin-bottom:14px;padding-left:12px;border-left:4px solid #4A90D9}
+/* 交通工具配图 */
+.transport-img-wrap{width:100%;height:120px;border-radius:12px;overflow:hidden;margin-bottom:12px;background:#f0f4f8}
+.transport-img-wrap img{width:100%;height:100%;object-fit:cover}
+/* 中转/换乘步骤 */
+.transfer-steps{margin-top:12px;padding:12px;background:#FFF8E1;border-radius:10px;border:1px solid #FFE082}
+.transfer-title{font-size:16px;color:#E67E22;font-weight:600;margin-bottom:8px}
+.transfer-step{display:flex;align-items:flex-start;padding:8px 0;border-bottom:1px dashed #FFE082;position:relative}
+.transfer-step:last-child{border-bottom:none}
+.transfer-step-num{width:28px;height:28px;border-radius:50%;background:#E67E22;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:10px;margin-top:2px}
+.transfer-step-info{flex:1;font-size:15px;line-height:1.6}
+.transfer-step-info b{color:#E67E22}
+.transfer-arrow{text-align:center;color:#E67E22;font-size:18px;padding:4px 0}
+.transfer-wait{display:inline-block;background:#FFF3E0;color:#E65100;font-size:13px;padding:2px 8px;border-radius:8px;margin-left:6px}
 .budget-grid{display:flex;flex-wrap:wrap;gap:12px}
 .budget-item{flex:1;min-width:28%;text-align:center;background:#f9fafb;border-radius:12px;padding:14px 8px}
 .budget-name{font-size:18px;color:#999;display:block}.budget-value{font-size:22px;color:#4A90D9;font-weight:600;display:block;margin-top:4px}
@@ -1354,9 +1367,14 @@ function renderTrip(data){
 
   // 出发/返程交通卡片
   let transHtml = '';
+  var viMap = {airplane:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=commercial+airliner+in+blue+sky+photorealistic+4k&image_size=landscape_16_9',high_speed_rail:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+high+speed+train+on+railway+photorealistic+4k&image_size=landscape_16_9',car:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=car+on+highway+scenic+road+trip+photorealistic+4k&image_size=landscape_16_9',bus:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+long+distance+bus+on+highway+photorealistic+4k&image_size=landscape_16_9'};
   if (data.departure_transport) {
     var dt = data.departure_transport;
     transHtml += '<div class="bottom-card"><div class="bottom-title">🚀 出发交通</div>';
+    // 交通工具配图
+    var vi = dt.vehicle_image || 'airplane';
+    var viSrc = viMap[vi] || viMap['airplane'];
+    transHtml += '<div class="transport-img-wrap"><img src="' + viSrc + '" alt="' + (dt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
     if (dt.flight_number) transHtml += '<div>航班/车次：<b style="color:#4A90D9;font-size:20px">' + dt.flight_number + '</b></div>';
@@ -1367,11 +1385,31 @@ function renderTrip(data){
     transHtml += '<div>预估费用：' + (dt.cost||'') + '</div>';
     if (dt.station_to_hotel) transHtml += '<div>🏨 到酒店：' + dt.station_to_hotel + '</div>';
     transHtml += '<div style="color:#E67E22">⚠️ ' + (dt.note||'') + '</div>';
+    // 中转/换乘步骤
+    if (dt.transfers && dt.transfers.length > 0) {
+      transHtml += '<div class="transfer-steps"><div class="transfer-title">🔄 中转/换乘详情</div>';
+      dt.transfers.forEach(function(tr, tri){
+        if (tri > 0) transHtml += '<div class="transfer-arrow">⬇️ 中转等待 <span class="transfer-wait">' + (tr.transfer_time||'') + '</span></div>';
+        transHtml += '<div class="transfer-step"><div class="transfer-step-num">' + (tr.step||(tri+1)) + '</div>';
+        transHtml += '<div class="transfer-step-info">';
+        transHtml += '<div><b>' + (tr.type||'') + '</b>';
+        if (tr.flight_number) transHtml += ' <b style="color:#4A90D9">' + tr.flight_number + '</b>';
+        transHtml += '</div>';
+        transHtml += '<div>' + (tr.from_station||'') + ' → ' + (tr.to_station||'') + '</div>';
+        transHtml += '<div>出发：' + (tr.departure_time||'') + ' | 到达：' + (tr.arrival_time||'') + ' | ' + (tr.duration||'') + '</div>';
+        if (tr.note) transHtml += '<div style="color:#999;font-size:13px">' + tr.note + '</div>';
+        transHtml += '</div></div>';
+      });
+      transHtml += '</div>';
+    }
     transHtml += '</div></div>';
   }
   if (data.return_transport) {
     var rt = data.return_transport;
     transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
+    var rvi = rt.vehicle_image || 'airplane';
+    var rviSrc = viMap[rvi] || viMap['airplane'];
+    transHtml += '<div class="transport-img-wrap"><img src="' + rviSrc + '" alt="' + (rt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
     if (rt.flight_number) transHtml += '<div>航班/车次：<b style="color:#4A90D9;font-size:20px">' + rt.flight_number + '</b></div>';
@@ -1382,6 +1420,23 @@ function renderTrip(data){
     transHtml += '<div>预估费用：' + (rt.cost||'') + '</div>';
     if (rt.station_to_hotel) transHtml += '<div>🏨 到酒店/家：' + rt.station_to_hotel + '</div>';
     transHtml += '<div style="color:#E67E22">⚠️ ' + (rt.note||'') + '</div>';
+    // 返程中转
+    if (rt.transfers && rt.transfers.length > 0) {
+      transHtml += '<div class="transfer-steps"><div class="transfer-title">🔄 中转/换乘详情</div>';
+      rt.transfers.forEach(function(tr, tri){
+        if (tri > 0) transHtml += '<div class="transfer-arrow">⬇️ 中转等待 <span class="transfer-wait">' + (tr.transfer_time||'') + '</span></div>';
+        transHtml += '<div class="transfer-step"><div class="transfer-step-num">' + (tr.step||(tri+1)) + '</div>';
+        transHtml += '<div class="transfer-step-info">';
+        transHtml += '<div><b>' + (tr.type||'') + '</b>';
+        if (tr.flight_number) transHtml += ' <b style="color:#4A90D9">' + tr.flight_number + '</b>';
+        transHtml += '</div>';
+        transHtml += '<div>' + (tr.from_station||'') + ' → ' + (tr.to_station||'') + '</div>';
+        transHtml += '<div>出发：' + (tr.departure_time||'') + ' | 到达：' + (tr.arrival_time||'') + ' | ' + (tr.duration||'') + '</div>';
+        if (tr.note) transHtml += '<div style="color:#999;font-size:13px">' + tr.note + '</div>';
+        transHtml += '</div></div>';
+      });
+      transHtml += '</div>';
+    }
     transHtml += '</div></div>';
   }
   document.getElementById('transportCard').innerHTML = transHtml;

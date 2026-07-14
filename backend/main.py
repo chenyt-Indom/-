@@ -12,7 +12,7 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
 from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
@@ -173,9 +173,12 @@ async def generate_trip(req: TripRequest):
             # 判断交通工具
             ti = judge_transport(req.departure_city, dest)
             transport_info["transport"] = ti
-            # 查询真实航班/火车班次数据
-            schedule = get_route_schedule(req.departure_city, dest)
+            # 查询真实航班/火车班次数据（传入日期校准）
+            schedule = get_route_schedule(req.departure_city, dest, start_date)
             transport_info["route_schedule"] = schedule
+            # 查询中转方案（当无直飞时）
+            transfer_info = get_transfer_routes(req.departure_city, dest, start_date)
+            transport_info["transfer_info"] = transfer_info
             # 检查出发/目的城市是否需要去邻近枢纽
             dep_hub = get_nearest_hub(req.departure_city)
             dest_hub = get_nearest_hub(dest)
@@ -504,8 +507,13 @@ async def regenerate_trip(request: Request):
             except Exception:
                 pass
             try:
-                schedule = get_route_schedule(departure_city, dest)
+                schedule = get_route_schedule(departure_city, dest, start_date)
                 transport_info["route_schedule"] = schedule
+            except Exception:
+                pass
+            try:
+                transfer_info = get_transfer_routes(departure_city, dest, start_date)
+                transport_info["transfer_info"] = transfer_info
             except Exception:
                 pass
             try:
