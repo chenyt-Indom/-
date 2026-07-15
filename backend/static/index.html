@@ -1481,16 +1481,21 @@ function renderTrip(data){
       }
     }
     // 根据交通方式强制生成正确的购票链接（使用flight_number作为兜底判断）
+    var travelDate = data.start_date || '';
     var isTrainByNum = dt.flight_number && /^[GCDKTZ]\d+/.test(dt.flight_number.toUpperCase());
     var isFlightByNum = dt.flight_number && /^[A-Z]{2}\d{3,4}$/.test(dt.flight_number.toUpperCase());
     if (isTrainType && !isFlightType) {
-      depBookingLink = 'https://trains.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+      depBookingLink = 'https://kyfw.12306.cn/otn/leftTicket/init';
     } else if (isFlightType && !isTrainType) {
-      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+      var flightParams = '?flightnum=' + encodeURIComponent(dt.flight_number||'');
+      if (travelDate) flightParams += '&ddate=' + encodeURIComponent(travelDate);
+      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html' + flightParams;
     } else if (isTrainByNum) {
-      depBookingLink = 'https://trains.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+      depBookingLink = 'https://kyfw.12306.cn/otn/leftTicket/init';
     } else if (isFlightByNum) {
-      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+      var flightParams2 = '?flightnum=' + encodeURIComponent(dt.flight_number||'');
+      if (travelDate) flightParams2 += '&ddate=' + encodeURIComponent(travelDate);
+      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html' + flightParams2;
     }
     if (depBookingLink) {
       transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
@@ -1571,13 +1576,17 @@ function renderTrip(data){
     var isRtTrainByNum = rt.flight_number && /^[GCDKTZ]\d+/.test(rt.flight_number.toUpperCase());
     var isRtFlightByNum = rt.flight_number && /^[A-Z]{2}\d{3,4}$/.test(rt.flight_number.toUpperCase());
     if (isRtTrainType && !isRtFlightType) {
-      retBookingLink = 'https://trains.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+      retBookingLink = 'https://kyfw.12306.cn/otn/leftTicket/init';
     } else if (isRtFlightType && !isRtTrainType) {
-      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+      var retFlightParams = '?flightnum=' + encodeURIComponent(rt.flight_number||'');
+      if (travelDate) retFlightParams += '&ddate=' + encodeURIComponent(travelDate);
+      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html' + retFlightParams;
     } else if (isRtTrainByNum) {
-      retBookingLink = 'https://trains.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+      retBookingLink = 'https://kyfw.12306.cn/otn/leftTicket/init';
     } else if (isRtFlightByNum) {
-      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+      var retFlightParams2 = '?flightnum=' + encodeURIComponent(rt.flight_number||'');
+      if (travelDate) retFlightParams2 += '&ddate=' + encodeURIComponent(travelDate);
+      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html' + retFlightParams2;
     }
     if (retBookingLink) {
       transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
