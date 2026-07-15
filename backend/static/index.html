@@ -259,6 +259,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .history-list{max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),opacity .3s ease;opacity:0}
 .history-list.show{max-height:800px;opacity:1;padding-top:10px}
 .history-item{display:flex;justify-content:space-between;align-items:center;padding:16px 12px;border-bottom:1px solid #f5f5f5;cursor:pointer}
+.history-fav{background:#FFFDE7;border-left:3px solid #FFD700}
 .h-left{display:flex;align-items:center;gap:10px}
 .h-dest{font-size:18px;color:#333;font-weight:500}
 .h-days{font-size:14px;color:#4A90D9;background:#EEF4FB;padding:3px 10px;border-radius:8px}
@@ -504,6 +505,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <span class="loading-text" id="progressText">AI 正在规划中...</span>
       </div>
     </button>
+    <div class="generate-hint" id="generateHint" style="text-align:center;color:#FFD700;font-size:13px;margin-top:8px;display:none;">请耐心等待，计划时长可能需要1~10分钟不等</div>
   </div>
   <div class="history-section" id="historySection" style="display:none">
     <div class="history-header" onclick="toggleHistory()">
@@ -831,21 +833,39 @@ const PROGRESS_TEXTS = [
 function loadHistory() { try { return JSON.parse(localStorage.getItem('trip_history')||'[]'); } catch(e){ return []; } }
 function saveToHistory(data) {
   let history = loadHistory();
+  const now = Date.now();
+  const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
+  history = history.filter(h => h.fav || (h.id && h.id > threeDaysAgo));
   const idx = history.findIndex(h => h.destination===data.destination && h.days===data.days);
-  const record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data };
+  const record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data, fav: false };
   if(idx>-1) history[idx]=record; else history.unshift(record);
-  if(history.length>20) history.pop();
+  if(history.length>20) {
+    var nonFav = history.filter(function(h) { return !h.fav; });
+    if (nonFav.length > 0) {
+      var oldest = nonFav.reduce(function(a, b) { return a.id < b.id ? a : b; });
+      history = history.filter(function(h) { return h !== oldest; });
+    }
+  }
   localStorage.setItem('trip_history', JSON.stringify(history));
   renderHistory();
 }
 function renderHistory() {
-  const history = loadHistory();
-  const sec = document.getElementById('historySection');
+  var history = loadHistory();
+  var now = Date.now();
+  var threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
+  history = history.filter(function(h) { return h.fav || (h.id && h.id > threeDaysAgo); });
+  localStorage.setItem('trip_history', JSON.stringify(history));
+  var sec = document.getElementById('historySection');
   if(history.length===0){ sec.style.display='none'; return; }
   sec.style.display='block';
-  let html = '';
-  history.forEach(h => {
-    html += `<div class="history-item" onclick="loadHistoryTrip(${h.id})"><div class="h-left"><span class="h-dest">${h.destination}</span><span class="h-days">${h.days}日游</span></div><span class="h-time">${h.time}</span></div>`;
+  var favs = history.filter(function(h) { return h.fav; }).sort(function(a, b) { return b.id - a.id; });
+  var nonFavs = history.filter(function(h) { return !h.fav; }).sort(function(a, b) { return b.id - a.id; });
+  var sorted = favs.concat(nonFavs);
+  var html = '';
+  sorted.forEach(function(h) {
+    var starIcon = h.fav ? '<span style="color:#FFD700;margin-right:4px;font-size:18px">⭐</span>' : '<span style="color:#ccc;margin-right:4px;font-size:18px">☆</span>';
+    var favClass = h.fav ? ' history-fav' : '';
+    html += '<div class="history-item' + favClass + '" onclick="loadHistoryTrip(' + h.id + ')"><div class="h-left">' + starIcon + '<span class="h-dest">' + h.destination + '</span><span class="h-days">' + h.days + '日游</span></div><span class="h-time">' + h.time + '</span></div>';
   });
   document.getElementById('historyList').innerHTML = html;
 }
@@ -916,6 +936,7 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
   const days = updateDays();
   if(!dest){ alert('请输入目的地'); return; }
   if(days < 1){ alert('请选择出行日期'); return; }
+  document.getElementById('generateHint').style.display = 'block';
   // 禁用所有控件
   disableControls();
   document.getElementById('btnNormal').style.display='none';
@@ -946,6 +967,7 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
     else { alert('攻略生成失败，请检查网络后重试\n'+(data.error||'')); enableControls(); }
   } catch(e){ clearInterval(progressTimer); alert('攻略生成失败，请检查网络后重试'); enableControls(); }
   finally {
+    document.getElementById('generateHint').style.display = 'none';
     document.getElementById('btnNormal').style.display='flex';
     document.getElementById('btnLoading').style.display='none';
     this.disabled = false;
@@ -1025,8 +1047,9 @@ function renderOverview(data){
   // 收藏按钮：先移除旧按钮再创建新按钮，避免重复
   var oldBtn = document.getElementById('favBtn');
   if (oldBtn) oldBtn.remove();
-  const favKey = `saved_trip_${data.destination}_${data.days}`;
-  const isFav = !!localStorage.getItem(favKey);
+  const history = loadHistory();
+  const favRecord = history.find(function(h) { return h.destination===data.destination && h.days===data.days && h.fav; });
+  const isFav = !!favRecord;
   var favBtn = document.createElement('button');
   favBtn.className = 'fav-btn' + (isFav ? ' favorited' : '');
   favBtn.id = 'favBtn';
@@ -1204,32 +1227,37 @@ function goToOverview(){
 // 收藏/取消收藏行程
 function toggleFavorite() {
   if (!tripData) return;
-  const favKey = `saved_trip_${tripData.destination}_${tripData.days}`;
   const btn = document.getElementById('favBtn');
   const star = document.getElementById('favStar');
   const hint = document.getElementById('favHint');
   if (!btn || !star || !hint) return;
   if (btn.classList.contains('favorited')) {
-    // 取消收藏
-    localStorage.removeItem(favKey);
     btn.classList.remove('favorited');
     btn.title = '收藏行程';
     star.textContent = '☆';
     hint.textContent = '已取消收藏';
     hint.classList.add('show');
     setTimeout(function() { hint.classList.remove('show'); }, 1500);
+    var history = loadHistory();
+    var idx = history.findIndex(function(h) { return h.destination===tripData.destination && h.days===tripData.days; });
+    if (idx > -1) { history[idx].fav = false; localStorage.setItem('trip_history', JSON.stringify(history)); renderHistory(); }
   } else {
-    // 收藏行程
-    var saved = {destination: tripData.destination, days: tripData.days, itinerary: tripData.itinerary,
-      weather: tripData.weather, budget_breakdown: tripData.budget_breakdown,
-      booking_info: tripData.booking_info, tips: tripData.tips, saved_at: new Date().toISOString()};
-    localStorage.setItem(favKey, JSON.stringify(saved));
     btn.classList.add('favorited');
     btn.title = '取消收藏';
     star.textContent = '★';
     hint.textContent = '已收藏';
     hint.classList.add('show');
     setTimeout(function() { hint.classList.remove('show'); }, 1500);
+    var history = loadHistory();
+    var idx = history.findIndex(function(h) { return h.destination===tripData.destination && h.days===tripData.days; });
+    if (idx > -1) {
+      history[idx].fav = true;
+      history[idx].id = Date.now();
+    } else {
+      history.unshift({ id: Date.now(), destination: tripData.destination, days: tripData.days, budget: tripData.budget||'', time: new Date().toLocaleString(), data: tripData, fav: true });
+    }
+    localStorage.setItem('trip_history', JSON.stringify(history));
+    renderHistory();
   }
 }
 

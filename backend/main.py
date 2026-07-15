@@ -3,7 +3,9 @@ import os
 import json
 import httpx
 import asyncio
+import datetime
 from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from models import TripRequest
@@ -17,7 +19,29 @@ from weather_detail_service import get_hourly_weather, check_weather_alerts, get
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
 from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
 
-app = FastAPI(title="行旅白 AI 旅行规划")
+# 每日机场信息刷新任务
+async def _daily_airport_refresh():
+    """每天0时刷新全国在运营机场信息，确保机场数据无误"""
+    while True:
+        now = datetime.datetime.now()
+        next_midnight = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        sleep_seconds = max(1, (next_midnight - now).total_seconds())
+        await asyncio.sleep(sleep_seconds)
+        try:
+            from feichangzhun_service import VALID_AIRPORTS, DECOMMISSIONED_AIRPORTS, is_airport_valid
+            print(f"[机场刷新] {datetime.datetime.now().isoformat()} - 开始每日机场信息校验")
+            valid_count = sum(1 for a in VALID_AIRPORTS if is_airport_valid(a))
+            print(f"[机场刷新] 白名单机场 {len(VALID_AIRPORTS)} 个，校验通过 {valid_count} 个，黑名单 {len(DECOMMISSIONED_AIRPORTS)} 个")
+        except Exception as e:
+            print(f"[机场刷新] 校验失败: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_daily_airport_refresh())
+    yield
+    task.cancel()
+
+app = FastAPI(title="行旅白 AI 旅行规划", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
@@ -186,7 +210,7 @@ async def generate_trip(req: TripRequest):
     """生成旅行攻略：高德POI+天气 → DeepSeek itinerary → DeepSeek booking → 返回完整JSON"""
     try:
         dest = req.destination.strip()
-        days = max(1, min(14, req.days))
+        days = max(1, min(31, req.days))
         start_date = req.start_date or ""
         end_date = req.end_date or ""
 
@@ -266,8 +290,9 @@ async def generate_trip(req: TripRequest):
         prompt = build_trip_prompt(dest, days, req.budget, req.interests, ranked_pois, weather_data,
                                    start_date, end_date, req.travelers, req.budget_type, req.pace,
                                    req.is_self_drive, req.departure_city, transport_info)
+        dynamic_tokens = 4000 + days * 500
         try:
-            raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt)
+            raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, dynamic_tokens)
         except httpx.HTTPStatusError as e:
             err_msg = "AI服务调用失败"
             if e.response.status_code == 402:

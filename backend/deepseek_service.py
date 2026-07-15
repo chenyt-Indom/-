@@ -4,8 +4,8 @@ from config import DEEPSEEK_KEY, DEEPSEEK_URL
 
 
 async def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> str:
-    """调用 DeepSeek API，返回生成的文本内容"""
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    """调用 DeepSeek API，返回生成的文本内容（超时10分钟）"""
+    async with httpx.AsyncClient(timeout=600.0) as client:
         resp = await client.post(
             DEEPSEEK_URL,
             headers={
@@ -129,12 +129,13 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 1. 出发时间不固定，需根据当天航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上出发
 2. 如果选择飞机：需先查询当天所有直飞航班，选择最合适的时间段（考虑票价、时长、到达时间）
 3. 如果选择火车：需查询当天高铁/动车班次，优先选择耗时短、到达时间合理的车次
-4. 到达时间规划：如果下午到达，当天可安排1个晚间景点；如果傍晚/晚上到达，当天仅安排入住酒店
-5. 跨天到达处理：如果航班/火车在次日凌晨到达，需在departure_transport中标注"次日XX:XX到达"，并规划好到达后的交通和住宿
-6. 必须计算从机场/车站到酒店的交通方式、时间和费用（打车/地铁/机场大巴），在departure_transport的note中说明
-7. 预留充足缓冲：飞机起飞前2小时到达机场，火车发车前1小时到达车站，加上从住处到机场/车站的时间
-8. 返程同理：最后一天需根据返程航班/车次时间倒推最晚出发时间，确保不误机/误车
-9. 如果出发当天没有合适的航班/车次，可考虑提前一天出发，并在第一天安排轻松的活动"""
+4. 如果距离≤400km：优先考虑大巴或打车，根据附近车站距离和方案可行度选择时间最短方案
+5. 到达时间规划：如果下午到达，当天可安排1个晚间景点；如果傍晚/晚上到达，当天仅安排入住酒店
+6. 跨天到达处理：如果航班/火车在次日凌晨到达，需在departure_transport中标注"次日XX:XX到达"，并规划好到达后的交通和住宿
+7. 必须计算从机场/车站到酒店的交通方式、时间和费用（打车/地铁/机场大巴），在departure_transport的note中说明
+8. 预留充足缓冲：飞机起飞前2小时到达机场，火车发车前1小时到达车站，加上从住处到机场/车站的时间
+9. 返程同理：最后一天需根据返程航班/车次时间倒推最晚出发时间，确保不误机/误车
+10. 如果出发当天没有合适的航班/车次，可考虑提前一天出发，并在第一天安排轻松的活动"""
             transport_section += "\n【跨天到达示例】如选择晚上20:00航班，飞行2小时，22:00到达机场，打车30分钟到酒店，则第一天行程为：上午准备出发→下午前往机场→晚上航班→到达后入住酒店，不安排游览。"
 
     # 人数描述
@@ -172,6 +173,8 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
         pace_desc = "极快节奏：每天4-5个景点，早上7:30前出发，最大化游览效率，适合特种兵式旅行"
     pace_info = f"\n【游玩节奏】{pace_desc}"
     pace_info += "\n【重要】游玩节奏优先于所有其他因素！请严格按照此节奏安排每天行程，人数影响为次要考虑。"
+    if pace <= 40:
+        pace_info += "\n【休闲节奏约束-最高优先级】此用户选择了偏休闲/慢节奏，所有出行时间不得早于上午8:00！上午景点最早8:00开始，出发时间最早8:00（绝对不能是7:00、7:30等）。"
 
     return f"""你是一个资深旅行规划师。请根据以下真实数据，生成一份 {days} 天的{dest}行程。
 
@@ -342,7 +345,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
     {{"from_hotel": "原酒店", "to_hotel": "新酒店", "change_day": "第几天换", "reason": "换酒店原因（景点集中在不同区域等）", "new_area": "新区域", "price": "参考价格/晚", "location": "坐标", "link": "https://hotels.ctrip.com/"}}
   ],
   "tickets": [
-    {{"spot": "景点名", "price": "门票价格", "need_booking": true, "booking_days": "提前N天", "platform": "预约平台", "link": "https://www.ctrip.com/", "note": "预约说明", "location": "坐标"}}
+    {{"spot": "景点名", "price": "门票价格", "need_booking": true, "booking_days": "提前N天", "platform": "预约平台", "link": "官方预约网址（必须是官网/公众号/小程序链接，绝对不能是携程链接！）", "note": "预约说明", "location": "坐标"}}
   ],
   "transport_mode": "推荐交通工具（高铁/动车/飞机/自驾等）",
   "booking_tips": ["预约贴士1", "预约贴士2"]
@@ -355,9 +358,10 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 4. transport_mode字段：说明推荐的交通工具及理由
 5. 酒店推荐位置方便、性价比高的，给出具体名称和位置坐标
 6. 门票中 need_booking=true 的景点必须说明提前几天预约
-7. 【换酒店推荐】分析行程中景点的地理分布，如果不同天的景点集中在不同区域（如Day1-3在城东，Day4-5在城西），建议中途换酒店减少通勤时间，在 hotel_changes 中列出换酒店建议
-8. hotels 中 stay_days 字段注明该酒店适合入住的日期范围
-9. 只输出JSON，不要markdown代码块"""
+7. 【景区预约链接-最高优先级】对于需要预约的景区，link字段必须填写该景区的官方预约网址（公众号链接、小程序链接或官网链接），绝对不能填携程(ctrip.com)链接！如故宫填"https://gugong.ktmtech.cn/"，莫高窟填"https://www.mgk.org.cn/"，迪士尼填"https://www.shanghaidisneyresort.com/"等。如不确定官方网址，填平台名称并在note中说明。
+8. 【换酒店推荐】分析行程中景点的地理分布，如果不同天的景点集中在不同区域（如Day1-3在城东，Day4-5在城西），建议中途换酒店减少通勤时间，在 hotel_changes 中列出换酒店建议
+9. hotels 中 stay_days 字段注明该酒店适合入住的日期范围
+10. 只输出JSON，不要markdown代码块"""
 
 
 def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary: list,
