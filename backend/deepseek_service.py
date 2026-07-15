@@ -347,6 +347,83 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 13. 只输出JSON，不要markdown代码块"""
 
 
+def build_retry_prompt(original_prompt: str, validation_result: dict, transport_info: dict,
+                       departure_city: str, dest: str, start_date: str) -> str:
+    """构建重试提示词：当AI编造了不存在的班次号时，用严格提示词强制重生成"""
+    issues = validation_result.get("issues", [])
+    fabricated = validation_result.get("fabricated", [])
+
+    # 构建真实班次列表
+    real_schedule_text = ""
+    vf_data = transport_info.get("variflight_data", {})
+    if vf_data.get("success"):
+        vf_flights = vf_data.get("flights", [])
+        vf_trains = vf_data.get("trains", [])
+        if vf_flights or vf_trains:
+            real_schedule_text = "\n【🔴 飞常准API唯一真实班次 - 这是唯一可用的数据源！】"
+            if vf_flights:
+                real_schedule_text += "\n真实航班（飞常准API实时查询，唯一可用）："
+                for f in vf_flights[:10]:
+                    airport_info = ""
+                    if f.get('from_airport') and f.get('to_airport'):
+                        airport_info = f"  [{f.get('from_airport','')} → {f.get('to_airport','')}]"
+                    price_info = f"  ¥{f.get('price','')}" if f.get('price') else ""
+                    real_schedule_text += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）{airport_info}{price_info}"
+            if vf_trains:
+                real_schedule_text += "\n真实火车/高铁（飞常准API实时查询，唯一可用）："
+                for t in vf_trains[:10]:
+                    station_info = ""
+                    if t.get('from_station') and t.get('to_station'):
+                        station_info = f"  [{t.get('from_station','')} → {t.get('to_station','')}]"
+                    price_info = f"  ¥{t.get('price','')}" if t.get('price') else ""
+                    real_schedule_text += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{station_info}{price_info}"
+
+    # 回退到静态数据
+    if not real_schedule_text:
+        schedule = transport_info.get("route_schedule", {})
+        if schedule.get("flights") or schedule.get("trains"):
+            real_schedule_text = "\n【🔴 预存真实班次 - 这是唯一可用的数据源！】"
+            if schedule.get("flights"):
+                real_schedule_text += "\n真实航班："
+                for f in schedule["flights"]:
+                    real_schedule_text += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）"
+            if schedule.get("trains"):
+                real_schedule_text += "\n真实火车/高铁："
+                for t in schedule["trains"]:
+                    real_schedule_text += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）"
+
+    fabricated_text = "、".join(fabricated) if fabricated else "未知"
+
+    retry_header = f"""🔴🔴🔴 上次生成的行程被拒绝！原因：你编造了不存在的班次号！
+
+【编造的班次号】{fabricated_text}
+【拒绝原因】以下班次号在飞常准API中查不到，是凭空编造的！{chr(10).join(['  - ' + i for i in issues]) if issues else ''}
+
+【致命规则 - 违反将导致行程无效！】
+1. 航班号/车次号必须且只能从飞常准API提供的真实班次中选择，绝对禁止编造！
+2. 如果飞常准API没有返回任何数据，flight_number必须留空字符串""，绝对不能自己编一个！
+3. station必须是真实运营的民用机场/车站名，禁止使用南苑、大校场等已关闭/军用机场！
+4. departure_time和arrival_time必须与所选真实班次的dep/arr时间完全一致！
+5. duration必须使用"班次号 + 耗时"格式，不可只写耗时！
+
+{real_schedule_text}
+
+【重新生成要求】
+1. 出发交通(departure_transport)和返程交通(return_transport)的flight_number必须从上表中选择
+2. 如果上表为空（无任何真实班次），则flight_number留空""，只填交通方式类型和估算耗时
+3. 出发/到达时间必须与上表所选班次完全一致，一字不差
+4. 出发日期为{start_date}，确保所选班次在该日期有效
+5. 行程时间安排必须与交通班次时间协调一致
+
+请严格按照原始JSON格式重新生成完整行程。记住：宁可flight_number留空，也绝不能编造！"""
+
+    # 将重试头插入到原始prompt的"要求"部分之前
+    if "要求：" in original_prompt:
+        parts = original_prompt.split("要求：", 1)
+        return parts[0] + retry_header + "\n要求：" + parts[1]
+    return original_prompt + "\n" + retry_header
+
+
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
                          itinerary: list, departure_city: str = "",
                          transport_info: dict = None,

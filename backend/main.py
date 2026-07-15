@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from models import TripRequest
 from config import AMAP_KEY, DEEPSEEK_KEY, VARIFLIGHT_KEY, AMAP_REGEO_URL
 from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coordinates
-from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
+from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt, build_retry_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
 from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid
@@ -58,11 +58,14 @@ async def health_check():
 
 
 def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = "", variflight_data: dict = None):
-    """后处理验证：优先使用飞常准API数据验证班次真实性，确保航班/车次号、时间、机场名一致"""
+    """后处理验证：严格使用飞常准API数据校验班次真实性，返回校验结果。
+    返回: {"valid": bool, "issues": list, "fabricated": list}"""
     from feichangzhun_service import (sanitize_airport_name, is_airport_valid,
                                       DECOMMISSIONED_AIRPORTS, verify_schedule_number,
                                       get_route_schedule, _clean_city_name, SHORT_AIRPORT_MAP)
     from datetime import date as date_type
+
+    result = {"valid": True, "issues": [], "fabricated": []}
 
     # 提取出行年份
     travel_year = ""
@@ -87,6 +90,12 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
         vf_flights = variflight_data.get("flights", [])
         vf_trains = variflight_data.get("trains", [])
 
+    # 收集所有真实班次号（用于校验）
+    all_real_nums = set()
+    for item in vf_flights + vf_trains:
+        if item.get("num"):
+            all_real_nums.add(item["num"])
+
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
         if not transport:
@@ -96,7 +105,10 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
         # 检查黑名单
         for banned in DECOMMISSIONED_AIRPORTS:
             if banned in station:
-                print(f"[WARN] AI使用了停用机场: {station}，已清空station字段")
+                issue = f"{key}使用了停用机场: {station}"
+                print(f"[WARN] {issue}")
+                result["issues"].append(issue)
+                result["valid"] = False
                 transport["station"] = ""
                 transport["note"] = (transport.get("note", "") + "（原机场已停用，请自行查询当前运营机场）").strip()
                 break
@@ -107,7 +119,10 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             if sanitized:
                 transport["station"] = sanitized
             else:
-                print(f"[WARN] AI使用了未知机场: {station}，已清空station字段")
+                issue = f"{key}使用了未知机场: {station}"
+                print(f"[WARN] {issue}")
+                result["issues"].append(issue)
+                result["valid"] = False
                 transport["station"] = ""
                 transport["note"] = (transport.get("note", "") + "（机场信息未验证，请核实）").strip()
 
@@ -128,7 +143,11 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
         # 如果flight_number非空但station为空（说明AI编造了），清空flight_number
         if transport.get("flight_number") and not transport.get("station"):
-            print(f"[WARN] AI编造了航班号但无有效机场: {transport.get('flight_number')}，已清空")
+            issue = f"{key}编造了航班号{transport.get('flight_number')}但无有效机场"
+            print(f"[WARN] {issue}")
+            result["issues"].append(issue)
+            result["fabricated"].append(transport.get("flight_number"))
+            result["valid"] = False
             transport["flight_number"] = ""
             transport["note"] = (transport.get("note", "") + "（航班信息未验证，请自行查询）").strip()
 
@@ -156,21 +175,17 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["flight_number"] = vf_matched["num"]
                 transport["departure_time"] = vf_matched.get("dep", transport.get("departure_time", ""))
                 transport["arrival_time"] = vf_matched.get("arr", transport.get("arrival_time", ""))
-                # 同步type（关键：根据数据来源确定交通方式，确保前端正确显示和跳转）
                 vf_type = _get_type_from_vf(vf_matched)
                 if vf_type:
                     transport["type"] = vf_type
-                # 同步duration
                 vf_dur = vf_matched.get("duration", "")
                 if vf_dur:
                     transport["duration"] = f"{vf_matched['num']} {vf_dur}"
-                # 同步机场/车站名
                 if vf_matched.get("from_airport"):
                     transport["station"] = SHORT_AIRPORT_MAP.get(
                         vf_matched["from_airport"], vf_matched["from_airport"])
                 elif vf_matched.get("from_station"):
                     transport["station"] = vf_matched["from_station"]
-                # 同步价格
                 if vf_matched.get("price"):
                     transport["cost"] = vf_matched["price"]
                 transport["_verified"] = True
@@ -190,13 +205,16 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                             transport["station"] = full_name
                         break
                 if not is_valid and valid_list:
+                    issue = f"{key}班次{flight_num}不在真实班次表中，已替换为{valid_list[0]['num']}"
                     if flight_num:
-                        print(f"[WARN] 班次{flight_num}不在真实班次表中，已替换为{valid_list[0]['num']}")
+                        print(f"[WARN] {issue}")
+                        result["issues"].append(issue)
+                        result["fabricated"].append(flight_num)
+                        result["valid"] = False
                     chosen = valid_list[0]
                     transport["flight_number"] = chosen["num"]
                     transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
                     transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
-                    # 同步type（根据静态数据来源确定交通方式）
                     vf_type = _get_type_from_vf(chosen)
                     if vf_type:
                         transport["type"] = vf_type
@@ -211,17 +229,24 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                     transport["_verified"] = True
                     transport["_verified_source"] = "预存数据"
                 elif not is_valid and not valid_list and flight_num:
-                    print(f"[WARN] 无{dep_city_for_check}-{arr_city_for_check}真实班次数据，AI编造了{flight_num}，已清空")
+                    issue = f"{key}无{dep_city_for_check}-{arr_city_for_check}真实班次数据，AI编造了{flight_num}，已清空"
+                    print(f"[WARN] {issue}")
+                    result["issues"].append(issue)
+                    result["fabricated"].append(flight_num)
+                    result["valid"] = False
                     transport["flight_number"] = ""
                     transport["note"] = (transport.get("note", "") + f"（原班次{flight_num}无真实数据验证，请自行在携程查询实时班次）").strip()
             elif flight_num and all_vf_items and not vf_matched:
                 # 飞常准API有数据但AI选的班次不在其中，用飞常准API第一个班次替换
                 chosen = all_vf_items[0]
-                print(f"[WARN] 班次{flight_num}不在飞常准API数据中，已替换为{chosen['num']}")
+                issue = f"{key}班次{flight_num}不在飞常准API数据中，已替换为{chosen['num']}"
+                print(f"[WARN] {issue}")
+                result["issues"].append(issue)
+                result["fabricated"].append(flight_num)
+                result["valid"] = False
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
                 transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
-                # 同步type（关键：根据数据来源确定交通方式）
                 vf_type = _get_type_from_vf(chosen)
                 if vf_type:
                     transport["type"] = vf_type
@@ -242,7 +267,6 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", "")
                 transport["arrival_time"] = chosen.get("arr", "")
-                # 同步type（关键：根据数据来源确定交通方式）
                 vf_type = _get_type_from_vf(chosen)
                 if vf_type:
                     transport["type"] = vf_type
@@ -257,6 +281,17 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["_verified"] = True
                 transport["_verified_source"] = "飞常准实时API（自动填充）"
                 print(f"[OK] 飞常准API自动填充: {chosen['num']} type={transport.get('type','')}")
+            elif flight_num and not all_vf_items and not all_real_nums:
+                # 飞常准API和静态数据都无数据，但AI填了班次号——这是编造的
+                issue = f"{key}飞常准API无{dep_city_for_check}-{arr_city_for_check}任何数据，但AI编造了班次{flight_num}"
+                print(f"[WARN] {issue}")
+                result["issues"].append(issue)
+                result["fabricated"].append(flight_num)
+                result["valid"] = False
+                transport["flight_number"] = ""
+                transport["note"] = (transport.get("note", "") + f"（原班次{flight_num}无真实数据验证，请自行在携程查询实时班次）").strip()
+
+    return result
 
 
 def _validate_cross_card_consistency(trip_data: dict):
@@ -765,12 +800,38 @@ async def generate_trip(req: TripRequest):
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
-        # 后处理验证：优先使用飞常准API数据验证班次真实性
-        try:
-            _validate_transport_airports(trip_data, req.departure_city, dest, req.start_date,
-                                         transport_info.get("variflight_data"))
-        except Exception as e:
-            print(f"[WARN] 交通验证失败（不影响主流程）: {e}")
+        # 后处理验证与重生成：飞常准API严格校验班次真实性，不准确则重新生成（最多2次）
+        validation_result = {"valid": True, "issues": [], "fabricated": []}
+        max_retries = 2
+        for retry_attempt in range(max_retries + 1):
+            try:
+                validation_result = _validate_transport_airports(
+                    trip_data, req.departure_city, dest, req.start_date,
+                    transport_info.get("variflight_data"))
+            except Exception as e:
+                print(f"[WARN] 交通验证失败（不影响主流程）: {e}")
+                validation_result = {"valid": True, "issues": [], "fabricated": []}
+
+            if validation_result.get("valid") and not validation_result.get("fabricated"):
+                break  # 验证通过，无需重生成
+
+            if retry_attempt < max_retries and validation_result.get("fabricated"):
+                print(f"[RETRY] 第{retry_attempt+1}次重生成：AI编造了班次 {validation_result['fabricated']}")
+                retry_prompt = build_retry_prompt(
+                    prompt, validation_result, transport_info,
+                    req.departure_city, dest, req.start_date)
+                try:
+                    retry_raw = await call_deepseek(
+                        "你是一个专业的旅行规划师，只输出JSON格式数据。必须严格使用飞常准API提供的真实班次！",
+                        retry_prompt, dynamic_tokens)
+                    retry_clean = retry_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                    trip_data = json.loads(retry_clean)
+                except Exception as e:
+                    print(f"[WARN] 重生成失败: {e}")
+                    break  # 重生成失败，使用当前数据
+            else:
+                break  # 已达最大重试次数或无需重试
+
         # 确保往返交通信息始终存在
         try:
             _ensure_transport_data(trip_data, req.departure_city, dest,
@@ -1142,12 +1203,38 @@ async def regenerate_trip(request: Request):
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
-        # 后处理验证：优先使用飞常准API数据验证班次真实性
-        try:
-            _validate_transport_airports(new_trip, departure_city, dest, start_date,
-                                         transport_info.get("variflight_data"))
-        except Exception as e:
-            print(f"[WARN] 重新生成交通验证失败（不影响主流程）: {e}")
+        # 后处理验证与重生成：飞常准API严格校验班次真实性，不准确则重新生成（最多2次）
+        validation_result = {"valid": True, "issues": [], "fabricated": []}
+        max_retries = 2
+        for retry_attempt in range(max_retries + 1):
+            try:
+                validation_result = _validate_transport_airports(
+                    new_trip, departure_city, dest, start_date,
+                    transport_info.get("variflight_data"))
+            except Exception as e:
+                print(f"[WARN] 重新生成交通验证失败（不影响主流程）: {e}")
+                validation_result = {"valid": True, "issues": [], "fabricated": []}
+
+            if validation_result.get("valid") and not validation_result.get("fabricated"):
+                break
+
+            if retry_attempt < max_retries and validation_result.get("fabricated"):
+                print(f"[RETRY] 重新生成第{retry_attempt+1}次重试：AI编造了班次 {validation_result['fabricated']}")
+                retry_prompt = build_retry_prompt(
+                    prompt, validation_result, transport_info,
+                    departure_city, dest, start_date)
+                try:
+                    retry_raw = await call_deepseek(
+                        "你是一个专业的旅行规划师，只输出JSON格式数据。必须严格使用飞常准API提供的真实班次！",
+                        retry_prompt, 6000)
+                    retry_clean = retry_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                    new_trip = json.loads(retry_clean)
+                except Exception as e:
+                    print(f"[WARN] 重新生成重试失败: {e}")
+                    break
+            else:
+                break
+
         # 确保往返交通信息始终存在
         try:
             _ensure_transport_data(new_trip, departure_city, dest,
