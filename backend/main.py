@@ -424,9 +424,16 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             t["_verified_source"] = "飞常准实时API"
         else:
             from feichangzhun_service import judge_transport, get_route_schedule
-            ti = judge_transport(departure_city, dest)
-            t["type"] = ti.get("mode", "高铁").split("/")[0]
-            schedule = get_route_schedule(departure_city, dest)
+            try:
+                ti = judge_transport(departure_city, dest)
+            except Exception as e:
+                print(f"[WARN] 交通判断失败: {e}")
+                ti = None
+            try:
+                schedule = get_route_schedule(departure_city, dest)
+            except Exception as e:
+                print(f"[WARN] 路线班次查询失败: {e}")
+                schedule = {}
             if schedule.get("flights"):
                 f = schedule["flights"][0]
                 t["type"] = "飞机"
@@ -447,6 +454,10 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
                 t["station"] = tr.get("from_station", "")
                 t["_verified"] = True
                 t["_verified_source"] = "预存数据"
+            else:
+                # 所有数据源都无数据时，至少设置推荐交通方式
+                t["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
+                t["note"] = "暂无实时班次数据，请自行在携程查询"
         return t
 
     # 从Variflight数据合并缺失字段到已有transport（不覆盖已有值）
@@ -489,6 +500,10 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         elif not trip_data["departure_transport"].get("type"):
             print("[TRANSPORT] 去程交通信息不完整且无API数据，完整填充")
             trip_data["departure_transport"] = _build_transport_template()
+        else:
+            # 有type但无flight_number且无API数据，尝试从静态数据补全
+            print("[TRANSPORT] 去程交通有type无班次号，尝试从静态数据补全")
+            trip_data["departure_transport"] = _build_transport_template()
 
     # 确保返程交通
     if not trip_data.get("return_transport") or not isinstance(trip_data.get("return_transport"), dict):
@@ -501,6 +516,10 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             _merge_vf_to_transport(trip_data["return_transport"], chosen)
         elif not trip_data["return_transport"].get("type"):
             print("[TRANSPORT] 返程交通信息不完整且无API数据，完整填充")
+            trip_data["return_transport"] = _build_transport_template(is_return=True)
+        else:
+            # 有type但无flight_number且无API数据，尝试从静态数据补全
+            print("[TRANSPORT] 返程交通有type无班次号，尝试从静态数据补全")
             trip_data["return_transport"] = _build_transport_template(is_return=True)
 
     return trip_data
@@ -747,16 +766,28 @@ async def generate_trip(req: TripRequest):
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 后处理验证：优先使用飞常准API数据验证班次真实性
-        _validate_transport_airports(trip_data, req.departure_city, dest, req.start_date,
-                                     transport_info.get("variflight_data"))
+        try:
+            _validate_transport_airports(trip_data, req.departure_city, dest, req.start_date,
+                                         transport_info.get("variflight_data"))
+        except Exception as e:
+            print(f"[WARN] 交通验证失败（不影响主流程）: {e}")
         # 确保往返交通信息始终存在
-        _ensure_transport_data(trip_data, req.departure_city, dest,
-                               transport_info.get("variflight_data"), req.days)
+        try:
+            _ensure_transport_data(trip_data, req.departure_city, dest,
+                                   transport_info.get("variflight_data"), req.days)
+        except Exception as e:
+            print(f"[WARN] 交通数据补全失败（不影响主流程）: {e}")
         # 交叉验证：确保行程卡片与交通卡片时间一致性
-        _validate_cross_card_consistency(trip_data)
+        try:
+            _validate_cross_card_consistency(trip_data)
+        except Exception as e:
+            print(f"[WARN] 交叉验证失败（不影响主流程）: {e}")
 
-        # 3. 补全景点坐标
-        await fill_coordinates(trip_data, dest)
+        # 3. 补全景点坐标（带异常保护，不影响主流程）
+        try:
+            await fill_coordinates(trip_data, dest)
+        except Exception as e:
+            print(f"[WARN] 坐标补全失败（不影响主流程）: {e}")
 
         # 4. 调用 DeepSeek 查询订票/酒店信息
         itinerary = trip_data.get("itinerary", [])
@@ -1112,13 +1143,22 @@ async def regenerate_trip(request: Request):
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 后处理验证：优先使用飞常准API数据验证班次真实性
-        _validate_transport_airports(new_trip, departure_city, dest, start_date,
-                                     transport_info.get("variflight_data"))
+        try:
+            _validate_transport_airports(new_trip, departure_city, dest, start_date,
+                                         transport_info.get("variflight_data"))
+        except Exception as e:
+            print(f"[WARN] 重新生成交通验证失败（不影响主流程）: {e}")
         # 确保往返交通信息始终存在
-        _ensure_transport_data(new_trip, departure_city, dest,
-                               transport_info.get("variflight_data"), days)
+        try:
+            _ensure_transport_data(new_trip, departure_city, dest,
+                                   transport_info.get("variflight_data"), days)
+        except Exception as e:
+            print(f"[WARN] 重新生成交通数据补全失败（不影响主流程）: {e}")
         # 交叉验证：确保行程卡片与交通卡片时间一致性
-        _validate_cross_card_consistency(new_trip)
+        try:
+            _validate_cross_card_consistency(new_trip)
+        except Exception as e:
+            print(f"[WARN] 重新生成交叉验证失败（不影响主流程）: {e}")
 
         # 补全坐标
         try:

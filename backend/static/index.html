@@ -967,9 +967,30 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
     });
     clearInterval(progressTimer);
     const data = await res.json();
-    if(data.success) { tripData = data.data; saveToHistory(data.data); await showLoadingAndPreload(data.data); }
-    else { alert('攻略生成失败，请检查网络后重试\n'+(data.error||'')); enableControls(); }
-  } catch(e){ clearInterval(progressTimer); alert('攻略生成失败，请检查网络后重试'); enableControls(); }
+    if(!data.success) {
+      alert('攻略生成失败，请检查网络后重试\n'+(data.error||''));
+      enableControls();
+      return;
+    }
+    tripData = data.data;
+    // 保存到历史记录（失败不影响主流程）
+    try { saveToHistory(data.data); } catch(e) { console.warn('历史记录保存失败:', e); }
+    // 预加载图片并显示总览
+    await showLoadingAndPreload(data.data);
+  } catch(e){
+    clearInterval(progressTimer);
+    if (tripData) {
+      // API已成功但后处理失败，仍然尝试显示结果
+      console.warn('后处理失败，尝试直接显示:', e);
+      try { await showLoadingAndPreload(tripData); } catch(e2) {
+        alert('页面渲染失败，请刷新后重试');
+        enableControls();
+      }
+    } else {
+      alert('攻略生成失败，请检查网络后重试');
+      enableControls();
+    }
+  }
   finally {
     document.getElementById('generateHint').style.display = 'none';
     document.getElementById('btnNormal').style.display='flex';
@@ -1605,15 +1626,40 @@ function renderTrip(data){
     var html = '<div style="margin:8px 16px;padding:12px;background:#F0F7FF;border-radius:10px;border-left:4px solid #4A90D9">';
     html += '<div style="font-weight:700;color:#4A90D9;margin-bottom:6px;font-size:15px">🚀 ' + label + '交通</div>';
     html += '<div style="font-size:14px;line-height:1.8">';
-    html += '<div>交通方式：<b>' + (t.type||'') + '</b>';
-    if (t._verified) html += '<span style="display:inline-block;background:#27AE60;color:#fff;border-radius:3px;padding:1px 6px;font-size:11px;margin-left:6px">✅ 已验证</span>';
-    html += '</div>';
+    var hasInfo = false;
+    if (t.type) {
+      html += '<div>交通方式：<b>' + t.type + '</b>';
+      if (t._verified) html += '<span style="display:inline-block;background:#27AE60;color:#fff;border-radius:3px;padding:1px 6px;font-size:11px;margin-left:6px">✅ 已验证</span>';
+      html += '</div>';
+      hasInfo = true;
+    }
     if (t.flight_number) {
       html += '<div>班次：<b style="color:#4A90D9;font-size:18px;background:#EEF4FB;padding:2px 12px;border-radius:6px">' + t.flight_number + '</b></div>';
+      hasInfo = true;
     }
-    html += '<div>出发：<b style="color:#E67E22">' + (t.departure_time||'') + '</b> | 到达：<b>' + (t.arrival_time||'') + '</b></div>';
-    html += '<div>耗时：' + (t.duration||'') + ' | 站点：' + (t.station||'') + '</div>';
-    if (t.cost) html += '<div>预估费用：' + t.cost + '</div>';
+    if (t.departure_time || t.arrival_time) {
+      html += '<div>出发：<b style="color:#E67E22">' + (t.departure_time||'--') + '</b> | 到达：<b>' + (t.arrival_time||'--') + '</b></div>';
+      hasInfo = true;
+    }
+    if (t.duration) {
+      html += '<div>耗时：' + t.duration + '</div>';
+      hasInfo = true;
+    }
+    if (t.station) {
+      html += '<div>站点：' + t.station + '</div>';
+      hasInfo = true;
+    }
+    if (t.cost) {
+      html += '<div>预估费用：' + t.cost + '</div>';
+      hasInfo = true;
+    }
+    if (t.note) {
+      html += '<div style="color:#999;font-size:12px;margin-top:4px">' + t.note + '</div>';
+      hasInfo = true;
+    }
+    if (!hasInfo) {
+      html += '<div style="color:#999">暂无详细交通信息，请自行查询</div>';
+    }
     html += '</div></div>';
     return html;
   }
@@ -1644,8 +1690,8 @@ function renderTrip(data){
         <span class="wc-temp">${wTemp}</span>
         <span class="wc-hint">点击查看逐时天气 ›</span>
       </div>
-      ${(dayIdx===0 && data.departure_transport && data.departure_transport.flight_number) ? _buildDayTransportCard(data.departure_transport, '出发') : ''}
-      ${(dayIdx===data.itinerary.length-1 && data.return_transport && data.return_transport.flight_number) ? _buildDayTransportCard(data.return_transport, '返程') : ''}
+      ${(dayIdx===0 && data.departure_transport) ? _buildDayTransportCard(data.departure_transport, '出发') : ''}
+      ${(dayIdx===data.itinerary.length-1 && data.return_transport) ? _buildDayTransportCard(data.return_transport, '返程') : ''}
       ${renderSlot('上午','morning',day.morning,dayIdx,0)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
       ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
