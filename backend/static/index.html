@@ -1398,6 +1398,7 @@ function renderTrip(data){
   var viMap = {airplane:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=commercial+airliner+in+blue+sky+photorealistic+4k&image_size=landscape_16_9',high_speed_rail:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+high+speed+train+on+railway+photorealistic+4k&image_size=landscape_16_9',car:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=car+on+highway+scenic+road+trip+photorealistic+4k&image_size=landscape_16_9',bus:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+long+distance+bus+on+highway+photorealistic+4k&image_size=landscape_16_9'};
   if (data.departure_transport) {
     var dt = data.departure_transport;
+    var isFlightOrTrain = dt.type && (dt.type.indexOf('飞机')>=0 || dt.type.indexOf('航班')>=0 || dt.type.indexOf('高铁')>=0 || dt.type.indexOf('火车')>=0 || dt.type.indexOf('动车')>=0);
     transHtml += '<div class="bottom-card"><div class="bottom-title">🚀 出发交通</div>';
     // 交通工具配图
     var vi = dt.vehicle_image || 'airplane';
@@ -1405,11 +1406,18 @@ function renderTrip(data){
     transHtml += '<div class="transport-img-wrap"><img src="' + viSrc + '" alt="' + (dt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
-    transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (dt.flight_number||'（请自行查询实时班次）') + '</b></div>';
-    transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + '</b></div>';
-    transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
-    var arrivalLabel = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
-    transHtml += '<div>' + arrivalLabel + '<b>' + (dt.arrival_time||'') + '</b> | 耗时：' + (dt.duration||'') + '</div>';
+    if (isFlightOrTrain) {
+      transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (dt.flight_number||'（请自行查询实时班次）') + '</b></div>';
+      transHtml += '<div>发车时间：<b style="color:#E67E22;font-size:20px">' + (dt.departure_time||'') + '</b></div>';
+      transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
+      var arrivalLabel = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
+      transHtml += '<div>' + arrivalLabel + '<b>' + (dt.arrival_time||'') + '</b> | 耗时：' + (dt.duration||'') + '</div>';
+    } else {
+      transHtml += '<div>出发时间：<b>' + (dt.departure_time||'') + '</b></div>';
+      if (dt.station) transHtml += '<div>出发站：' + dt.station + '</div>';
+      var arrivalLabel2 = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
+      transHtml += '<div>' + arrivalLabel2 + '<b>' + (dt.arrival_time||'') + '</b> | 耗时：' + (dt.duration||'') + '</div>';
+    }
     transHtml += '<div>预估费用：' + (dt.cost||'') + '</div>';
     if (dt.station_to_hotel) transHtml += '<div>🏨 到酒店：' + dt.station_to_hotel + '</div>';
     transHtml += '<div style="color:#E67E22">⚠️ ' + (dt.note||'') + '</div>';
@@ -1434,17 +1442,25 @@ function renderTrip(data){
   }
   if (data.return_transport) {
     var rt = data.return_transport;
+    var isRtFlightOrTrain = rt.type && (rt.type.indexOf('飞机')>=0 || rt.type.indexOf('航班')>=0 || rt.type.indexOf('高铁')>=0 || rt.type.indexOf('火车')>=0 || rt.type.indexOf('动车')>=0);
     transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
     var rvi = rt.vehicle_image || 'airplane';
     var rviSrc = viMap[rvi] || viMap['airplane'];
     transHtml += '<div class="transport-img-wrap"><img src="' + rviSrc + '" alt="' + (rt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
-    transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (rt.flight_number||'（请自行查询实时班次）') + '</b></div>';
-    transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + '</b></div>';
-    transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
-    var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');
-    transHtml += '<div>' + rtArrivalLabel + '<b>' + (rt.arrival_time||'') + '</b> | 耗时：' + (rt.duration||'') + '</div>';
+    if (isRtFlightOrTrain) {
+      transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (rt.flight_number||'（请自行查询实时班次）') + '</b></div>';
+      transHtml += '<div>发车时间：<b style="color:#E67E22;font-size:20px">' + (rt.departure_time||'') + '</b></div>';
+      transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
+      var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');
+      transHtml += '<div>' + rtArrivalLabel + '<b>' + (rt.arrival_time||'') + '</b> | 耗时：' + (rt.duration||'') + '</div>';
+    } else {
+      transHtml += '<div>出发时间：<b>' + (rt.departure_time||'') + '</b></div>';
+      if (rt.station) transHtml += '<div>出发站：' + rt.station + '</div>';
+      var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');
+      transHtml += '<div>' + rtArrivalLabel + '<b>' + (rt.arrival_time||'') + '</b> | 耗时：' + (rt.duration||'') + '</div>';
+    }
     transHtml += '<div>预估费用：' + (rt.cost||'') + '</div>';
     if (rt.station_to_hotel) transHtml += '<div>🏨 到酒店/家：' + rt.station_to_hotel + '</div>';
     transHtml += '<div style="color:#E67E22">⚠️ ' + (rt.note||'') + '</div>';
@@ -1475,11 +1491,14 @@ function renderTrip(data){
     const wDesc = w.desc||'晴';
     const wIcon = w.icon||'☀️';
     const wTemp = w.temp||'';
-    // 天气图片：使用<img>标签，更可靠地加载本地天气图片，渐变作为fallback
+    // 天气图片：优先使用后端生成的图片，晴天回退到本地sunny.webp
     var wImg = w.image || '';
     var wGrad = getWeatherGradient(wDesc);
     var wBgStyle = 'background:' + wGrad + ';';
     var wImgHtml = '';
+    if (!wImg && wDesc.indexOf('晴') >= 0) {
+      wImg = 'weather/sunny.webp';
+    }
     if (wImg) {
       wImgHtml = '<img class="weather-card-bg" src="' + wImg + '" onerror="this.style.display=\'none\'" alt="">';
     }
@@ -1513,12 +1532,12 @@ function renderTrip(data){
   // 订票信息
   const bk = data.booking_info || {};
 
-  // 交通方式推荐
-  let tHtml = '';
+  // 交通方式推荐（追加到已有交通卡片后面，不覆盖）
+  var tHtml = '';
   if (bk.transport_mode) {
     tHtml = `<div class="bottom-card"><div class="bottom-title">🚄 推荐交通方式</div><div style="font-size:18px;color:#333;padding:8px 0">${bk.transport_mode}</div></div>`;
   }
-  document.getElementById('transportCard').innerHTML = tHtml;
+  document.getElementById('transportCard').innerHTML += tHtml;
 
   let fHtml = '';
   if (bk.flights && bk.flights.length) {

@@ -57,9 +57,9 @@ async def health_check():
     return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY)}
 
 
-def _validate_transport_airports(trip_data: dict):
-    """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名"""
-    from feichangzhun_service import sanitize_airport_name, is_airport_valid, DECOMMISSIONED_AIRPORTS
+def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = ""):
+    """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名，并验证班次号真实性"""
+    from feichangzhun_service import sanitize_airport_name, is_airport_valid, DECOMMISSIONED_AIRPORTS, verify_schedule_number
 
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
@@ -105,6 +105,18 @@ def _validate_transport_airports(trip_data: dict):
             print(f"[WARN] AI编造了航班号但无有效机场: {transport.get('flight_number')}，已清空")
             transport["flight_number"] = ""
             transport["note"] = (transport.get("note", "") + "（航班信息未验证，请自行查询）").strip()
+
+        # 验证班次号是否在真实班次表中
+        if transport.get("flight_number") and departure_city and dest:
+            if key == "return_transport":
+                verify_result = verify_schedule_number(dest, departure_city, transport["flight_number"])
+            else:
+                verify_result = verify_schedule_number(departure_city, dest, transport["flight_number"])
+            if not verify_result.get("keep"):
+                print(f"[WARN] 班次{transport['flight_number']}不在真实班次表中: {verify_result.get('reason')}，已清除")
+                fake_num = transport["flight_number"]
+                transport["flight_number"] = ""
+                transport["note"] = (transport.get("note", "") + f"（原班次{fake_num}未在当天运行表中找到，请自行查询实时班次）").strip()
 
 
 @app.get("/api/locate")
@@ -312,7 +324,7 @@ async def generate_trip(req: TripRequest):
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 后处理验证：检查并修正AI生成的机场名
-        _validate_transport_airports(trip_data)
+        _validate_transport_airports(trip_data, req.departure_city, dest)
 
         # 3. 补全景点坐标
         await fill_coordinates(trip_data, dest)
@@ -632,7 +644,7 @@ async def regenerate_trip(request: Request):
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 后处理验证：检查并修正AI生成的机场名
-        _validate_transport_airports(new_trip)
+        _validate_transport_airports(new_trip, departure_city, dest)
 
         # 补全坐标
         try:
@@ -646,9 +658,43 @@ async def regenerate_trip(request: Request):
         except (asyncio.TimeoutError, Exception):
             pass
 
-        # 保留原有booking_info
-        new_trip["booking_info"] = trip_data.get("booking_info", {})
-        new_trip["transport_info"] = trip_data.get("transport_info", {})
+        # 重新生成booking_info（基于新itinerary和交通班次，确保与上方的交通安排是同一班次）
+        new_itinerary = new_trip.get("itinerary", [])
+        booking_budget = trip_data.get("budget", "中等")
+        booking_prompt = build_booking_prompt(dest, start_date, end_date, booking_budget, new_itinerary,
+                                              departure_city, transport_info)
+        try:
+            booking_raw = await call_deepseek("你是一个旅行服务顾问，只输出JSON格式数据。", booking_prompt, 3000)
+            booking_clean = booking_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            booking_info = json.loads(booking_clean)
+        except Exception:
+            booking_info = trip_data.get("booking_info", {})
+        # 为booking_info中的酒店和门票补全坐标
+        for hotel in booking_info.get("hotels", []):
+            if hotel.get("name") and not hotel.get("location"):
+                try:
+                    hotel["location"] = await amap_geocode(hotel["name"], dest)
+                except Exception:
+                    pass
+        for change in booking_info.get("hotel_changes", []):
+            if change.get("to_hotel") and not change.get("location"):
+                try:
+                    change["location"] = await amap_geocode(change["to_hotel"], dest)
+                except Exception:
+                    pass
+        for ticket in booking_info.get("tickets", []):
+            if ticket.get("spot") and not ticket.get("location"):
+                try:
+                    ticket["location"] = await amap_geocode(ticket["spot"], dest)
+                except Exception:
+                    pass
+        # 为booking_info中的酒店获取图片
+        try:
+            await asyncio.wait_for(fill_booking_images(booking_info, dest), timeout=25.0)
+        except (asyncio.TimeoutError, Exception):
+            pass
+        new_trip["booking_info"] = booking_info
+        new_trip["transport_info"] = transport_info
 
         return {"success": True, "data": new_trip}
     except Exception as e:

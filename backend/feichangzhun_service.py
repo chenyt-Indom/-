@@ -576,6 +576,26 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
     return result
 
 
+def verify_schedule_number(dep_city: str, arr_city: str, flight_number: str, date: str = "") -> dict:
+    """验证AI生成的航班/车次号是否在真实班次数据中，不是则清除并标记"""
+    if not flight_number:
+        return {"valid": True, "reason": "无班次号，无需验证"}
+    clean_dep = _clean_city_name(dep_city)
+    clean_arr = _clean_city_name(arr_city)
+    key1 = f"{clean_dep}-{clean_arr}"
+    key2 = f"{clean_arr}-{clean_dep}"
+    route = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2)
+    if not route or route.get("_no_data"):
+        return {"valid": False, "reason": f"无{clean_dep}-{clean_arr}真实班次数据，无法验证", "keep": False}
+    for flight in route.get("flights", []):
+        if flight.get("num") == flight_number:
+            return {"valid": True, "reason": f"航班{flight_number}在真实班次表中存在", "keep": True}
+    for train in route.get("trains", []):
+        if train.get("num") == flight_number:
+            return {"valid": True, "reason": f"车次{flight_number}在真实班次表中存在", "keep": True}
+    return {"valid": False, "reason": f"班次{flight_number}不在{clean_dep}-{clean_arr}真实班次表中，需清除", "keep": False}
+
+
 def get_transfer_routes(dep_city: str, arr_city: str, date: str = "") -> dict:
     """获取两城市间的中转/换乘方案（无直飞航班时需要中转）
     返回可能的中转城市和换乘建议
