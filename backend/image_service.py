@@ -29,6 +29,11 @@ def _init_weather_files():
     if "sunny" in WEATHER_TO_FILE:
         WEATHER_TO_FILE["晴"] = WEATHER_TO_FILE["sunny"]
         WEATHER_TO_FILE["晴天"] = WEATHER_TO_FILE["sunny"]
+    # overcast.webp 作为"阴天"图片
+    if "overcast" in WEATHER_TO_FILE:
+        WEATHER_TO_FILE["阴"] = WEATHER_TO_FILE["overcast"]
+        WEATHER_TO_FILE["阴天"] = WEATHER_TO_FILE["overcast"]
+        WEATHER_TO_FILE["多云"] = WEATHER_TO_FILE["overcast"]
     return WEATHER_TO_FILE
 
 
