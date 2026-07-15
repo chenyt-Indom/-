@@ -58,8 +58,11 @@ async def health_check():
 
 
 def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = ""):
-    """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名，并验证班次号真实性"""
-    from feichangzhun_service import sanitize_airport_name, is_airport_valid, DECOMMISSIONED_AIRPORTS, verify_schedule_number
+    """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名，并验证班次号真实性，
+    班次不真实时从真实班次表中选一个替换"""
+    from feichangzhun_service import (sanitize_airport_name, is_airport_valid,
+                                      DECOMMISSIONED_AIRPORTS, verify_schedule_number,
+                                      get_route_schedule, _clean_city_name)
 
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
@@ -106,17 +109,38 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             transport["flight_number"] = ""
             transport["note"] = (transport.get("note", "") + "（航班信息未验证，请自行查询）").strip()
 
-        # 验证班次号是否在真实班次表中
-        if transport.get("flight_number") and departure_city and dest:
+        # 验证班次号是否在真实班次表中，不真实则替换
+        if departure_city and dest:
+            flight_num = transport.get("flight_number", "")
             if key == "return_transport":
-                verify_result = verify_schedule_number(dest, departure_city, transport["flight_number"])
+                schedule = get_route_schedule(dest, departure_city)
             else:
-                verify_result = verify_schedule_number(departure_city, dest, transport["flight_number"])
-            if not verify_result.get("keep"):
-                print(f"[WARN] 班次{transport['flight_number']}不在真实班次表中: {verify_result.get('reason')}，已清除")
-                fake_num = transport["flight_number"]
-                transport["flight_number"] = ""
-                transport["note"] = (transport.get("note", "") + f"（原班次{fake_num}未在当天运行表中找到，请自行查询实时班次）").strip()
+                schedule = get_route_schedule(departure_city, dest)
+            valid_list = schedule.get("flights", []) + schedule.get("trains", [])
+            # 检查当前班次是否有效
+            is_valid = False
+            if flight_num:
+                for item in valid_list:
+                    if item.get("num") == flight_num:
+                        is_valid = True
+                        break
+            # 如果无效且有真实班次数据，选第一个替换
+            if not is_valid and valid_list:
+                if flight_num:
+                    print(f"[WARN] 班次{flight_num}不在真实班次表中，已替换为{valid_list[0]['num']}")
+                chosen = valid_list[0]
+                transport["flight_number"] = chosen["num"]
+                transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
+                transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
+                if chosen.get("from_airport"):
+                    transport["station"] = chosen["from_airport"] + "机场"
+                elif chosen.get("to_airport"):
+                    if not transport.get("station"):
+                        transport["station"] = chosen.get("to_airport", "") + "机场"
+                # 更新duration，包含班次号
+                if chosen.get("duration"):
+                    transport["duration"] = f"{chosen['num']} {chosen['duration']}"
+                transport["note"] = (transport.get("note", "") + f"（已校准为真实班次{chosen['num']}）").strip()
 
 
 @app.get("/api/locate")

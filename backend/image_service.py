@@ -13,15 +13,22 @@ WEATHER_TO_FILE = {}
 
 
 def _init_weather_files():
-    """初始化天气图片文件映射"""
+    """初始化天气图片文件映射，支持jpg和webp格式"""
     global WEATHER_TO_FILE
     if WEATHER_TO_FILE:
         return WEATHER_TO_FILE
     if os.path.isdir(WEATHER_IMG_DIR):
         for fname in os.listdir(WEATHER_IMG_DIR):
             if fname.endswith(".jpg"):
-                name = fname[:-4]  # 去掉.jpg后缀
+                name = fname[:-4]
                 WEATHER_TO_FILE[name] = fname
+            elif fname.endswith(".webp"):
+                name = fname[:-5]
+                WEATHER_TO_FILE[name] = fname
+    # sunny.webp 作为"晴天"图片，优先级高于晴.jpg
+    if "sunny" in WEATHER_TO_FILE:
+        WEATHER_TO_FILE["晴"] = WEATHER_TO_FILE["sunny"]
+        WEATHER_TO_FILE["晴天"] = WEATHER_TO_FILE["sunny"]
     return WEATHER_TO_FILE
 
 
