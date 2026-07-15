@@ -258,6 +258,16 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 }}
 
 要求：
+【第零条-往返交通必填-最高优先级，优先级高于所有其他规则！】
+0. departure_transport和return_transport绝对不可缺失！它们是行程的骨架，缺失则整个行程无效！
+   a) departure_transport：必须包含从{departure_city}到{dest}的完整交通规划，包含type、flight_number（从真实班次选）、departure_time、arrival_time、duration（必须用"班次号+耗时"格式）、station（真实民用机场/车站名）、cost、station_to_hotel、note
+   b) return_transport：必须包含从{dest}返回{departure_city}的完整交通规划，字段同上
+   c) 第一天itinerary必须包含出发交通的完整描述：什么时间从家出发→前往机场/车站（方式+耗时）→乘坐什么班次（具体航班号/车次号）→到达时间→如何到酒店（方式+耗时）。出发交通占用时间必须从第一天可以游玩的时间中扣除！
+   d) 最后一天itinerary必须包含返程交通的完整描述：什么时间从酒店出发→前往机场/车站（方式+耗时）→乘坐什么班次→到达时间。返程交通占用时间必须从最后一天可以游玩的时间中扣除！
+   e) 如果交通时间占了半天以上，第一天/最后一天只安排0-1个景点或不安排景点
+   f) 交通耗时估算：高铁约300km/h，飞机飞行时间约800km/h（不含候机2小时+机场到市区1小时），大巴约80km/h，自驾约100km/h
+   g) station字段必须填写真实运营的机场/车站名称，禁止使用已关闭/军用的机场
+
 1. 【热门景点优先】优先选择评分高（≥4.0）的著名景点，确保行程中至少80%的景点来自高评分榜单。POI列表已按评分降序排列，排在前面的优先选择
 2. 优先使用高德POI真实数据，location坐标必须填写
 3. need_booking 标记需要提前预约的景点（如故宫、莫高窟、迪士尼等热门景点设为true）
