@@ -863,7 +863,7 @@ function renderHistory() {
   var sorted = favs.concat(nonFavs);
   var html = '';
   sorted.forEach(function(h) {
-    var starIcon = h.fav ? '<span style="color:#FFD700;margin-right:4px;font-size:18px">⭐</span>' : '<span style="color:#ccc;margin-right:4px;font-size:18px">☆</span>';
+    var starIcon = h.fav ? '<span style="color:#FFD700;margin-right:6px;font-size:22px;text-shadow:0 0 4px rgba(255,215,0,.4)">★</span>' : '<span style="color:#ccc;margin-right:6px;font-size:20px">☆</span>';
     var favClass = h.fav ? ' history-fav' : '';
     html += '<div class="history-item' + favClass + '" onclick="loadHistoryTrip(' + h.id + ')"><div class="h-left">' + starIcon + '<span class="h-dest">' + h.destination + '</span><span class="h-days">' + h.days + '日游</span></div><span class="h-time">' + h.time + '</span></div>';
   });

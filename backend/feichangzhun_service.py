@@ -2,6 +2,17 @@
 import httpx
 import asyncio
 
+
+def _clean_city_name(city: str) -> str:
+    """清洗城市名：去除'市'、'省'、'区'、'县'等后缀，返回纯城市名"""
+    if not city:
+        return ""
+    for suffix in ("市", "省", "自治区", "特别行政区", "区", "县", "州", "盟", "地区"):
+        if city.endswith(suffix) and len(city) > len(suffix):
+            city = city[:-len(suffix)]
+    return city
+
+
 # 中国主要城市名 → IATA城市代码映射
 CITY_TO_IATA = {
     "北京": "BJS", "上海": "SHA", "广州": "CAN", "深圳": "SZX",
