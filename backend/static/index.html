@@ -837,7 +837,9 @@ function saveToHistory(data) {
   const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
   history = history.filter(h => h.fav || (h.id && h.id > threeDaysAgo));
   const idx = history.findIndex(h => h.destination===data.destination && h.days===data.days);
-  const record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data, fav: false };
+  // 保留已有的收藏状态，避免覆盖用户的收藏操作
+  const existingFav = idx > -1 ? history[idx].fav : false;
+  const record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data, fav: existingFav };
   if(idx>-1) history[idx]=record; else history.unshift(record);
   if(history.length>20) {
     var nonFav = history.filter(function(h) { return !h.fav; });
