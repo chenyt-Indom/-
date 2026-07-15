@@ -125,21 +125,40 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                             for f in to["leg2"]["flights"][:2]:
                                 transport_section += f"\n      ✈ {f['num']}：{f['dep']}→{f['arr']}（{f['duration']}）"
                         transport_section += f"\n    中转提示：{to['note']}"
-                # 飞常准API实时数据（最新班次，优先级最高）
+                # 飞常准API实时数据（唯一数据源，优先级最高，覆盖静态数据）
                 vf_data = transport_info.get("variflight_data", {})
                 if vf_data.get("success"):
-                    transport_section += "\n【飞常准实时API数据-最新班次-必须优先使用】"
                     vf_flights = vf_data.get("flights", [])
                     vf_trains = vf_data.get("trains", [])
-                    if vf_flights:
-                        transport_section += "\n实时航班（飞常准API验证）："
-                        for f in vf_flights[:10]:
-                            transport_section += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）{f.get('from_airport','')}→{f.get('to_airport','')}"
-                    if vf_trains:
-                        transport_section += "\n实时火车票（飞常准API验证）："
-                        for t in vf_trains[:10]:
-                            transport_section += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{t.get('from_station','')}→{t.get('to_station','')}"
-                    transport_section += "\n【飞常准数据优先规则】以上为飞常准API实时查询的最新班次，优先选择这些班次！如果静态数据与飞常准数据冲突，以飞常准API数据为准！"
+                    if vf_flights or vf_trains:
+                        transport_section += "\n\n【🔴 飞常准API实时数据 - 唯一权威数据源 - 必须100%严格使用！】"
+                        transport_section += "\n以下班次为飞常准API实时查询结果，是当前日期唯一真实可购的班次。之前的静态数据全部作废，只使用以下数据！"
+                        if vf_flights:
+                            transport_section += "\n🚀 实时航班（飞常准API验证，真实可购）："
+                            for f in vf_flights[:10]:
+                                airport_info = ""
+                                if f.get('from_airport') and f.get('to_airport'):
+                                    airport_info = f"  [{f.get('from_airport','')} → {f.get('to_airport','')}]"
+                                price_info = f"  ¥{f.get('price','')}" if f.get('price') else ""
+                                transport_section += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）{airport_info}{price_info}"
+                        if vf_trains:
+                            transport_section += "\n🚄 实时火车票（飞常准API验证，真实可购）："
+                            for t in vf_trains[:10]:
+                                station_info = ""
+                                if t.get('from_station') and t.get('to_station'):
+                                    station_info = f"  [{t.get('from_station','')} → {t.get('to_station','')}]"
+                                price_info = f"  ¥{t.get('price','')}" if t.get('price') else ""
+                                transport_section += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{station_info}{price_info}"
+                        transport_section += "\n\n【🔴 飞常准API强制使用规则 - 违反将导致行程无效！】"
+                        transport_section += "\n  ① 以上飞常准API数据是唯一可用的真实班次，之前任何静态数据全部忽略！"
+                        transport_section += "\n  ② flight_number必须从上表中精确选择，一字不差！"
+                        transport_section += "\n  ③ departure_time必须与上表中该班次的dep时间完全一致！"
+                        transport_section += "\n  ④ arrival_time必须与上表中该班次的arr时间完全一致！"
+                        transport_section += "\n  ⑤ duration必须使用'班次号 + 耗时'格式（如'MU5102 2h5min'），耗时与上表一致！"
+                        transport_section += "\n  ⑥ station必须使用上表中的机场/车站名，禁止编造！"
+                        transport_section += "\n  ⑦ 去程和返程各选一个班次，4个字段（flight_number/departure_time/arrival_time/duration）必须来自同一班次！"
+                        transport_section += "\n  ⑧ 如果上表中有多个班次，优先选择上午出发的班次（休闲节奏选08:00后），确保到达后有充足时间！"
+                        transport_section += "\n  ⑨ 绝对禁止编造任何不在上表中的航班号/车次号！绝对禁止修改上表中的时间！"
             transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。"
             transport_section += """
 【重要-出发时间灵活规则】
@@ -153,6 +172,15 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 8. 预留充足缓冲：飞机起飞前2小时到达机场，火车发车前1小时到达车站，加上从住处到机场/车站的时间
 9. 返程同理：最后一天需根据返程航班/车次时间倒推最晚出发时间，确保不误机/误车
 10. 如果出发当天没有合适的航班/车次，可考虑提前一天出发，并在第一天安排轻松的活动"""
+            transport_section += "\n【🔴 行程卡片与交通卡片一致性-最高优先级】"
+            transport_section += "\n  出发交通卡片和Day1行程卡片必须时间连贯，不可相互独立！"
+            transport_section += "\n  ① Day1的第一个景点开始时间必须 ≥ departure_transport.arrival_time + 从机场/车站到酒店的时间（约1小时）"
+            transport_section += "\n  ② 如果departure_transport.arrival_time是下午（如14:00），Day1上午和下午不应有景点，最多安排1个晚间景点"
+            transport_section += "\n  ③ 如果departure_transport.arrival_time是晚上（如20:00），Day1全天不应有景点，只能安排入住酒店"
+            transport_section += "\n  ④ 返程交通卡片和最后一天行程卡片必须时间连贯！最后一天最后一个景点的结束时间必须 ≤ return_transport.departure_time - 酒店到车站时间 - 提前到站缓冲（飞机2h/火车1h）"
+            transport_section += "\n  ⑤ 如果return_transport.departure_time是上午（如10:00），最后一天不应安排任何景点"
+            transport_section += "\n  ⑥ 如果return_transport.departure_time是下午（如15:00），最后一天最多安排1个上午景点"
+            transport_section += "\n  ⑦ departure_transport和return_transport中的时间必须与Day1/最后一天的行程时间互相呼应，不可出现矛盾！"
             transport_section += "\n【跨天到达示例】如选择晚上20:00航班，飞行2小时，22:00到达机场，打车30分钟到酒店，则第一天行程为：上午准备出发→下午前往机场→晚上航班→到达后入住酒店，不安排游览。"
 
     # 人数描述
@@ -323,7 +351,8 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
                          itinerary: list, departure_city: str = "",
                          transport_info: dict = None,
                          departure_transport: dict = None,
-                         return_transport: dict = None) -> str:
+                         return_transport: dict = None,
+                         variflight_data: dict = None) -> str:
     """构建订票/酒店/门票查询提示词，包含出发城市、交通判断和飞常准数据"""
     spots_str = ""
     for day in itinerary:
@@ -356,31 +385,52 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
     # 将行程中已选班次强制传递给预订提示词
     transport_schedule_section = ""
     if departure_transport and departure_transport.get("flight_number"):
+        verified_badge = "✅飞常准验证" if departure_transport.get("_verified") else ""
         transport_schedule_section += f"""
-【去程已选班次-必须严格同步！】
+【去程已选班次-必须严格同步！{verified_badge}】
   航班号/车次号：{departure_transport.get('flight_number', '')}
   出发时间：{departure_transport.get('departure_time', '')}
   出发站/机场：{departure_transport.get('station', '')}
   到达时间：{departure_transport.get('arrival_time', '')}
   耗时：{departure_transport.get('duration', '')}
-  类型：{departure_transport.get('type', '')}"""
+  类型：{departure_transport.get('type', '')}
+  验证来源：{departure_transport.get('_verified_source', '未验证')}"""
     if return_transport and return_transport.get("flight_number"):
+        verified_badge = "✅飞常准验证" if return_transport.get("_verified") else ""
         transport_schedule_section += f"""
-【返程已选班次-必须严格同步！】
+【返程已选班次-必须严格同步！{verified_badge}】
   航班号/车次号：{return_transport.get('flight_number', '')}
   出发时间：{return_transport.get('departure_time', '')}
   出发站/机场：{return_transport.get('station', '')}
   到达时间：{return_transport.get('arrival_time', '')}
   耗时：{return_transport.get('duration', '')}
-  类型：{return_transport.get('type', '')}"""
+  类型：{return_transport.get('type', '')}
+  验证来源：{return_transport.get('_verified_source', '未验证')}"""
     if transport_schedule_section:
         transport_schedule_section += """
 【预订卡片班次同步-最高优先级】flights 数组中的 suggest 字段必须包含与上面完全一致的航班号/车次号！
-  ① 去程suggest必须包含 {departure_transport.get('flight_number', '')} 这一班次
-  ② 返程suggest必须包含 {return_transport.get('flight_number', '')} 这一班次
+  ① 去程suggest必须包含上述航班号/车次号，一字不差
+  ② 返程suggest必须包含上述航班号/车次号，一字不差
   ③ 出发时间、到达时间、机场/车站名也必须与上面完全一致
   ④ link 使用携程对应链接：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html（火车票替换为trains）
   ⑤ 绝对禁止在预订卡片中编造不同的航班号/车次号！"""
+
+    # 飞常准API实时数据（用于预订卡片验证）
+    vf_section = ""
+    if variflight_data and variflight_data.get("success"):
+        vf_flights = variflight_data.get("flights", [])
+        vf_trains = variflight_data.get("trains", [])
+        if vf_flights or vf_trains:
+            vf_section = "\n【飞常准API实时数据-预订卡片必须使用以下真实班次】"
+            if vf_flights:
+                vf_section += "\n真实航班："
+                for f in vf_flights[:5]:
+                    vf_section += f"\n  ✈ {f['num']} {f.get('dep','')}→{f.get('arr','')} {f.get('from_airport','')}→{f.get('to_airport','')} ¥{f.get('price','')}"
+            if vf_trains:
+                vf_section += "\n真实火车票："
+                for t in vf_trains[:5]:
+                    vf_section += f"\n  🚄 {t['num']} {t.get('dep','')}→{t.get('arr','')} {t.get('from_station','')}→{t.get('to_station','')} ¥{t.get('price','')}"
+            vf_section += "\n【飞常准数据规则】预订卡片中的suggest必须与上述真实班次完全一致，价格使用上述真实价格！"
 
     return f"""你是一个旅行服务顾问。请为以下行程查询机票、火车票、酒店和门票推荐信息。
 
@@ -390,6 +440,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 {trans_info}
 {flight_info}
 {transport_schedule_section}
+{vf_section}
 
 【行程景点】
 {spots_str}
@@ -491,21 +542,29 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                 transport_section += "\n【中转方案参考】如果无合适直飞，可考虑以下中转："
                 for to in transfer_info["transfer_options"]:
                     transport_section += f"\n  经{to['transfer_city']}中转：{to['note']}"
-            # 飞常准API实时数据（最新班次，优先级最高）
+            # 飞常准API实时数据（唯一数据源，优先级最高，覆盖静态数据）
             vf_data = transport_info.get("variflight_data", {})
             if vf_data.get("success"):
-                transport_section += "\n【飞常准实时API数据-最新班次-必须优先使用】"
                 vf_flights = vf_data.get("flights", [])
                 vf_trains = vf_data.get("trains", [])
-                if vf_flights:
-                    transport_section += "\n实时航班（飞常准API验证）："
-                    for f in vf_flights[:10]:
-                        transport_section += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）{f.get('from_airport','')}→{f.get('to_airport','')}"
-                if vf_trains:
-                    transport_section += "\n实时火车票（飞常准API验证）："
-                    for t in vf_trains[:10]:
-                        transport_section += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{t.get('from_station','')}→{t.get('to_station','')}"
-                transport_section += "\n【飞常准数据优先规则】以上为飞常准API实时查询的最新班次，优先选择这些班次！"
+                if vf_flights or vf_trains:
+                    transport_section += "\n\n【🔴 飞常准API实时数据 - 唯一权威数据源 - 必须100%严格使用！】"
+                    transport_section += "\n以下班次为飞常准API实时查询结果，静态数据全部作废，只使用以下数据！"
+                    if vf_flights:
+                        transport_section += "\n🚀 实时航班（飞常准API验证，真实可购）："
+                        for f in vf_flights[:10]:
+                            airport_info = ""
+                            if f.get('from_airport') and f.get('to_airport'):
+                                airport_info = f"  [{f.get('from_airport','')} → {f.get('to_airport','')}]"
+                            transport_section += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）{airport_info}"
+                    if vf_trains:
+                        transport_section += "\n🚄 实时火车票（飞常准API验证，真实可购）："
+                        for t in vf_trains[:10]:
+                            station_info = ""
+                            if t.get('from_station') and t.get('to_station'):
+                                station_info = f"  [{t.get('from_station','')} → {t.get('to_station','')}]"
+                            transport_section += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{station_info}"
+                    transport_section += "\n\n【🔴 飞常准API强制规则】flight_number/departure_time/arrival_time/duration必须来自同一班次，一字不差，禁止编造！"
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 

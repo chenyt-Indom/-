@@ -57,9 +57,8 @@ async def health_check():
     return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY), "variflight_key": bool(VARIFLIGHT_KEY)}
 
 
-def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = ""):
-    """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名，并验证班次号真实性，
-    班次不真实时从真实班次表中选一个替换。校验年份是否与出行日期一致。"""
+def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = "", variflight_data: dict = None):
+    """后处理验证：优先使用飞常准API数据验证班次真实性，确保航班/车次号、时间、机场名一致"""
     from feichangzhun_service import (sanitize_airport_name, is_airport_valid,
                                       DECOMMISSIONED_AIRPORTS, verify_schedule_number,
                                       get_route_schedule, _clean_city_name, SHORT_AIRPORT_MAP)
@@ -72,6 +71,13 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             travel_year = str(date_type.fromisoformat(travel_date).year)
         except ValueError:
             pass
+
+    # 构建飞常准API数据索引（用于快速查找）
+    vf_flights = []
+    vf_trains = []
+    if variflight_data and variflight_data.get("success"):
+        vf_flights = variflight_data.get("flights", [])
+        vf_trains = variflight_data.get("trains", [])
 
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
@@ -118,63 +124,237 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             transport["flight_number"] = ""
             transport["note"] = (transport.get("note", "") + "（航班信息未验证，请自行查询）").strip()
 
-        # 验证班次号是否在真实班次表中，不真实则从真实班次表选一个替换
+        # 🔴 飞常准API数据验证（最高优先级）
         if departure_city and dest:
             flight_num = transport.get("flight_number", "")
             if key == "return_transport":
-                schedule = get_route_schedule(dest, departure_city, travel_date)
                 dep_city_for_check = dest
                 arr_city_for_check = departure_city
             else:
-                schedule = get_route_schedule(departure_city, dest, travel_date)
                 dep_city_for_check = departure_city
                 arr_city_for_check = dest
 
-            # 年份校验：班次数据年份必须与出行年份一致
-            if travel_year and schedule.get("_verified"):
-                verified = schedule["_verified"]
-                if travel_year not in verified:
-                    print(f"[WARN] 班次数据验证日期({verified})与出行年份({travel_year})不一致，需重新校验")
-                    # 标记为需要重新安排
-                    transport["_year_mismatch"] = True
+            # 优先使用飞常准API数据验证
+            vf_matched = None
+            all_vf_items = vf_flights + vf_trains
+            if flight_num and all_vf_items:
+                for item in all_vf_items:
+                    if item.get("num") == flight_num:
+                        vf_matched = item
+                        break
 
-            valid_list = schedule.get("flights", []) + schedule.get("trains", [])
-            # 检查当前班次是否有效
-            is_valid = False
-            if flight_num:
+            if vf_matched:
+                # 飞常准API匹配成功，用API数据强制同步所有字段
+                transport["flight_number"] = vf_matched["num"]
+                transport["departure_time"] = vf_matched.get("dep", transport.get("departure_time", ""))
+                transport["arrival_time"] = vf_matched.get("arr", transport.get("arrival_time", ""))
+                # 同步duration
+                vf_dur = vf_matched.get("duration", "")
+                if vf_dur:
+                    transport["duration"] = f"{vf_matched['num']} {vf_dur}"
+                # 同步机场/车站名
+                if vf_matched.get("from_airport"):
+                    transport["station"] = SHORT_AIRPORT_MAP.get(
+                        vf_matched["from_airport"], vf_matched["from_airport"])
+                elif vf_matched.get("from_station"):
+                    transport["station"] = vf_matched["from_station"]
+                # 同步价格
+                if vf_matched.get("price"):
+                    transport["cost"] = vf_matched["price"]
+                transport["_verified"] = True
+                transport["_verified_source"] = "飞常准实时API"
+                transport["_verified_date"] = travel_date
+                print(f"[OK] 飞常准API验证通过: {flight_num} {vf_matched.get('dep','')}→{vf_matched.get('arr','')}")
+            elif flight_num and not all_vf_items:
+                # 飞常准API无数据，回退到静态数据验证
+                schedule = get_route_schedule(dep_city_for_check, arr_city_for_check, travel_date)
+                valid_list = schedule.get("flights", []) + schedule.get("trains", [])
+                is_valid = False
                 for item in valid_list:
                     if item.get("num") == flight_num:
                         is_valid = True
-                        # 如果有效，同步更新机场名（用SHORT_AIRPORT_MAP解析为全名）
                         if item.get("from_airport"):
                             full_name = SHORT_AIRPORT_MAP.get(item["from_airport"], item["from_airport"])
                             transport["station"] = full_name
                         break
-            # 如果无效且有真实班次数据，选第一个替换
-            if not is_valid and valid_list:
-                if flight_num:
-                    print(f"[WARN] 班次{flight_num}不在真实班次表中，已替换为{valid_list[0]['num']}")
-                chosen = valid_list[0]
+                if not is_valid and valid_list:
+                    if flight_num:
+                        print(f"[WARN] 班次{flight_num}不在真实班次表中，已替换为{valid_list[0]['num']}")
+                    chosen = valid_list[0]
+                    transport["flight_number"] = chosen["num"]
+                    transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
+                    transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
+                    if chosen.get("from_airport"):
+                        full_name = SHORT_AIRPORT_MAP.get(chosen["from_airport"], chosen["from_airport"])
+                        transport["station"] = full_name
+                    if chosen.get("duration"):
+                        transport["duration"] = f"{chosen['num']} {chosen['duration']}"
+                    transport["note"] = (transport.get("note", "") + f"（已校准为真实班次{chosen['num']}）").strip()
+                    transport["_verified"] = True
+                    transport["_verified_source"] = "预存数据"
+                elif not is_valid and not valid_list and flight_num:
+                    print(f"[WARN] 无{dep_city_for_check}-{arr_city_for_check}真实班次数据，AI编造了{flight_num}，已清空")
+                    transport["flight_number"] = ""
+                    transport["note"] = (transport.get("note", "") + f"（原班次{flight_num}无真实数据验证，请自行在携程查询实时班次）").strip()
+            elif flight_num and all_vf_items and not vf_matched:
+                # 飞常准API有数据但AI选的班次不在其中，用飞常准API第一个班次替换
+                chosen = all_vf_items[0]
+                print(f"[WARN] 班次{flight_num}不在飞常准API数据中，已替换为{chosen['num']}")
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
                 transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
-                # 用SHORT_AIRPORT_MAP解析机场全名
-                if chosen.get("from_airport"):
-                    full_name = SHORT_AIRPORT_MAP.get(chosen["from_airport"], chosen["from_airport"])
-                    transport["station"] = full_name
-                # 更新duration，包含班次号
                 if chosen.get("duration"):
                     transport["duration"] = f"{chosen['num']} {chosen['duration']}"
-                transport["note"] = (transport.get("note", "") + f"（已校准为真实班次{chosen['num']}，{travel_year}年运营）").strip()
-            elif not is_valid and not valid_list and flight_num:
-                # 无真实数据且AI编造了班次号，清空
-                print(f"[WARN] 无{dep_city_for_check}-{arr_city_for_check}真实班次数据，AI编造了{flight_num}，已清空")
-                transport["flight_number"] = ""
-                transport["note"] = (transport.get("note", "") + f"（原班次{flight_num}无真实数据验证，请自行在携程查询实时班次）").strip()
-            # 标记已验证状态
-            if is_valid:
+                if chosen.get("from_airport"):
+                    transport["station"] = SHORT_AIRPORT_MAP.get(chosen["from_airport"], chosen["from_airport"])
+                elif chosen.get("from_station"):
+                    transport["station"] = chosen["from_station"]
+                if chosen.get("price"):
+                    transport["cost"] = chosen["price"]
                 transport["_verified"] = True
-                transport["_verified_source"] = "飞常准API+预存数据"
+                transport["_verified_source"] = "飞常准实时API（自动校准）"
+                transport["note"] = (transport.get("note", "") + f"（已校准为飞常准API真实班次{chosen['num']}）").strip()
+            elif not flight_num and all_vf_items:
+                # AI没填班次号但飞常准API有数据，自动填充第一个班次
+                chosen = all_vf_items[0]
+                transport["flight_number"] = chosen["num"]
+                transport["departure_time"] = chosen.get("dep", "")
+                transport["arrival_time"] = chosen.get("arr", "")
+                if chosen.get("duration"):
+                    transport["duration"] = f"{chosen['num']} {chosen['duration']}"
+                if chosen.get("from_airport"):
+                    transport["station"] = SHORT_AIRPORT_MAP.get(chosen["from_airport"], chosen["from_airport"])
+                elif chosen.get("from_station"):
+                    transport["station"] = chosen["from_station"]
+                if chosen.get("price"):
+                    transport["cost"] = chosen["price"]
+                transport["_verified"] = True
+                transport["_verified_source"] = "飞常准实时API（自动填充）"
+                print(f"[OK] 飞常准API自动填充: {chosen['num']}")
+
+
+def _validate_cross_card_consistency(trip_data: dict):
+    """交叉验证：确保行程卡片与交通卡片的时间一致性，不可相互独立"""
+    dep_trans = trip_data.get("departure_transport", {})
+    ret_trans = trip_data.get("return_transport", {})
+    itinerary = trip_data.get("itinerary", [])
+    if not itinerary:
+        return
+
+    # 解析出发交通到达时间
+    dep_arrival = dep_trans.get("arrival_time", "")
+    dep_type = dep_trans.get("type", "")
+
+    # 解析返程交通出发时间
+    ret_departure = ret_trans.get("departure_time", "")
+
+    # 车站到酒店预估时间（分钟）
+    station_to_hotel_min = 60  # 默认1小时
+    hotel_to_station_min = 60  # 默认1小时
+
+    if dep_trans.get("station_to_hotel"):
+        import re
+        stn_match = re.search(r'(\d+)\s*分钟', dep_trans["station_to_hotel"])
+        if stn_match:
+            station_to_hotel_min = int(stn_match.group(1))
+
+    # 第一天：确保景点时间在到达之后
+    if dep_arrival and itinerary:
+        day1 = itinerary[0]
+        dep_hour, dep_min = 0, 0
+        try:
+            parts = dep_arrival.replace("次日", "").strip().split(":")
+            dep_hour = int(parts[0])
+            dep_min = int(parts[1]) if len(parts) > 1 else 0
+        except (ValueError, IndexError):
+            pass
+
+        if dep_hour > 0 or dep_min > 0:
+            # 到达后最早可开始游览时间 = 到达时间 + 车站到酒店时间
+            earliest_start = dep_hour * 60 + dep_min + station_to_hotel_min
+            earliest_hour = earliest_start // 60
+            earliest_min = earliest_start % 60
+
+            # 检查上午景点
+            morning_spot = day1.get("morning", {})
+            if morning_spot and morning_spot.get("time_slot"):
+                try:
+                    slot_parts = morning_spot["time_slot"].split("-")[0].strip().split(":")
+                    slot_hour = int(slot_parts[0])
+                    slot_min = int(slot_parts[1]) if len(slot_parts) > 1 else 0
+                    slot_start = slot_hour * 60 + slot_min
+                    if slot_start < earliest_start:
+                        # 上午景点时间早于到达时间，需要调整
+                        new_hour = f"{earliest_hour:02d}:{earliest_min:02d}"
+                        old_slot = morning_spot["time_slot"]
+                        morning_spot["time_slot"] = morning_spot["time_slot"].replace(
+                            old_slot.split("-")[0], new_hour)
+                        morning_spot["note"] = (morning_spot.get("note", "") +
+                            f"（到达时间为{dep_arrival}，已调整游览开始时间）").strip()
+                        print(f"[CONSISTENCY] Day1上午景点时间{old_slot}早于到达时间{dep_arrival}+{station_to_hotel_min}min，已调整")
+                except (ValueError, IndexError, AttributeError):
+                    pass
+
+            # 如果到达时间是下午/晚上，Day1上午和下午应该为空或只有休息
+            if dep_hour >= 14:
+                # 下午/晚上到达，Day1只安排晚上
+                if day1.get("morning", {}).get("spot"):
+                    print(f"[CONSISTENCY] Day1 {dep_arrival}到达，上午景点'{day1['morning']['spot']}'不适用，已清空")
+                    day1["morning"] = {}
+                if dep_hour >= 17 and day1.get("afternoon", {}).get("spot"):
+                    print(f"[CONSISTENCY] Day1 {dep_arrival}到达，下午景点'{day1['afternoon']['spot']}'不适用，已清空")
+                    day1["afternoon"] = {}
+            elif dep_hour >= 12:
+                # 中午到达，Day1上午为空
+                if day1.get("morning", {}).get("spot"):
+                    print(f"[CONSISTENCY] Day1 {dep_arrival}到达，上午景点'{day1['morning']['spot']}'不适用，已清空")
+                    day1["morning"] = {}
+
+    # 最后一天：确保所有景点在返程出发前结束
+    if ret_departure and itinerary:
+        last_day = itinerary[-1]
+        ret_hour, ret_min = 0, 0
+        try:
+            parts = ret_departure.replace("次日", "").strip().split(":")
+            ret_hour = int(parts[0])
+            ret_min = int(parts[1]) if len(parts) > 1 else 0
+        except (ValueError, IndexError):
+            pass
+
+        if ret_hour > 0 or ret_min > 0:
+            # 最晚结束时间 = 返程出发时间 - 酒店到车站时间 - 提前到站缓冲（飞机2h，火车1h）
+            ret_type = ret_trans.get("type", "")
+            buffer_min = 120 if "飞机" in ret_type else 60  # 飞机提前2小时，火车提前1小时
+            latest_end = ret_hour * 60 + ret_min - hotel_to_station_min - buffer_min
+            latest_hour = latest_end // 60
+            latest_min = latest_end % 60
+
+            for slot_key in ["evening", "afternoon", "morning"]:
+                slot = last_day.get(slot_key, {})
+                if slot and slot.get("time_slot"):
+                    try:
+                        slot_parts = slot["time_slot"].split("-")[-1].strip().split(":")
+                        slot_hour = int(slot_parts[0])
+                        slot_min = int(slot_parts[1]) if len(slot_parts) > 1 else 0
+                        slot_end = slot_hour * 60 + slot_min
+                        if slot_end > latest_end:
+                            new_end = f"{latest_hour:02d}:{latest_min:02d}"
+                            old_slot = slot["time_slot"]
+                            slot["time_slot"] = slot["time_slot"].replace(
+                                old_slot.split("-")[-1], new_end)
+                            slot["note"] = (slot.get("note", "") +
+                                f"（返程{ret_departure}出发，已调整结束时间）").strip()
+                            print(f"[CONSISTENCY] 最后一天{slot_key}结束时间{old_slot}晚于返程时间{ret_departure}-{buffer_min}min缓冲，已调整")
+                            break  # 只调整最晚的一个时段
+                    except (ValueError, IndexError, AttributeError):
+                        pass
+
+            # 如果返程在上午，最后一天不应有景点
+            if ret_hour < 12:
+                for slot_key in ["morning", "afternoon", "evening"]:
+                    if last_day.get(slot_key, {}).get("spot"):
+                        print(f"[CONSISTENCY] 最后一天返程{ret_departure}出发，{slot_key}景点'{last_day[slot_key]['spot']}'不适用，已清空")
+                        last_day[slot_key] = {}
 
 
 @app.get("/api/locate")
@@ -417,8 +597,11 @@ async def generate_trip(req: TripRequest):
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
-        # 后处理验证：检查并修正AI生成的机场名
-        _validate_transport_airports(trip_data, req.departure_city, dest, req.start_date)
+        # 后处理验证：优先使用飞常准API数据验证班次真实性
+        _validate_transport_airports(trip_data, req.departure_city, dest, req.start_date,
+                                     transport_info.get("variflight_data"))
+        # 交叉验证：确保行程卡片与交通卡片时间一致性
+        _validate_cross_card_consistency(trip_data)
 
         # 3. 补全景点坐标
         await fill_coordinates(trip_data, dest)
@@ -428,7 +611,8 @@ async def generate_trip(req: TripRequest):
         booking_prompt = build_booking_prompt(dest, start_date, end_date, req.budget, itinerary,
                                               req.departure_city, transport_info,
                                               trip_data.get("departure_transport"),
-                                              trip_data.get("return_transport"))
+                                              trip_data.get("return_transport"),
+                                              transport_info.get("variflight_data"))
         try:
             booking_raw = await call_deepseek("你是一个旅行服务顾问，只输出JSON格式数据。", booking_prompt, 3000)
             booking_clean = booking_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -775,8 +959,11 @@ async def regenerate_trip(request: Request):
         except Exception:
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
-        # 后处理验证：检查并修正AI生成的机场名
-        _validate_transport_airports(new_trip, departure_city, dest, start_date)
+        # 后处理验证：优先使用飞常准API数据验证班次真实性
+        _validate_transport_airports(new_trip, departure_city, dest, start_date,
+                                     transport_info.get("variflight_data"))
+        # 交叉验证：确保行程卡片与交通卡片时间一致性
+        _validate_cross_card_consistency(new_trip)
 
         # 补全坐标
         try:
@@ -796,7 +983,8 @@ async def regenerate_trip(request: Request):
         booking_prompt = build_booking_prompt(dest, start_date, end_date, booking_budget, new_itinerary,
                                               departure_city, transport_info,
                                               new_trip.get("departure_transport"),
-                                              new_trip.get("return_transport"))
+                                              new_trip.get("return_transport"),
+                                              transport_info.get("variflight_data"))
         try:
             booking_raw = await call_deepseek("你是一个旅行服务顾问，只输出JSON格式数据。", booking_prompt, 3000)
             booking_clean = booking_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
