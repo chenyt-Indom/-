@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from models import TripRequest
-from config import AMAP_KEY, DEEPSEEK_KEY, AMAP_REGEO_URL
+from config import AMAP_KEY, DEEPSEEK_KEY, VARIFLIGHT_KEY, AMAP_REGEO_URL
 from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coordinates
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
@@ -54,7 +54,7 @@ app.mount("/app", StaticFiles(directory=_static_dir, html=True), name="static")
 @app.get("/api/health")
 async def health_check():
     """健康检查：返回API密钥配置状态"""
-    return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY)}
+    return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY), "variflight_key": bool(VARIFLIGHT_KEY)}
 
 
 def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = ""):
