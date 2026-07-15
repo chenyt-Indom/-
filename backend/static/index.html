@@ -1399,14 +1399,23 @@ function renderTrip(data){
 
   // 出发/返程交通卡片
   let transHtml = '';
-  var viMap = {airplane:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=commercial+airliner+in+blue+sky+photorealistic+4k&image_size=landscape_16_9',high_speed_rail:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+high+speed+train+on+railway+photorealistic+4k&image_size=landscape_16_9',car:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=car+on+highway+scenic+road+trip+photorealistic+4k&image_size=landscape_16_9',bus:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+long+distance+bus+on+highway+photorealistic+4k&image_size=landscape_16_9'};
+  var viMap = {airplane:'transport/plane.jpg',high_speed_rail:'transport/train.jpg',car:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=car+on+highway+scenic+road+trip+photorealistic+4k&image_size=landscape_16_9',bus:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+long+distance+bus+on+highway+photorealistic+4k&image_size=landscape_16_9'};
+  // 根据交通方式类型自动选择合适的配图
+  function getTransportImg(transport, vehicleImage) {
+    var type = (transport.type||'').toLowerCase();
+    var vi = vehicleImage || '';
+    if (type.indexOf('飞机')>=0 || type.indexOf('航班')>=0) return viMap['airplane'];
+    if (type.indexOf('高铁')>=0 || type.indexOf('动车')>=0 || type.indexOf('火车')>=0) return viMap['high_speed_rail'];
+    if (type.indexOf('大巴')>=0 || type.indexOf('公交')>=0) return viMap['bus'];
+    if (type.indexOf('自驾')>=0 || type.indexOf('打车')>=0 || type.indexOf('出租')>=0) return viMap['car'];
+    return viMap[vi] || viMap['bus'];
+  }
   if (data.departure_transport) {
     var dt = data.departure_transport;
     var isFlightOrTrain = dt.type && (dt.type.indexOf('飞机')>=0 || dt.type.indexOf('航班')>=0 || dt.type.indexOf('高铁')>=0 || dt.type.indexOf('火车')>=0 || dt.type.indexOf('动车')>=0);
     transHtml += '<div class="bottom-card"><div class="bottom-title">🚀 出发交通</div>';
-    // 交通工具配图
-    var vi = dt.vehicle_image || 'airplane';
-    var viSrc = viMap[vi] || viMap['airplane'];
+    // 交通工具配图：根据交通方式类型自动匹配本地图片
+    var viSrc = getTransportImg(dt, dt.vehicle_image);
     transHtml += '<div class="transport-img-wrap"><img src="' + viSrc + '" alt="' + (dt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
@@ -1448,8 +1457,7 @@ function renderTrip(data){
     var rt = data.return_transport;
     var isRtFlightOrTrain = rt.type && (rt.type.indexOf('飞机')>=0 || rt.type.indexOf('航班')>=0 || rt.type.indexOf('高铁')>=0 || rt.type.indexOf('火车')>=0 || rt.type.indexOf('动车')>=0);
     transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
-    var rvi = rt.vehicle_image || 'airplane';
-    var rviSrc = viMap[rvi] || viMap['airplane'];
+    var rviSrc = getTransportImg(rt, rt.vehicle_image);
     transHtml += '<div class="transport-img-wrap"><img src="' + rviSrc + '" alt="' + (rt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
