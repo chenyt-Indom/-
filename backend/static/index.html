@@ -556,7 +556,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="dayCards"></div>
   <div id="transportCard"></div>
   <div id="budgetCard"></div>
-  <div id="flightsCard"></div>
+  
   <div id="hotelsCard"></div>
   <div id="ticketsCard"></div>
   <div id="bookingTipsCard"></div>
@@ -1390,6 +1390,7 @@ function getWeatherIcon(desc) {
 
 function renderTrip(data){
   tripData = data;
+  const bk = data.booking_info || {};
   document.getElementById('tripTitle').textContent = data.destination + data.days + '日游';
   let wHtml = '';
   (data.weather||[]).forEach(w=>{
@@ -1451,6 +1452,28 @@ function renderTrip(data){
       });
       transHtml += '</div>';
     }
+    // 立即订购按钮（附航班详情和价格）
+    var depBookingLink = '', depBookingPrice = '', depBookingNote = '';
+    if (bk.flights && bk.flights.length) {
+      for (var fi = 0; fi < bk.flights.length; fi++) {
+        if (bk.flights[fi].type && bk.flights[fi].type.indexOf('去程') >= 0) {
+          depBookingLink = bk.flights[fi].link || '';
+          depBookingPrice = bk.flights[fi].price || '';
+          depBookingNote = bk.flights[fi].note || '';
+          break;
+        }
+      }
+    }
+    if (!depBookingLink && isFlightOrTrain) {
+      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+    }
+    if (depBookingLink) {
+      transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
+      if (depBookingPrice) transHtml += '<span style="color:#E67E22;font-weight:700;font-size:16px">💰 ' + depBookingPrice + '</span>';
+      if (depBookingNote) transHtml += '<span style="color:#666;font-size:13px;flex:1;min-width:120px">' + depBookingNote + '</span>';
+      transHtml += '<button style="background:#4A90D9;color:#fff;border:none;border-radius:20px;padding:8px 20px;font-size:16px;cursor:pointer;white-space:nowrap" onclick="window.open(\'' + depBookingLink + '\',\'_blank\')">🎫 立即订购</button>';
+      transHtml += '</div>';
+    }
     transHtml += '</div></div>';
   }
   if (data.return_transport) {
@@ -1491,6 +1514,28 @@ function renderTrip(data){
         if (tr.note) transHtml += '<div style="color:#999;font-size:13px">' + tr.note + '</div>';
         transHtml += '</div></div>';
       });
+      transHtml += '</div>';
+    }
+    // 返程立即订购按钮（附航班详情和价格）
+    var retBookingLink = '', retBookingPrice = '', retBookingNote = '';
+    if (bk.flights && bk.flights.length) {
+      for (var rfi = 0; rfi < bk.flights.length; rfi++) {
+        if (bk.flights[rfi].type && bk.flights[rfi].type.indexOf('返程') >= 0) {
+          retBookingLink = bk.flights[rfi].link || '';
+          retBookingPrice = bk.flights[rfi].price || '';
+          retBookingNote = bk.flights[rfi].note || '';
+          break;
+        }
+      }
+    }
+    if (!retBookingLink && isRtFlightOrTrain) {
+      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+    }
+    if (retBookingLink) {
+      transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
+      if (retBookingPrice) transHtml += '<span style="color:#E67E22;font-weight:700;font-size:16px">💰 ' + retBookingPrice + '</span>';
+      if (retBookingNote) transHtml += '<span style="color:#666;font-size:13px;flex:1;min-width:120px">' + retBookingNote + '</span>';
+      transHtml += '<button style="background:#4A90D9;color:#fff;border:none;border-radius:20px;padding:8px 20px;font-size:16px;cursor:pointer;white-space:nowrap" onclick="window.open(\'' + retBookingLink + '\',\'_blank\')">🎫 立即订购</button>';
       transHtml += '</div>';
     }
     transHtml += '</div></div>';
@@ -1541,29 +1586,12 @@ function renderTrip(data){
   bHtml += '</div></div>';
   document.getElementById('budgetCard').innerHTML = bHtml;
 
-  // 订票信息
-  const bk = data.booking_info || {};
-
   // 交通方式推荐（追加到已有交通卡片后面，不覆盖）
   var tHtml = '';
   if (bk.transport_mode) {
     tHtml = `<div class="bottom-card"><div class="bottom-title">🚄 推荐交通方式</div><div style="font-size:18px;color:#333;padding:8px 0">${bk.transport_mode}</div></div>`;
   }
   document.getElementById('transportCard').innerHTML += tHtml;
-
-  let fHtml = '';
-  if (bk.flights && bk.flights.length) {
-    fHtml = '<div class="bottom-card"><div class="bottom-title">✈️ 机票/火车票</div>';
-    bk.flights.forEach(f => {
-      fHtml += `<div class="booking-item">
-        <div class="booking-row"><span class="booking-type">${f.type}</span><span class="booking-suggest">${f.suggest}</span></div>
-        <div class="booking-row"><span class="booking-price">${f.price}</span><span class="booking-note">${f.note||''}</span></div>
-        <button class="btn-book" onclick="window.open('${f.link}','_blank')">立即订购</button>
-      </div>`;
-    });
-    fHtml += '</div>';
-  }
-  document.getElementById('flightsCard').innerHTML = fHtml;
 
   let hHtml = '';
   if (bk.hotels && bk.hotels.length) {
