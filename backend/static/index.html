@@ -1485,13 +1485,13 @@ function renderTrip(data){
     var isTrainByNum = dt.flight_number && /^[GCDKTZ]\d+/.test(dt.flight_number.toUpperCase());
     var isFlightByNum = dt.flight_number && /^[A-Z]{2}\d{3,4}$/.test(dt.flight_number.toUpperCase());
     if (isTrainType && !isFlightType) {
-      depBookingLink = 'https://www.ly.com/train/';
+      depBookingLink = 'https://www.fliggy.com/train/';
     } else if (isFlightType && !isTrainType) {
       var flightParams = '?flightnum=' + encodeURIComponent(dt.flight_number||'');
       if (travelDate) flightParams += '&ddate=' + encodeURIComponent(travelDate);
       depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html' + flightParams;
     } else if (isTrainByNum) {
-      depBookingLink = 'https://www.ly.com/train/';
+      depBookingLink = 'https://www.fliggy.com/train/';
     } else if (isFlightByNum) {
       var flightParams2 = '?flightnum=' + encodeURIComponent(dt.flight_number||'');
       if (travelDate) flightParams2 += '&ddate=' + encodeURIComponent(travelDate);
@@ -1576,13 +1576,13 @@ function renderTrip(data){
     var isRtTrainByNum = rt.flight_number && /^[GCDKTZ]\d+/.test(rt.flight_number.toUpperCase());
     var isRtFlightByNum = rt.flight_number && /^[A-Z]{2}\d{3,4}$/.test(rt.flight_number.toUpperCase());
     if (isRtTrainType && !isRtFlightType) {
-      retBookingLink = 'https://www.ly.com/train/';
+      retBookingLink = 'https://www.fliggy.com/train/';
     } else if (isRtFlightType && !isRtTrainType) {
       var retFlightParams = '?flightnum=' + encodeURIComponent(rt.flight_number||'');
       if (travelDate) retFlightParams += '&ddate=' + encodeURIComponent(travelDate);
       retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html' + retFlightParams;
     } else if (isRtTrainByNum) {
-      retBookingLink = 'https://www.ly.com/train/';
+      retBookingLink = 'https://www.fliggy.com/train/';
     } else if (isRtFlightByNum) {
       var retFlightParams2 = '?flightnum=' + encodeURIComponent(rt.flight_number||'');
       if (travelDate) retFlightParams2 += '&ddate=' + encodeURIComponent(travelDate);

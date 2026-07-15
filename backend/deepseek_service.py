@@ -376,11 +376,11 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 - 出发日期：{start_date}
 - 返程日期：{end_date}
 航班link：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html
-火车票link：https://www.ly.com/train/"""
+火车票link：https://www.fliggy.com/train/"""
     else:
         flight_info = f"""
 机票link：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html
-火车票link：https://www.ly.com/train/"""
+火车票link：https://www.fliggy.com/train/"""
 
     # 将行程中已选班次强制传递给预订提示词
     transport_schedule_section = ""
@@ -412,7 +412,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
   ① 去程suggest必须包含上述航班号/车次号，一字不差
   ② 返程suggest必须包含上述航班号/车次号，一字不差
   ③ 出发时间、到达时间、机场/车站名也必须与上面完全一致
-  ④ link 使用正确链接：机票用 https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html，火车票用 https://www.ly.com/train/
+  ④ link 使用正确链接：机票用 https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html，火车票用 https://www.fliggy.com/train/
   ⑤ 绝对禁止在预订卡片中编造不同的航班号/车次号！"""
 
     # 飞常准API实时数据（用于预订卡片验证）
@@ -465,7 +465,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 
 要求：
 1. 根据距离判断交通工具：300km以内推荐高铁/动车，300-800km高铁优先，800km以上推荐飞机
-2. flights中机票link使用 https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html，火车票link使用 https://www.ly.com/train/
+2. flights中机票link使用 https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html，火车票link使用 https://www.fliggy.com/train/
 3. 机票/火车票给出真实航线建议和参考价格
 4. transport_mode字段：说明推荐的交通工具及理由
 5. 酒店推荐位置方便、性价比高的，给出具体名称和位置坐标
