@@ -1599,6 +1599,25 @@ function renderTrip(data){
   }
   document.getElementById('transportCard').innerHTML = transHtml;
 
+  // 行程卡片内交通信息辅助函数（确保与出发/返程交通卡片一致）
+  function _buildDayTransportCard(transport, label) {
+    var t = transport;
+    var html = '<div style="margin:8px 16px;padding:12px;background:#F0F7FF;border-radius:10px;border-left:4px solid #4A90D9">';
+    html += '<div style="font-weight:700;color:#4A90D9;margin-bottom:6px;font-size:15px">🚀 ' + label + '交通</div>';
+    html += '<div style="font-size:14px;line-height:1.8">';
+    html += '<div>交通方式：<b>' + (t.type||'') + '</b>';
+    if (t._verified) html += '<span style="display:inline-block;background:#27AE60;color:#fff;border-radius:3px;padding:1px 6px;font-size:11px;margin-left:6px">✅ 已验证</span>';
+    html += '</div>';
+    if (t.flight_number) {
+      html += '<div>班次：<b style="color:#4A90D9;font-size:18px;background:#EEF4FB;padding:2px 12px;border-radius:6px">' + t.flight_number + '</b></div>';
+    }
+    html += '<div>出发：<b style="color:#E67E22">' + (t.departure_time||'') + '</b> | 到达：<b>' + (t.arrival_time||'') + '</b></div>';
+    html += '<div>耗时：' + (t.duration||'') + ' | 站点：' + (t.station||'') + '</div>';
+    if (t.cost) html += '<div>预估费用：' + t.cost + '</div>';
+    html += '</div></div>';
+    return html;
+  }
+
   let dHtml = '';
   (data.itinerary||[]).forEach((day,dayIdx)=>{
     const w = day.weather||{};
@@ -1625,6 +1644,8 @@ function renderTrip(data){
         <span class="wc-temp">${wTemp}</span>
         <span class="wc-hint">点击查看逐时天气 ›</span>
       </div>
+      ${(dayIdx===0 && data.departure_transport && data.departure_transport.flight_number) ? _buildDayTransportCard(data.departure_transport, '出发') : ''}
+      ${(dayIdx===data.itinerary.length-1 && data.return_transport && data.return_transport.flight_number) ? _buildDayTransportCard(data.return_transport, '返程') : ''}
       ${renderSlot('上午','morning',day.morning,dayIdx,0)}
       ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
       ${renderSlot('晚上','evening',day.evening,dayIdx,2)}

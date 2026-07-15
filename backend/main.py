@@ -196,9 +196,15 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                     transport["flight_number"] = chosen["num"]
                     transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
                     transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
+                    # 同步type（根据静态数据来源确定交通方式）
+                    vf_type = _get_type_from_vf(chosen)
+                    if vf_type:
+                        transport["type"] = vf_type
                     if chosen.get("from_airport"):
                         full_name = SHORT_AIRPORT_MAP.get(chosen["from_airport"], chosen["from_airport"])
                         transport["station"] = full_name
+                    elif chosen.get("from_station"):
+                        transport["station"] = chosen["from_station"]
                     if chosen.get("duration"):
                         transport["duration"] = f"{chosen['num']} {chosen['duration']}"
                     transport["note"] = (transport.get("note", "") + f"（已校准为真实班次{chosen['num']}）").strip()
@@ -457,11 +463,15 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             transport["station"] = vf_item.get("from_airport") or vf_item.get("from_station", "")
         if not transport.get("cost"):
             transport["cost"] = vf_item.get("price", "")
-        # 如果type与Variflight数据不一致，以Variflight为准
-        if vf_item.get("from_airport") and transport.get("type") and "飞机" not in str(transport.get("type","")):
-            transport["type"] = "飞机"
-        if vf_item.get("from_station") and transport.get("type") and "高铁" not in str(transport.get("type","")) and "火车" not in str(transport.get("type","")) and "动车" not in str(transport.get("type","")):
-            transport["type"] = "高铁"
+        # 如果type为空或与Variflight数据不一致，以Variflight为准
+        if vf_item.get("from_airport"):
+            cur_type = str(transport.get("type", ""))
+            if not cur_type or "飞机" not in cur_type:
+                transport["type"] = "飞机"
+        if vf_item.get("from_station"):
+            cur_type = str(transport.get("type", ""))
+            if not cur_type or ("高铁" not in cur_type and "火车" not in cur_type and "动车" not in cur_type):
+                transport["type"] = "高铁"
         if not transport.get("_verified"):
             transport["_verified"] = True
             transport["_verified_source"] = "飞常准实时API（合并填充）"
