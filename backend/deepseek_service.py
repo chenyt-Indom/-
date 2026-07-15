@@ -304,7 +304,9 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 
 def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
                          itinerary: list, departure_city: str = "",
-                         transport_info: dict = None) -> str:
+                         transport_info: dict = None,
+                         departure_transport: dict = None,
+                         return_transport: dict = None) -> str:
     """构建订票/酒店/门票查询提示词，包含出发城市、交通判断和飞常准数据"""
     spots_str = ""
     for day in itinerary:
@@ -334,6 +336,35 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 机票link：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html
 火车票link：https://trains.ctrip.com/booking/{departure_city}-{dest}-day-1.html"""
 
+    # 将行程中已选班次强制传递给预订提示词
+    transport_schedule_section = ""
+    if departure_transport and departure_transport.get("flight_number"):
+        transport_schedule_section += f"""
+【去程已选班次-必须严格同步！】
+  航班号/车次号：{departure_transport.get('flight_number', '')}
+  出发时间：{departure_transport.get('departure_time', '')}
+  出发站/机场：{departure_transport.get('station', '')}
+  到达时间：{departure_transport.get('arrival_time', '')}
+  耗时：{departure_transport.get('duration', '')}
+  类型：{departure_transport.get('type', '')}"""
+    if return_transport and return_transport.get("flight_number"):
+        transport_schedule_section += f"""
+【返程已选班次-必须严格同步！】
+  航班号/车次号：{return_transport.get('flight_number', '')}
+  出发时间：{return_transport.get('departure_time', '')}
+  出发站/机场：{return_transport.get('station', '')}
+  到达时间：{return_transport.get('arrival_time', '')}
+  耗时：{return_transport.get('duration', '')}
+  类型：{return_transport.get('type', '')}"""
+    if transport_schedule_section:
+        transport_schedule_section += """
+【预订卡片班次同步-最高优先级】flights 数组中的 suggest 字段必须包含与上面完全一致的航班号/车次号！
+  ① 去程suggest必须包含 {departure_transport.get('flight_number', '')} 这一班次
+  ② 返程suggest必须包含 {return_transport.get('flight_number', '')} 这一班次
+  ③ 出发时间、到达时间、机场/车站名也必须与上面完全一致
+  ④ link 使用携程对应链接：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html（火车票替换为trains）
+  ⑤ 绝对禁止在预订卡片中编造不同的航班号/车次号！"""
+
     return f"""你是一个旅行服务顾问。请为以下行程查询机票、火车票、酒店和门票推荐信息。
 
 【目的地】{dest}{dep_info}
@@ -341,6 +372,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 【预算】{budget}
 {trans_info}
 {flight_info}
+{transport_schedule_section}
 
 【行程景点】
 {spots_str}
@@ -348,7 +380,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 请输出以下 JSON 格式（不要输出其他内容）：
 {{
   "flights": [
-    {{"type": "去程/返程", "suggest": "推荐航班/车次", "price": "参考价格", "link": "航班/火车票链接", "note": "说明"}}
+    {{"type": "去程/返程", "suggest": "推荐航班/车次（必须与行程中已选班次完全一致！）", "price": "参考价格", "link": "航班/火车票链接", "note": "说明"}}
   ],
   "hotels": [
     {{"name": "酒店名", "area": "推荐区域", "price": "参考价格/晚", "reason": "推荐理由", "location": "坐标", "link": "https://hotels.ctrip.com/", "note": "说明", "stay_days": "Day1-Day3"}}

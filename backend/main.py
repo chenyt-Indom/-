@@ -386,7 +386,9 @@ async def generate_trip(req: TripRequest):
         # 4. 调用 DeepSeek 查询订票/酒店信息
         itinerary = trip_data.get("itinerary", [])
         booking_prompt = build_booking_prompt(dest, start_date, end_date, req.budget, itinerary,
-                                              req.departure_city, transport_info)
+                                              req.departure_city, transport_info,
+                                              trip_data.get("departure_transport"),
+                                              trip_data.get("return_transport"))
         try:
             booking_raw = await call_deepseek("你是一个旅行服务顾问，只输出JSON格式数据。", booking_prompt, 3000)
             booking_clean = booking_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -716,7 +718,9 @@ async def regenerate_trip(request: Request):
         new_itinerary = new_trip.get("itinerary", [])
         booking_budget = trip_data.get("budget", "中等")
         booking_prompt = build_booking_prompt(dest, start_date, end_date, booking_budget, new_itinerary,
-                                              departure_city, transport_info)
+                                              departure_city, transport_info,
+                                              new_trip.get("departure_transport"),
+                                              new_trip.get("return_transport"))
         try:
             booking_raw = await call_deepseek("你是一个旅行服务顾问，只输出JSON格式数据。", booking_prompt, 3000)
             booking_clean = booking_raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
