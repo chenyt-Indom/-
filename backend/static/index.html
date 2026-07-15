@@ -1413,6 +1413,17 @@ function renderTrip(data){
   }
   if (data.departure_transport) {
     var dt = data.departure_transport;
+    // 从flight_number推断交通类型（确保即使type字段缺失也能正确显示）
+    var inferredType = '';
+    if (dt.flight_number && !dt.type) {
+      var fn = dt.flight_number.toUpperCase();
+      if (/^[A-Z]{2}\d{3,4}$/.test(fn) || /^[A-Z0-9]{2,3}\d{3,4}$/.test(fn)) {
+        inferredType = '飞机';
+      } else if (/^[GCDKTZ]\d+/.test(fn)) {
+        inferredType = '高铁';
+      }
+      if (inferredType) dt.type = inferredType;
+    }
     var isFlightOrTrain = dt.type && (dt.type.indexOf('飞机')>=0 || dt.type.indexOf('航班')>=0 || dt.type.indexOf('高铁')>=0 || dt.type.indexOf('火车')>=0 || dt.type.indexOf('动车')>=0);
     var isTrainType = dt.type && (dt.type.indexOf('高铁')>=0 || dt.type.indexOf('火车')>=0 || dt.type.indexOf('动车')>=0);
     var isFlightType = dt.type && (dt.type.indexOf('飞机')>=0 || dt.type.indexOf('航班')>=0);
@@ -1457,24 +1468,29 @@ function renderTrip(data){
       });
       transHtml += '</div>';
     }
-    // 立即订购按钮（附航班详情和价格）
+    // 立即订购按钮（根据交通方式强制使用正确的购票链接）
     var depBookingLink = '', depBookingPrice = '', depBookingNote = '';
+    // 先尝试从bk.flights获取价格和备注信息
     if (bk.flights && bk.flights.length) {
       for (var fi = 0; fi < bk.flights.length; fi++) {
         if (bk.flights[fi].type && bk.flights[fi].type.indexOf('去程') >= 0) {
-          depBookingLink = bk.flights[fi].link || '';
           depBookingPrice = bk.flights[fi].price || '';
           depBookingNote = bk.flights[fi].note || '';
           break;
         }
       }
     }
-    if (!depBookingLink && isFlightOrTrain) {
-      if (isTrainType) {
-        depBookingLink = 'https://trains.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
-      } else {
-        depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
-      }
+    // 根据交通方式强制生成正确的购票链接（使用flight_number作为兜底判断）
+    var isTrainByNum = dt.flight_number && /^[GCDKTZ]\d+/.test(dt.flight_number.toUpperCase());
+    var isFlightByNum = dt.flight_number && /^[A-Z]{2}\d{3,4}$/.test(dt.flight_number.toUpperCase());
+    if (isTrainType && !isFlightType) {
+      depBookingLink = 'https://trains.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+    } else if (isFlightType && !isTrainType) {
+      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+    } else if (isTrainByNum) {
+      depBookingLink = 'https://trains.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+    } else if (isFlightByNum) {
+      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
     }
     if (depBookingLink) {
       transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
@@ -1487,8 +1503,20 @@ function renderTrip(data){
   }
   if (data.return_transport) {
     var rt = data.return_transport;
+    // 从flight_number推断交通类型
+    var rtInferredType = '';
+    if (rt.flight_number && !rt.type) {
+      var rfn = rt.flight_number.toUpperCase();
+      if (/^[A-Z]{2}\d{3,4}$/.test(rfn) || /^[A-Z0-9]{2,3}\d{3,4}$/.test(rfn)) {
+        rtInferredType = '飞机';
+      } else if (/^[GCDKTZ]\d+/.test(rfn)) {
+        rtInferredType = '高铁';
+      }
+      if (rtInferredType) rt.type = rtInferredType;
+    }
     var isRtFlightOrTrain = rt.type && (rt.type.indexOf('飞机')>=0 || rt.type.indexOf('航班')>=0 || rt.type.indexOf('高铁')>=0 || rt.type.indexOf('火车')>=0 || rt.type.indexOf('动车')>=0);
     var isRtTrainType = rt.type && (rt.type.indexOf('高铁')>=0 || rt.type.indexOf('火车')>=0 || rt.type.indexOf('动车')>=0);
+    var isRtFlightType = rt.type && (rt.type.indexOf('飞机')>=0 || rt.type.indexOf('航班')>=0);
     transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
     var rviSrc = getTransportImg(rt, rt.vehicle_image);
     transHtml += '<div class="transport-img-wrap"><img src="' + rviSrc + '" alt="' + (rt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
@@ -1529,24 +1557,27 @@ function renderTrip(data){
       });
       transHtml += '</div>';
     }
-    // 返程立即订购按钮（附航班详情和价格）
+    // 返程立即订购按钮（根据交通方式强制使用正确的购票链接，flight_number兜底）
     var retBookingLink = '', retBookingPrice = '', retBookingNote = '';
     if (bk.flights && bk.flights.length) {
       for (var rfi = 0; rfi < bk.flights.length; rfi++) {
         if (bk.flights[rfi].type && bk.flights[rfi].type.indexOf('返程') >= 0) {
-          retBookingLink = bk.flights[rfi].link || '';
           retBookingPrice = bk.flights[rfi].price || '';
           retBookingNote = bk.flights[rfi].note || '';
           break;
         }
       }
     }
-    if (!retBookingLink && isRtFlightOrTrain) {
-      if (isRtTrainType) {
-        retBookingLink = 'https://trains.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
-      } else {
-        retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
-      }
+    var isRtTrainByNum = rt.flight_number && /^[GCDKTZ]\d+/.test(rt.flight_number.toUpperCase());
+    var isRtFlightByNum = rt.flight_number && /^[A-Z]{2}\d{3,4}$/.test(rt.flight_number.toUpperCase());
+    if (isRtTrainType && !isRtFlightType) {
+      retBookingLink = 'https://trains.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+    } else if (isRtFlightType && !isRtTrainType) {
+      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+    } else if (isRtTrainByNum) {
+      retBookingLink = 'https://trains.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+    } else if (isRtFlightByNum) {
+      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
     }
     if (retBookingLink) {
       transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';

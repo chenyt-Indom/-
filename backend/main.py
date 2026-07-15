@@ -72,6 +72,14 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
         except ValueError:
             pass
 
+    # 辅助函数：根据Variflight数据项判断交通类型
+    def _get_type_from_vf(item):
+        if item.get("from_airport"):
+            return "飞机"
+        if item.get("from_station"):
+            return "高铁"
+        return ""
+
     # 构建飞常准API数据索引（用于快速查找）
     vf_flights = []
     vf_trains = []
@@ -148,6 +156,10 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["flight_number"] = vf_matched["num"]
                 transport["departure_time"] = vf_matched.get("dep", transport.get("departure_time", ""))
                 transport["arrival_time"] = vf_matched.get("arr", transport.get("arrival_time", ""))
+                # 同步type（关键：根据数据来源确定交通方式，确保前端正确显示和跳转）
+                vf_type = _get_type_from_vf(vf_matched)
+                if vf_type:
+                    transport["type"] = vf_type
                 # 同步duration
                 vf_dur = vf_matched.get("duration", "")
                 if vf_dur:
@@ -164,7 +176,7 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["_verified"] = True
                 transport["_verified_source"] = "飞常准实时API"
                 transport["_verified_date"] = travel_date
-                print(f"[OK] 飞常准API验证通过: {flight_num} {vf_matched.get('dep','')}→{vf_matched.get('arr','')}")
+                print(f"[OK] 飞常准API验证通过: {flight_num} {vf_matched.get('dep','')}→{vf_matched.get('arr','')} type={transport.get('type','')}")
             elif flight_num and not all_vf_items:
                 # 飞常准API无数据，回退到静态数据验证
                 schedule = get_route_schedule(dep_city_for_check, arr_city_for_check, travel_date)
@@ -203,6 +215,10 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
                 transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
+                # 同步type（关键：根据数据来源确定交通方式）
+                vf_type = _get_type_from_vf(chosen)
+                if vf_type:
+                    transport["type"] = vf_type
                 if chosen.get("duration"):
                     transport["duration"] = f"{chosen['num']} {chosen['duration']}"
                 if chosen.get("from_airport"):
@@ -220,6 +236,10 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", "")
                 transport["arrival_time"] = chosen.get("arr", "")
+                # 同步type（关键：根据数据来源确定交通方式）
+                vf_type = _get_type_from_vf(chosen)
+                if vf_type:
+                    transport["type"] = vf_type
                 if chosen.get("duration"):
                     transport["duration"] = f"{chosen['num']} {chosen['duration']}"
                 if chosen.get("from_airport"):
@@ -230,7 +250,7 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                     transport["cost"] = chosen["price"]
                 transport["_verified"] = True
                 transport["_verified_source"] = "飞常准实时API（自动填充）"
-                print(f"[OK] 飞常准API自动填充: {chosen['num']}")
+                print(f"[OK] 飞常准API自动填充: {chosen['num']} type={transport.get('type','')}")
 
 
 def _validate_cross_card_consistency(trip_data: dict):
@@ -355,6 +375,125 @@ def _validate_cross_card_consistency(trip_data: dict):
                     if last_day.get(slot_key, {}).get("spot"):
                         print(f"[CONSISTENCY] 最后一天返程{ret_departure}出发，{slot_key}景点'{last_day[slot_key]['spot']}'不适用，已清空")
                         last_day[slot_key] = {}
+
+
+def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str, 
+                           variflight_data: dict = None, days: int = 3) -> dict:
+    """确保行程数据始终包含往返交通信息，缺失时从飞常准API数据自动填充"""
+    vf_flights = []
+    vf_trains = []
+    if variflight_data and variflight_data.get("success"):
+        vf_flights = variflight_data.get("flights", [])
+        vf_trains = variflight_data.get("trains", [])
+
+    # 构建默认交通模板
+    def _build_transport_template(is_return=False):
+        t = {
+            "type": "", "flight_number": "", "departure_time": "", "arrival_time": "",
+            "station": "", "duration": "", "cost": "", "cross_day": False,
+            "station_to_hotel": "", "note": "", "transfers": [],
+            "_verified": False, "_verified_source": "自动填充"
+        }
+        if vf_flights:
+            f = vf_flights[0]
+            t["type"] = "飞机"
+            t["flight_number"] = f["num"]
+            t["departure_time"] = f.get("dep", "")
+            t["arrival_time"] = f.get("arr", "")
+            t["duration"] = f"{f['num']} {f.get('duration', '')}"
+            t["station"] = f.get("from_airport", "")
+            t["cost"] = f.get("price", "")
+            t["_verified"] = True
+            t["_verified_source"] = "飞常准实时API"
+        elif vf_trains:
+            tr = vf_trains[0]
+            t["type"] = "高铁"
+            t["flight_number"] = tr["num"]
+            t["departure_time"] = tr.get("dep", "")
+            t["arrival_time"] = tr.get("arr", "")
+            t["duration"] = f"{tr['num']} {tr.get('duration', '')}"
+            t["station"] = tr.get("from_station", "")
+            t["cost"] = tr.get("price", "")
+            t["_verified"] = True
+            t["_verified_source"] = "飞常准实时API"
+        else:
+            from feichangzhun_service import judge_transport, get_route_schedule
+            ti = judge_transport(departure_city, dest)
+            t["type"] = ti.get("mode", "高铁").split("/")[0]
+            schedule = get_route_schedule(departure_city, dest)
+            if schedule.get("flights"):
+                f = schedule["flights"][0]
+                t["type"] = "飞机"
+                t["flight_number"] = f["num"]
+                t["departure_time"] = f.get("dep", "")
+                t["arrival_time"] = f.get("arr", "")
+                t["duration"] = f"{f['num']} {f.get('duration', '')}"
+                t["station"] = f.get("from_airport", "")
+                t["_verified"] = True
+                t["_verified_source"] = "预存数据"
+            elif schedule.get("trains"):
+                tr = schedule["trains"][0]
+                t["type"] = "高铁"
+                t["flight_number"] = tr["num"]
+                t["departure_time"] = tr.get("dep", "")
+                t["arrival_time"] = tr.get("arr", "")
+                t["duration"] = f"{tr['num']} {tr.get('duration', '')}"
+                t["station"] = tr.get("from_station", "")
+                t["_verified"] = True
+                t["_verified_source"] = "预存数据"
+        return t
+
+    # 从Variflight数据合并缺失字段到已有transport（不覆盖已有值）
+    def _merge_vf_to_transport(transport, vf_item):
+        if not transport.get("flight_number"):
+            transport["flight_number"] = vf_item["num"]
+        if not transport.get("departure_time"):
+            transport["departure_time"] = vf_item.get("dep", "")
+        if not transport.get("arrival_time"):
+            transport["arrival_time"] = vf_item.get("arr", "")
+        if not transport.get("duration"):
+            transport["duration"] = f"{vf_item['num']} {vf_item.get('duration', '')}"
+        if not transport.get("station"):
+            transport["station"] = vf_item.get("from_airport") or vf_item.get("from_station", "")
+        if not transport.get("cost"):
+            transport["cost"] = vf_item.get("price", "")
+        # 如果type与Variflight数据不一致，以Variflight为准
+        if vf_item.get("from_airport") and transport.get("type") and "飞机" not in str(transport.get("type","")):
+            transport["type"] = "飞机"
+        if vf_item.get("from_station") and transport.get("type") and "高铁" not in str(transport.get("type","")) and "火车" not in str(transport.get("type","")) and "动车" not in str(transport.get("type","")):
+            transport["type"] = "高铁"
+        if not transport.get("_verified"):
+            transport["_verified"] = True
+            transport["_verified_source"] = "飞常准实时API（合并填充）"
+
+    # 确保去程交通
+    if not trip_data.get("departure_transport") or not isinstance(trip_data.get("departure_transport"), dict):
+        print("[TRANSPORT] 去程交通缺失，自动填充默认交通信息")
+        trip_data["departure_transport"] = _build_transport_template()
+    elif not trip_data["departure_transport"].get("flight_number"):
+        # 有type但缺flight_number，尝试从Variflight数据合并填充
+        if vf_flights or vf_trains:
+            chosen = vf_flights[0] if vf_flights else vf_trains[0]
+            print(f"[TRANSPORT] 去程交通缺flight_number，从飞常准API合并: {chosen['num']}")
+            _merge_vf_to_transport(trip_data["departure_transport"], chosen)
+        elif not trip_data["departure_transport"].get("type"):
+            print("[TRANSPORT] 去程交通信息不完整且无API数据，完整填充")
+            trip_data["departure_transport"] = _build_transport_template()
+
+    # 确保返程交通
+    if not trip_data.get("return_transport") or not isinstance(trip_data.get("return_transport"), dict):
+        print("[TRANSPORT] 返程交通缺失，自动填充默认交通信息")
+        trip_data["return_transport"] = _build_transport_template(is_return=True)
+    elif not trip_data["return_transport"].get("flight_number"):
+        if vf_flights or vf_trains:
+            chosen = vf_flights[0] if vf_flights else vf_trains[0]
+            print(f"[TRANSPORT] 返程交通缺flight_number，从飞常准API合并: {chosen['num']}")
+            _merge_vf_to_transport(trip_data["return_transport"], chosen)
+        elif not trip_data["return_transport"].get("type"):
+            print("[TRANSPORT] 返程交通信息不完整且无API数据，完整填充")
+            trip_data["return_transport"] = _build_transport_template(is_return=True)
+
+    return trip_data
 
 
 @app.get("/api/locate")
@@ -600,6 +739,9 @@ async def generate_trip(req: TripRequest):
         # 后处理验证：优先使用飞常准API数据验证班次真实性
         _validate_transport_airports(trip_data, req.departure_city, dest, req.start_date,
                                      transport_info.get("variflight_data"))
+        # 确保往返交通信息始终存在
+        _ensure_transport_data(trip_data, req.departure_city, dest,
+                               transport_info.get("variflight_data"), req.days)
         # 交叉验证：确保行程卡片与交通卡片时间一致性
         _validate_cross_card_consistency(trip_data)
 
@@ -962,6 +1104,9 @@ async def regenerate_trip(request: Request):
         # 后处理验证：优先使用飞常准API数据验证班次真实性
         _validate_transport_airports(new_trip, departure_city, dest, start_date,
                                      transport_info.get("variflight_data"))
+        # 确保往返交通信息始终存在
+        _ensure_transport_data(new_trip, departure_city, dest,
+                               transport_info.get("variflight_data"), days)
         # 交叉验证：确保行程卡片与交通卡片时间一致性
         _validate_cross_card_consistency(new_trip)
 
