@@ -1423,7 +1423,8 @@ function renderTrip(data){
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (dt.type||'') + '</b></div>';
     if (isFlightOrTrain) {
-      transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (dt.flight_number||'（请自行查询实时班次）') + '</b></div>';
+      var verifiedBadge = (dt._verified) ? '<span style="display:inline-block;background:#27AE60;color:#fff;border-radius:4px;padding:2px 8px;font-size:12px;margin-left:10px;vertical-align:middle">✅ 飞常准验证</span>' : '';
+      transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (dt.flight_number||'（请自行查询实时班次）') + '</b>' + verifiedBadge + '</div>';
       transHtml += '<div>发车时间：<b style="color:#E67E22;font-size:20px">' + (dt.departure_time||'') + '</b></div>';
       transHtml += '<div>出发站/机场：' + (dt.station||'') + '</div>';
       var arrivalLabel = (dt.cross_day ? '预计到达（跨天）：' : '预计到达：');
@@ -1492,7 +1493,8 @@ function renderTrip(data){
     transHtml += '<div style="font-size:16px;line-height:1.8">';
     transHtml += '<div>交通方式：<b>' + (rt.type||'') + '</b></div>';
     if (isRtFlightOrTrain) {
-      transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (rt.flight_number||'（请自行查询实时班次）') + '</b></div>';
+      var rtVerifiedBadge = (rt._verified) ? '<span style="display:inline-block;background:#27AE60;color:#fff;border-radius:4px;padding:2px 8px;font-size:12px;margin-left:10px;vertical-align:middle">✅ 飞常准验证</span>' : '';
+      transHtml += '<div>🚩 班次编号：<b style="color:#4A90D9;font-size:22px;display:inline-block;background:#EEF4FB;padding:4px 16px;border-radius:8px;margin:4px 0">' + (rt.flight_number||'（请自行查询实时班次）') + '</b>' + rtVerifiedBadge + '</div>';
       transHtml += '<div>发车时间：<b style="color:#E67E22;font-size:20px">' + (rt.departure_time||'') + '</b></div>';
       transHtml += '<div>出发站/机场：' + (rt.station||'') + '</div>';
       var rtArrivalLabel = (rt.cross_day ? '预计到达（跨天）：' : '预计到达：');

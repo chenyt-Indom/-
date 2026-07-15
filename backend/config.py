@@ -13,3 +13,5 @@ AMAP_WEATHER_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
 AMAP_GEO_URL = "https://restapi.amap.com/v3/geocode/geo"
 AMAP_REGEO_URL = "https://restapi.amap.com/v3/geocode/regeo"
 IMG_BASE = "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image"
+VARIFLIGHT_KEY = os.getenv("VARIFLIGHT_API_KEY", "")
+VARIFLIGHT_URL = "https://ai.variflight.com/api/v1/mcp/data"

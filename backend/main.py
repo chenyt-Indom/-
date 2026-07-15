@@ -171,6 +171,10 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 print(f"[WARN] 无{dep_city_for_check}-{arr_city_for_check}真实班次数据，AI编造了{flight_num}，已清空")
                 transport["flight_number"] = ""
                 transport["note"] = (transport.get("note", "") + f"（原班次{flight_num}无真实数据验证，请自行在携程查询实时班次）").strip()
+            # 标记已验证状态
+            if is_valid:
+                transport["_verified"] = True
+                transport["_verified_source"] = "飞常准API+预存数据"
 
 
 @app.get("/api/locate")
@@ -346,11 +350,47 @@ async def generate_trip(req: TripRequest):
                 sd_plan = await calculate_self_drive_plan(
                     req.departure_city, dest, start_date, end_date)
                 transport_info["self_drive_plan"] = sd_plan
-            # 飞常准航班查询
+            # 飞常准API实时查询航班和火车票（多渠道验证）
             if ti.get("need_flight"):
                 flight_result = await search_flights(req.departure_city, dest, start_date)
                 transport_info["flight_data"] = flight_result.get("flights", [])
                 transport_info["flight_query"] = flight_result.get("query", {})
+            # 并行查询：飞常准API火车票 + 完整路线数据
+            from variflight_service import get_full_route_data
+            vf_result = await get_full_route_data(req.departure_city, dest, start_date)
+            transport_info["variflight_data"] = {
+                "flights": vf_result.get("flights", []),
+                "trains": vf_result.get("trains", []),
+                "transfers": vf_result.get("transfers", {}),
+                "success": vf_result.get("success"),
+                "source": vf_result.get("_source", "飞常准API"),
+            }
+            # 合并飞常准API数据到route_schedule（优先API数据）
+            if vf_result.get("success"):
+                schedule = transport_info.get("route_schedule", {})
+                if not schedule or schedule.get("_no_data"):
+                    # 无预存数据时，直接用API数据构建schedule
+                    schedule = {
+                        "flights": vf_result.get("flights", []),
+                        "trains": vf_result.get("trains", []),
+                        "_verified": f"{start_date}", "_source": "飞常准实时API",
+                    }
+                else:
+                    # 有预存数据时，API数据作为补充
+                    api_flights = vf_result.get("flights", [])
+                    if api_flights:
+                        existing_nums = {f["num"] for f in schedule.get("flights", [])}
+                        for f in api_flights:
+                            if f["num"] not in existing_nums:
+                                schedule.setdefault("flights", []).append(f)
+                    api_trains = vf_result.get("trains", [])
+                    if api_trains:
+                        existing_nums = {t["num"] for t in schedule.get("trains", [])}
+                        for t in api_trains:
+                            if t["num"] not in existing_nums:
+                                schedule.setdefault("trains", []).append(t)
+                    schedule["_source"] = f"{schedule.get('_source', '')} + 飞常准实时API"
+                transport_info["route_schedule"] = schedule
 
         # 2. 调用 DeepSeek 生成行程
         prompt = build_trip_prompt(dest, days, req.budget, req.interests, ranked_pois, weather_data,
@@ -672,6 +712,42 @@ async def regenerate_trip(request: Request):
                 transport_info["dest_hub"] = dest_hub
             except Exception:
                 pass
+            # 飞常准API实时查询航班和火车票
+            try:
+                from variflight_service import get_full_route_data
+                vf_result = await get_full_route_data(departure_city, dest, start_date)
+                transport_info["variflight_data"] = {
+                    "flights": vf_result.get("flights", []),
+                    "trains": vf_result.get("trains", []),
+                    "transfers": vf_result.get("transfers", {}),
+                    "success": vf_result.get("success"),
+                    "source": vf_result.get("_source", "飞常准API"),
+                }
+                if vf_result.get("success"):
+                    schedule = transport_info.get("route_schedule", {})
+                    if not schedule or schedule.get("_no_data"):
+                        schedule = {
+                            "flights": vf_result.get("flights", []),
+                            "trains": vf_result.get("trains", []),
+                            "_verified": f"{start_date}", "_source": "飞常准实时API",
+                        }
+                    else:
+                        api_flights = vf_result.get("flights", [])
+                        if api_flights:
+                            existing_nums = {f["num"] for f in schedule.get("flights", [])}
+                            for f in api_flights:
+                                if f["num"] not in existing_nums:
+                                    schedule.setdefault("flights", []).append(f)
+                        api_trains = vf_result.get("trains", [])
+                        if api_trains:
+                            existing_nums = {t["num"] for t in schedule.get("trains", [])}
+                            for t in api_trains:
+                                if t["num"] not in existing_nums:
+                                    schedule.setdefault("trains", []).append(t)
+                        schedule["_source"] = f"{schedule.get('_source', '')} + 飞常准实时API"
+                    transport_info["route_schedule"] = schedule
+            except Exception:
+                pass
 
         # 构建regenerate prompt
         prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
@@ -759,6 +835,25 @@ async def regenerate_trip(request: Request):
         import traceback
         traceback.print_exc()
         return {"success": False, "error": f"重新生成失败：{str(e)}"}
+
+
+@app.post("/api/verify-flight")
+async def verify_flight(request: Request):
+    """验证航班号/车次号是否真实存在（飞常准API）"""
+    try:
+        body = await request.json()
+        flight_num = body.get("flight_number", "").strip()
+        date = body.get("date", "").strip()
+        dep = body.get("dep", "").strip()
+        arr = body.get("arr", "").strip()
+        if not flight_num or not date:
+            return {"success": False, "valid": False, "error": "缺少航班号或日期"}
+        from variflight_service import verify_flight_number
+        result = await verify_flight_number(flight_num, date, dep, arr)
+        return {"success": True, "valid": result.get("valid", False),
+                "data": result.get("data", {}), "source": result.get("_source", "")}
+    except Exception as e:
+        return {"success": False, "valid": False, "error": str(e)}
 
 
 if __name__ == "__main__":

@@ -125,6 +125,21 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                             for f in to["leg2"]["flights"][:2]:
                                 transport_section += f"\n      ✈ {f['num']}：{f['dep']}→{f['arr']}（{f['duration']}）"
                         transport_section += f"\n    中转提示：{to['note']}"
+                # 飞常准API实时数据（最新班次，优先级最高）
+                vf_data = transport_info.get("variflight_data", {})
+                if vf_data.get("success"):
+                    transport_section += "\n【飞常准实时API数据-最新班次-必须优先使用】"
+                    vf_flights = vf_data.get("flights", [])
+                    vf_trains = vf_data.get("trains", [])
+                    if vf_flights:
+                        transport_section += "\n实时航班（飞常准API验证）："
+                        for f in vf_flights[:10]:
+                            transport_section += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）{f.get('from_airport','')}→{f.get('to_airport','')}"
+                    if vf_trains:
+                        transport_section += "\n实时火车票（飞常准API验证）："
+                        for t in vf_trains[:10]:
+                            transport_section += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{t.get('from_station','')}→{t.get('to_station','')}"
+                    transport_section += "\n【飞常准数据优先规则】以上为飞常准API实时查询的最新班次，优先选择这些班次！如果静态数据与飞常准数据冲突，以飞常准API数据为准！"
             transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。"
             transport_section += """
 【重要-出发时间灵活规则】
@@ -476,6 +491,21 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                 transport_section += "\n【中转方案参考】如果无合适直飞，可考虑以下中转："
                 for to in transfer_info["transfer_options"]:
                     transport_section += f"\n  经{to['transfer_city']}中转：{to['note']}"
+            # 飞常准API实时数据（最新班次，优先级最高）
+            vf_data = transport_info.get("variflight_data", {})
+            if vf_data.get("success"):
+                transport_section += "\n【飞常准实时API数据-最新班次-必须优先使用】"
+                vf_flights = vf_data.get("flights", [])
+                vf_trains = vf_data.get("trains", [])
+                if vf_flights:
+                    transport_section += "\n实时航班（飞常准API验证）："
+                    for f in vf_flights[:10]:
+                        transport_section += f"\n  ✈ {f['num']}：{f.get('dep','')}→{f.get('arr','')}（{f.get('duration','')}）{f.get('from_airport','')}→{f.get('to_airport','')}"
+                if vf_trains:
+                    transport_section += "\n实时火车票（飞常准API验证）："
+                    for t in vf_trains[:10]:
+                        transport_section += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{t.get('from_station','')}→{t.get('to_station','')}"
+                transport_section += "\n【飞常准数据优先规则】以上为飞常准API实时查询的最新班次，优先选择这些班次！"
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 

@@ -289,17 +289,9 @@ def judge_transport(departure_city: str, dest_city: str) -> dict:
 
 
 async def search_flights(dep_city: str, arr_city: str, date: str) -> dict:
-    """通过飞常准MCP查询航班信息（调用封装）"""
-    result = {"success": False, "flights": [], "error": ""}
-    dep_iata = get_iata(dep_city)
-    arr_iata = get_iata(arr_city)
-    if not dep_iata or not arr_iata:
-        result["error"] = f"无法识别城市代码：{dep_city}→{dep_iata} {arr_city}→{arr_iata}"
-        return result
-    # 飞常准MCP调用通过mcp_Fei_Chang_Zhun_-Aviation/searchFlightsByDepArr
-    # 实际调用由Agent层完成，此处返回查询参数
-    result["query"] = {"depcity": dep_iata, "arrcity": arr_iata, "date": date}
-    result["success"] = True
+    """通过飞常准REST API查询航班信息"""
+    from variflight_service import search_flights_by_route
+    result = await search_flights_by_route(dep_city, arr_city, date)
     return result
 
 
@@ -539,21 +531,21 @@ COMMON_ROUTES = {
 
 
 def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
-    """获取两个城市间的航班/高铁班次参考数据（基于携程实时数据验证）
+    """获取两个城市间的航班/高铁班次参考数据（优先飞常准API，回退预存数据）
     date参数用于校准：确保AI只使用出行日期的班次，禁止混入过往数据
     """
     clean_dep = _clean_city_name(dep_city)
     clean_arr = _clean_city_name(arr_city)
     key1 = f"{clean_dep}-{clean_arr}"
     key2 = f"{clean_arr}-{clean_dep}"
-    result = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {
+    static = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {
         "flights": [], "trains": [],
         "_verified": "无", "_source": "无预存数据",
         "_no_data": True,
         "_no_data_note": "【致命警告-最高优先级】该路线没有预存真实班次数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ station字段留空 ⑤ 在note中建议用户自行在携程查询实时航班号 ⑥ 绝对禁止编造任何航班号/车次号/机场名！"
     }
+    result = dict(static)  # 复制静态数据
     if date:
-        # 验证日期必须是未来日期
         from datetime import date as date_type
         try:
             travel_date = date_type.fromisoformat(date)
@@ -566,9 +558,9 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
             pass
         result["_date"] = date
         result["_date_note"] = (
-            f"【严格日期校验-最高优先级】以上班次为携程2026年实时数据（验证日期：{result.get('_verified', '2026-07')}），"
+            f"【严格日期校验-最高优先级】以上班次为飞常准实时API+预存数据（验证日期：{result.get('_verified', '2026-07')}），"
             f"必须确保所选班次在 {date} 当天有实际运营。\n"
-            f"  ① 只能选择以上列出的航班号/车次号，这些是经过验证的2026年真实运营班次\n"
+            f"  ① 只能选择以上列出的航班号/车次号，这些是经过验证的真实运营班次\n"
             f"  ② 绝对禁止编造不存在的航班号（如CA1501等已停运/不存在的班次）\n"
             f"  ③ 绝对禁止使用军用机场（汕头外砂、南苑、大校场等已关闭的机场）\n"
             f"  ④ 如果该日期无此班次，则只填写交通方式类型（如'飞机'或'高铁'），不填具体航班号，station留空\n"
