@@ -376,11 +376,11 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 - 出发日期：{start_date}
 - 返程日期：{end_date}
 航班link：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html
-火车票link：https://www.fliggy.com/train/"""
+火车票link：https://m.ctrip.com/html5/train/"""
     else:
         flight_info = f"""
 机票link：https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html
-火车票link：https://www.fliggy.com/train/"""
+火车票link：https://m.ctrip.com/html5/train/"""
 
     # 将行程中已选班次强制传递给预订提示词
     transport_schedule_section = ""
