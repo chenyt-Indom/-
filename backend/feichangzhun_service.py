@@ -347,7 +347,7 @@ def build_flight_query_text(dep_city: str, arr_city: str, date: str) -> str:
 # 仅包含民用机场班次，已剔除军用/停运机场数据
 COMMON_ROUTES = {
     "北京-上海": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "MU5102", "dep": "08:00", "arr": "10:05", "duration": "2h5min", "from_airport": "首都T2", "to_airport": "虹桥T2"},
             {"num": "MU5168", "dep": "08:15", "arr": "10:15", "duration": "2h", "from_airport": "大兴", "to_airport": "虹桥T2"},
@@ -368,7 +368,7 @@ COMMON_ROUTES = {
         ]
     },
     "北京-广州": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "MU6301", "dep": "07:15", "arr": "10:35", "duration": "3h20min", "from_airport": "大兴", "to_airport": "白云T3"},
             {"num": "CA1317", "dep": "09:55", "arr": "13:20", "duration": "3h25min", "from_airport": "首都T3", "to_airport": "白云T3"},
@@ -384,7 +384,7 @@ COMMON_ROUTES = {
         ]
     },
     "北京-成都": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "CA4101", "dep": "07:00", "arr": "10:00", "duration": "3h", "from_airport": "首都T3", "to_airport": "双流T2"},
             {"num": "3U8882", "dep": "11:00", "arr": "14:00", "duration": "3h", "from_airport": "首都T2", "to_airport": "双流T2"},
@@ -398,7 +398,7 @@ COMMON_ROUTES = {
         ]
     },
     "北京-西安": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "CA1201", "dep": "08:00", "arr": "10:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "咸阳T3"},
             {"num": "MU2102", "dep": "12:00", "arr": "14:00", "duration": "2h", "from_airport": "大兴", "to_airport": "咸阳T3"},
@@ -412,7 +412,7 @@ COMMON_ROUTES = {
         ]
     },
     "北京-杭州": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "CA1701", "dep": "07:30", "arr": "09:40", "duration": "2h10min", "from_airport": "首都T3", "to_airport": "萧山T4"},
             {"num": "MU5132", "dep": "11:00", "arr": "13:10", "duration": "2h10min", "from_airport": "大兴", "to_airport": "萧山T3"},
@@ -426,7 +426,7 @@ COMMON_ROUTES = {
         ]
     },
     "北京-武汉": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "CA8201", "dep": "08:00", "arr": "10:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "天河T3"},
             {"num": "CZ3118", "dep": "13:00", "arr": "15:00", "duration": "2h", "from_airport": "大兴", "to_airport": "天河T3"},
@@ -439,7 +439,7 @@ COMMON_ROUTES = {
         ]
     },
     "北京-哈尔滨": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "CA1601", "dep": "07:00", "arr": "09:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "太平"},
             {"num": "CZ6202", "dep": "11:00", "arr": "13:00", "duration": "2h", "from_airport": "大兴", "to_airport": "太平"},
@@ -452,7 +452,7 @@ COMMON_ROUTES = {
         ]
     },
     "北京-三亚": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "CA1345", "dep": "07:00", "arr": "11:00", "duration": "4h", "from_airport": "首都T3", "to_airport": "凤凰"},
             {"num": "CZ6712", "dep": "11:00", "arr": "15:00", "duration": "4h", "from_airport": "大兴", "to_airport": "凤凰"},
@@ -460,7 +460,7 @@ COMMON_ROUTES = {
         ], "trains": []
     },
     "上海-广州": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "MU5301", "dep": "08:00", "arr": "10:15", "duration": "2h15min", "from_airport": "虹桥T2", "to_airport": "白云T3"},
             {"num": "CZ3502", "dep": "12:00", "arr": "14:15", "duration": "2h15min", "from_airport": "虹桥T2", "to_airport": "白云T2"},
@@ -472,7 +472,7 @@ COMMON_ROUTES = {
         ]
     },
     "上海-成都": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "MU5401", "dep": "07:00", "arr": "10:00", "duration": "3h", "from_airport": "虹桥T2", "to_airport": "双流T2"},
             {"num": "3U8962", "dep": "11:00", "arr": "14:00", "duration": "3h", "from_airport": "浦东T2", "to_airport": "双流T2"},
@@ -484,7 +484,7 @@ COMMON_ROUTES = {
         ]
     },
     "广州-深圳": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [],
         "trains": [
             {"num": "G6201", "dep": "07:00", "arr": "07:36", "duration": "36min"},
@@ -496,7 +496,7 @@ COMMON_ROUTES = {
         ]
     },
     "成都-重庆": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [],
         "trains": [
             {"num": "G8501", "dep": "07:00", "arr": "08:30", "duration": "1h30min"},
@@ -507,7 +507,7 @@ COMMON_ROUTES = {
         ]
     },
     "上海-南京": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [],
         "trains": [
             {"num": "G7001", "dep": "07:00", "arr": "08:30", "duration": "1h30min"},
@@ -518,7 +518,7 @@ COMMON_ROUTES = {
         ]
     },
     "上海-昆明": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "MU5801", "dep": "08:00", "arr": "11:00", "duration": "3h", "from_airport": "虹桥T2", "to_airport": "长水"},
             {"num": "CZ3672", "dep": "13:00", "arr": "16:00", "duration": "3h", "from_airport": "浦东T2", "to_airport": "长水"},
@@ -528,7 +528,7 @@ COMMON_ROUTES = {
         ]
     },
     "广州-三亚": {
-        "_verified": "2026-07-15", "_source": "携程实时班期表",
+        "_verified": "2026-07-16", "_source": "携程实时班期表",
         "flights": [
             {"num": "CZ6732", "dep": "08:00", "arr": "09:30", "duration": "1h30min", "from_airport": "白云T2", "to_airport": "凤凰"},
             {"num": "HU7302", "dep": "12:00", "arr": "13:30", "duration": "1h30min", "from_airport": "白云T1", "to_airport": "凤凰"},
@@ -550,7 +550,7 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
         "flights": [], "trains": [],
         "_verified": "无", "_source": "无预存数据",
         "_no_data": True,
-        "_no_data_note": "【致命警告-最高优先级】该路线没有预存真实班次数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ 在note中建议用户自行在携程查询实时航班号 ⑤ 绝对禁止编造任何航班号/车次号！"
+        "_no_data_note": "【致命警告-最高优先级】该路线没有预存真实班次数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ station字段留空 ⑤ 在note中建议用户自行在携程查询实时航班号 ⑥ 绝对禁止编造任何航班号/车次号/机场名！"
     }
     if date:
         # 验证日期必须是未来日期
@@ -566,13 +566,14 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
             pass
         result["_date"] = date
         result["_date_note"] = (
-            f"【严格日期校验-最高优先级】以上班次为携程实时数据（验证日期：2026-07-15），"
+            f"【严格日期校验-最高优先级】以上班次为携程2026年实时数据（验证日期：{result.get('_verified', '2026-07')}），"
             f"必须确保所选班次在 {date} 当天有实际运营。\n"
             f"  ① 只能选择以上列出的航班号/车次号，这些是经过验证的真实运营班次\n"
             f"  ② 绝对禁止编造不存在的航班号（如CA1501等已停运/不存在的班次）\n"
-            f"  ③ 绝对禁止使用军用机场（如南苑机场等已关闭的机场）\n"
+            f"  ③ 绝对禁止使用军用机场（汕头外砂、南苑、大校场等已关闭的机场）\n"
             f"  ④ 如果该日期无此班次，则只填写交通方式类型（如'飞机'或'高铁'），不填具体航班号\n"
-            f"  ⑤ 出发/到达机场必须使用以上列出的真实民用机场名称\n"
+            f"  ⑤ 出发/到达机场必须使用以上列出的真实民用机场名称（如'北京首都T3'、'上海虹桥T2'等白名单中的机场）\n"
+            f"  ⑥ 出行日期年份必须与班次数据年份一致！如果出行日期不是2026年，flight_number和station都必须留空！\n"
         )
     return result
 

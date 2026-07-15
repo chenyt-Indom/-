@@ -57,12 +57,21 @@ async def health_check():
     return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY)}
 
 
-def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = ""):
+def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = ""):
     """后处理验证：检查AI生成的机场名是否在白名单中，修正非法机场名，并验证班次号真实性，
-    班次不真实时从真实班次表中选一个替换"""
+    班次不真实时从真实班次表中选一个替换。校验年份是否与出行日期一致。"""
     from feichangzhun_service import (sanitize_airport_name, is_airport_valid,
                                       DECOMMISSIONED_AIRPORTS, verify_schedule_number,
-                                      get_route_schedule, _clean_city_name)
+                                      get_route_schedule, _clean_city_name, SHORT_AIRPORT_MAP)
+    from datetime import date as date_type
+
+    # 提取出行年份
+    travel_year = ""
+    if travel_date:
+        try:
+            travel_year = str(date_type.fromisoformat(travel_date).year)
+        except ValueError:
+            pass
 
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
@@ -78,7 +87,7 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["note"] = (transport.get("note", "") + "（原机场已停用，请自行查询当前运营机场）").strip()
                 break
 
-        # 如果station不为空但不在白名单中
+        # 如果station不为空但不在白名单中，尝试用SHORT_AIRPORT_MAP解析
         if transport.get("station") and not is_airport_valid(transport.get("station", "")):
             sanitized = sanitize_airport_name(transport.get("station", ""))
             if sanitized:
@@ -109,13 +118,26 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             transport["flight_number"] = ""
             transport["note"] = (transport.get("note", "") + "（航班信息未验证，请自行查询）").strip()
 
-        # 验证班次号是否在真实班次表中，不真实则替换
+        # 验证班次号是否在真实班次表中，不真实则从真实班次表选一个替换
         if departure_city and dest:
             flight_num = transport.get("flight_number", "")
             if key == "return_transport":
-                schedule = get_route_schedule(dest, departure_city)
+                schedule = get_route_schedule(dest, departure_city, travel_date)
+                dep_city_for_check = dest
+                arr_city_for_check = departure_city
             else:
-                schedule = get_route_schedule(departure_city, dest)
+                schedule = get_route_schedule(departure_city, dest, travel_date)
+                dep_city_for_check = departure_city
+                arr_city_for_check = dest
+
+            # 年份校验：班次数据年份必须与出行年份一致
+            if travel_year and schedule.get("_verified"):
+                verified = schedule["_verified"]
+                if travel_year not in verified:
+                    print(f"[WARN] 班次数据验证日期({verified})与出行年份({travel_year})不一致，需重新校验")
+                    # 标记为需要重新安排
+                    transport["_year_mismatch"] = True
+
             valid_list = schedule.get("flights", []) + schedule.get("trains", [])
             # 检查当前班次是否有效
             is_valid = False
@@ -123,6 +145,10 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 for item in valid_list:
                     if item.get("num") == flight_num:
                         is_valid = True
+                        # 如果有效，同步更新机场名（用SHORT_AIRPORT_MAP解析为全名）
+                        if item.get("from_airport"):
+                            full_name = SHORT_AIRPORT_MAP.get(item["from_airport"], item["from_airport"])
+                            transport["station"] = full_name
                         break
             # 如果无效且有真实班次数据，选第一个替换
             if not is_valid and valid_list:
@@ -132,15 +158,19 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", transport.get("departure_time", ""))
                 transport["arrival_time"] = chosen.get("arr", transport.get("arrival_time", ""))
+                # 用SHORT_AIRPORT_MAP解析机场全名
                 if chosen.get("from_airport"):
-                    transport["station"] = chosen["from_airport"] + "机场"
-                elif chosen.get("to_airport"):
-                    if not transport.get("station"):
-                        transport["station"] = chosen.get("to_airport", "") + "机场"
+                    full_name = SHORT_AIRPORT_MAP.get(chosen["from_airport"], chosen["from_airport"])
+                    transport["station"] = full_name
                 # 更新duration，包含班次号
                 if chosen.get("duration"):
                     transport["duration"] = f"{chosen['num']} {chosen['duration']}"
-                transport["note"] = (transport.get("note", "") + f"（已校准为真实班次{chosen['num']}）").strip()
+                transport["note"] = (transport.get("note", "") + f"（已校准为真实班次{chosen['num']}，{travel_year}年运营）").strip()
+            elif not is_valid and not valid_list and flight_num:
+                # 无真实数据且AI编造了班次号，清空
+                print(f"[WARN] 无{dep_city_for_check}-{arr_city_for_check}真实班次数据，AI编造了{flight_num}，已清空")
+                transport["flight_number"] = ""
+                transport["note"] = (transport.get("note", "") + f"（原班次{flight_num}无真实数据验证，请自行在携程查询实时班次）").strip()
 
 
 @app.get("/api/locate")
@@ -348,7 +378,7 @@ async def generate_trip(req: TripRequest):
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 后处理验证：检查并修正AI生成的机场名
-        _validate_transport_airports(trip_data, req.departure_city, dest)
+        _validate_transport_airports(trip_data, req.departure_city, dest, req.start_date)
 
         # 3. 补全景点坐标
         await fill_coordinates(trip_data, dest)
@@ -668,7 +698,7 @@ async def regenerate_trip(request: Request):
             return {"success": False, "error": "AI返回数据格式异常，请重试"}
 
         # 后处理验证：检查并修正AI生成的机场名
-        _validate_transport_airports(new_trip, departure_city, dest)
+        _validate_transport_airports(new_trip, departure_city, dest, start_date)
 
         # 补全坐标
         try:
