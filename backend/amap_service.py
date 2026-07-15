@@ -64,7 +64,9 @@ async def fill_coordinates(trip_data: dict, dest: str):
     """为行程中缺少坐标的景点补全坐标"""
     for day in trip_data.get("itinerary", []):
         for slot in ["morning", "afternoon", "evening"]:
-            spot_data = day.get(slot, {})
+            spot_data = day.get(slot)
+            if not spot_data or not isinstance(spot_data, dict):
+                continue
             spot_name = spot_data.get("spot", "")
             if spot_name and not spot_data.get("location"):
                 loc = await amap_geocode(spot_name, dest)
