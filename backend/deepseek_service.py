@@ -358,7 +358,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 4. transport_mode字段：说明推荐的交通工具及理由
 5. 酒店推荐位置方便、性价比高的，给出具体名称和位置坐标
 6. 门票中 need_booking=true 的景点必须说明提前几天预约
-7. 【景区预约链接-最高优先级】对于需要预约的景区，link字段必须填写该景区的官方预约网址（公众号链接、小程序链接或官网链接），绝对不能填携程(ctrip.com)链接！如故宫填"https://gugong.ktmtech.cn/"，莫高窟填"https://www.mgk.org.cn/"，迪士尼填"https://www.shanghaidisneyresort.com/"等。如不确定官方网址，填平台名称并在note中说明。
+7. 【景区预约链接-最高优先级】只有 need_booking=true 的景点才需要填官方预约网址（公众号链接、小程序链接或官网链接），link必须是完整可访问的URL（以http://或https://开头），绝对不能填携程(ctrip.com)链接！如故宫填"https://gugong.ktmtech.cn/"，莫高窟填"https://www.mgk.org.cn/"，迪士尼填"https://www.shanghaidisneyresort.com/"等。如不确定官方网址，填平台名称并在note中说明，link留空字符串。need_booking=false的景点link填携程链接"https://piao.ctrip.com/"即可。
 8. 【换酒店推荐】分析行程中景点的地理分布，如果不同天的景点集中在不同区域（如Day1-3在城东，Day4-5在城西），建议中途换酒店减少通勤时间，在 hotel_changes 中列出换酒店建议
 9. hotels 中 stay_days 字段注明该酒店适合入住的日期范围
 10. 只输出JSON，不要markdown代码块"""

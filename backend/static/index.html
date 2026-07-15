@@ -1612,16 +1612,36 @@ function renderTrip(data){
 
   let ticketHtml = '';
   if (bk.tickets && bk.tickets.length) {
-    ticketHtml = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约（需提前预约）</div>';
-    bk.tickets.forEach(t => {
-      ticketHtml += `<div class="booking-item ticket-item">
-        <div class="booking-row"><span class="ticket-spot">${t.spot}</span><span class="ticket-price">${t.price}</span></div>
-        ${t.need_booking ? `<div class="booking-row"><span class="ticket-booking-warn">⚠ 需提前${t.booking_days}预约</span></div>` : ''}
-        <div class="booking-row"><span class="ticket-platform">平台：${t.platform||''}</span></div>
-        <div class="ticket-note">${t.note||''}</div>
-        <button class="btn-book warn" onclick="window.open('${t.link}','_blank')">去预约</button>
-      </div>`;
+    ticketHtml = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约</div>';
+    var hasBookingTicket = false;
+    bk.tickets.forEach(function(t) {
+      var isBooking = t.need_booking === true;
+      if (isBooking) hasBookingTicket = true;
+      var btnHtml = '';
+      if (isBooking) {
+        // 需预约：跳转官方网址，校验URL有效性
+        var link = t.link || '';
+        var isValidUrl = link && (link.indexOf('http://') === 0 || link.indexOf('https://') === 0);
+        if (isValidUrl) {
+          btnHtml = '<button class="btn-book warn" onclick="var w=window.open(\'\',\'_blank\');if(w){w.location.href=\'' + link.replace(/'/g, "\\'") + '\'}">去预约</button>';
+        } else {
+          btnHtml = '<button class="btn-book warn" disabled style="opacity:0.5">无有效预约链接</button>';
+        }
+      } else {
+        // 不需要预约：跳转携程
+        btnHtml = '<button class="btn-book" onclick="window.open(\'https://piao.ctrip.com/\',\'_blank\')">去携程购票</button>';
+      }
+      ticketHtml += '<div class="booking-item ticket-item">' +
+        '<div class="booking-row"><span class="ticket-spot">' + t.spot + '</span><span class="ticket-price">' + t.price + '</span></div>' +
+        (isBooking ? '<div class="booking-row"><span class="ticket-booking-warn">⚠ 需提前' + t.booking_days + '预约</span></div>' : '') +
+        '<div class="booking-row"><span class="ticket-platform">平台：' + (t.platform||'') + '</span></div>' +
+        '<div class="ticket-note">' + (t.note||'') + '</div>' +
+        btnHtml +
+        '</div>';
     });
+    if (!hasBookingTicket) {
+      ticketHtml = ticketHtml.replace('🎫 门票预约', '🎫 门票购票');
+    }
     ticketHtml += '</div>';
   }
   document.getElementById('ticketsCard').innerHTML = ticketHtml;
