@@ -1414,6 +1414,8 @@ function renderTrip(data){
   if (data.departure_transport) {
     var dt = data.departure_transport;
     var isFlightOrTrain = dt.type && (dt.type.indexOf('飞机')>=0 || dt.type.indexOf('航班')>=0 || dt.type.indexOf('高铁')>=0 || dt.type.indexOf('火车')>=0 || dt.type.indexOf('动车')>=0);
+    var isTrainType = dt.type && (dt.type.indexOf('高铁')>=0 || dt.type.indexOf('火车')>=0 || dt.type.indexOf('动车')>=0);
+    var isFlightType = dt.type && (dt.type.indexOf('飞机')>=0 || dt.type.indexOf('航班')>=0);
     transHtml += '<div class="bottom-card"><div class="bottom-title">🚀 出发交通</div>';
     // 交通工具配图：根据交通方式类型自动匹配本地图片
     var viSrc = getTransportImg(dt, dt.vehicle_image);
@@ -1465,7 +1467,11 @@ function renderTrip(data){
       }
     }
     if (!depBookingLink && isFlightOrTrain) {
-      depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+      if (isTrainType) {
+        depBookingLink = 'https://trains.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+      } else {
+        depBookingLink = 'https://flights.ctrip.com/booking/' + (departureCity||'') + '-' + (data.destination||'') + '-day-1.html';
+      }
     }
     if (depBookingLink) {
       transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
@@ -1479,6 +1485,7 @@ function renderTrip(data){
   if (data.return_transport) {
     var rt = data.return_transport;
     var isRtFlightOrTrain = rt.type && (rt.type.indexOf('飞机')>=0 || rt.type.indexOf('航班')>=0 || rt.type.indexOf('高铁')>=0 || rt.type.indexOf('火车')>=0 || rt.type.indexOf('动车')>=0);
+    var isRtTrainType = rt.type && (rt.type.indexOf('高铁')>=0 || rt.type.indexOf('火车')>=0 || rt.type.indexOf('动车')>=0);
     transHtml += '<div class="bottom-card"><div class="bottom-title">🏠 返程交通</div>';
     var rviSrc = getTransportImg(rt, rt.vehicle_image);
     transHtml += '<div class="transport-img-wrap"><img src="' + rviSrc + '" alt="' + (rt.type||'交通') + '" onerror="this.parentElement.style.display=\'none\'" loading="lazy"></div>';
@@ -1529,7 +1536,11 @@ function renderTrip(data){
       }
     }
     if (!retBookingLink && isRtFlightOrTrain) {
-      retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+      if (isRtTrainType) {
+        retBookingLink = 'https://trains.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+      } else {
+        retBookingLink = 'https://flights.ctrip.com/booking/' + (data.destination||'') + '-' + (departureCity||'') + '-day-1.html';
+      }
     }
     if (retBookingLink) {
       transHtml += '<div style="margin-top:12px;padding:12px;background:#FFF8E1;border-radius:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">';
@@ -1585,13 +1596,6 @@ function renderTrip(data){
   for(let k in bd) bHtml += `<div class="budget-item"><span class="budget-name">${k}</span><span class="budget-value">${bd[k]}</span></div>`;
   bHtml += '</div></div>';
   document.getElementById('budgetCard').innerHTML = bHtml;
-
-  // 交通方式推荐（追加到已有交通卡片后面，不覆盖）
-  var tHtml = '';
-  if (bk.transport_mode) {
-    tHtml = `<div class="bottom-card"><div class="bottom-title">🚄 推荐交通方式</div><div style="font-size:18px;color:#333;padding:8px 0">${bk.transport_mode}</div></div>`;
-  }
-  document.getElementById('transportCard').innerHTML += tHtml;
 
   let hHtml = '';
   if (bk.hotels && bk.hotels.length) {
