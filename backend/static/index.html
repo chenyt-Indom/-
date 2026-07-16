@@ -2,7 +2,12 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<meta name="referrer" content="never">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>行旅白 AI 旅行规划</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -628,8 +633,53 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <script>
+// ========== 微信/低版本浏览器兼容 polyfill ==========
+// Promise polyfill（微信X5浏览器可能不支持）
+if (typeof Promise === 'undefined') {
+  (function(){var P=function(fn){var self=this;self._state=0;self._value=null;self._deferreds=[];try{fn(function(v){self.resolve(v)},function(e){self.reject(e)})}catch(e){self.reject(e)}};P.prototype.resolve=function(v){var self=this;if(self._state!==0)return;self._state=1;self._value=v;self._handle()};P.prototype.reject=function(e){var self=this;if(self._state!==0)return;self._state=2;self._value=e;self._handle()};P.prototype.then=function(onFulfilled,onRejected){var self=this;return new P(function(resolve,reject){self._deferreds.push({onFulfilled:onFulfilled||function(v){return v},onRejected:onRejected||function(e){throw e},resolve:resolve,reject:reject});if(self._state!==0)self._handle()})};P.prototype['catch']=function(onRejected){return this.then(null,onRejected)};P.prototype._handle=function(){var self=this;if(self._state===0)return;setTimeout(function(){var deferreds=self._deferreds;self._deferreds=[];for(var i=0;i<deferreds.length;i++){var d=deferreds[i];var cb=self._state===1?d.onFulfilled:d.onRejected;try{var ret=cb(self._value);if(ret===undefined){d.resolve(self._value);return}else if(ret instanceof P){ret.then(d.resolve,d.reject)}else{d.resolve(ret)}}catch(e){d.reject(e)}}},0)};P.all=function(promises){return new P(function(resolve,reject){var results=[];var count=0;if(promises.length===0){resolve(results);return}for(var i=0;i<promises.length;i++){(function(idx){var p=promises[idx];if(p&&typeof p.then==='function'){p.then(function(v){results[idx]=v;count++;if(count===promises.length)resolve(results)},function(e){reject(e)})}else{results[idx]=p;count++;if(count===promises.length)resolve(results)}})(i)}})};window.Promise=P})();
+}
+// fetch polyfill（微信X5浏览器可能不支持）
+if (typeof fetch === 'undefined') {
+  window.fetch = function(url, options) {
+    options = options || {};
+    return new Promise(function(resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open(options.method || 'GET', url, true);
+      if (options.headers) {
+        Object.keys(options.headers).forEach(function(key) {
+          xhr.setRequestHeader(key, options.headers[key]);
+        });
+      }
+      xhr.onload = function() {
+        var resp = {
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: { get: function(name) { return xhr.getResponseHeader(name); } },
+          json: function() { return Promise.resolve(JSON.parse(xhr.responseText)); },
+          text: function() { return Promise.resolve(xhr.responseText); }
+        };
+        if (resp.ok) { resolve(resp); } else { reject(new Error('HTTP ' + xhr.status)); }
+      };
+      xhr.onerror = function() { reject(new Error('Network error')); };
+      xhr.ontimeout = function() { reject(new Error('Request timeout')); };
+      if (options.timeout) xhr.timeout = options.timeout;
+      xhr.send(options.body || null);
+    });
+  };
+}
+// Object.keys polyfill
+if (!Object.keys) {
+  Object.keys = function(obj) {
+    var keys = [];
+    for (var k in obj) { if (Object.prototype.hasOwnProperty.call(obj, k)) keys.push(k); }
+    return keys;
+  };
+}
+// ========== polyfill 结束 ==========
+
 (function() {
-const API = window.location.origin;
+var API = window.location.origin;
 let selectedTags = [];
 let tripData = null;
 let departureCity = '';
@@ -814,7 +864,8 @@ function confirmCity() {
 function cancelCity() {
   document.getElementById('cityModal').classList.remove('show');
 }
-locateCity();
+// 初始化：定位城市（失败不影响页面加载）
+try { locateCity(); } catch(e) { console.warn('定位初始化失败:', e); }
 // 用事件监听器绑定编辑按钮（兜底onclick可能被拦截）
 document.getElementById('cityBadge').addEventListener('click', editCity);
 let overviewMap = null;  // 总览页地图实例
@@ -2658,10 +2709,11 @@ function checkIfToday(dateStr) {
   return d === todayStr;
 }
 
-renderHistory();
+try { renderHistory(); } catch(e) { console.warn('历史记录渲染失败:', e); }
 
 // 检查是否为分享链接，如果是则加载分享行程（只读模式）
 (function checkSharedTrip() {
+  try {
   var params = new URLSearchParams(window.location.search);
   var shareId = params.get('share');
   if (!shareId) return;
@@ -2688,6 +2740,7 @@ renderHistory();
     .catch(function(e) {
       tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">❌</div><div style="color:#666;font-size:16px">加载失败，请检查网络后重试</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
     });
+  } catch(e) { console.warn('分享链接检查失败:', e); }
 })();
 
 function disableControlsForShared() {
@@ -2760,6 +2813,19 @@ window.acceptMonitorSuggestion = acceptMonitorSuggestion;
 window.rejectMonitorSuggestion = rejectMonitorSuggestion;
 window.stopMonitor = window._stopMonitorPermanent;
 })();
+
+// 全局错误捕获（防止微信X5浏览器因JS错误导致白屏）
+window.addEventListener('error', function(e) {
+  console.warn('全局JS错误:', e.message, e.filename, e.lineno);
+  // 确保首页至少可见
+  var homePage = document.getElementById('homePage');
+  if (homePage && homePage.style.display === 'none') {
+    homePage.style.display = 'block';
+  }
+});
+window.addEventListener('unhandledrejection', function(e) {
+  console.warn('未处理的Promise拒绝:', e.reason);
+});
 </script>
 <!-- 城市编辑弹窗 -->
 <div class="modal-overlay" id="cityModal">
