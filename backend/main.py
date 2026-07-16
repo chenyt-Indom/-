@@ -241,14 +241,13 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 print(f"[OK] 飞常准API自动填充: {chosen['num']} type={transport.get('type','')}")
 
             elif flight_num and not all_vf_items:
-                # ❌ 飞常准API无任何数据，但AI填了班次号 → 编造！必须清空
-                issue = f"{key}飞常准API无{dep_city}-{arr_city}任何数据，但AI编造了班次{flight_num}，已清空"
+                # 飞常准API无数据，保留AI生成的班次号但标记为未验证（用户需要看到班次信息）
+                issue = f"{key}飞常准API无{dep_city}-{arr_city}数据，班次{flight_num}保留但标记为未验证"
                 print(f"[WARN] {issue}")
                 result["issues"].append(issue)
-                result["fabricated"].append(flight_num)
-                result["valid"] = False
-                transport["flight_number"] = ""
-                transport["note"] = (transport.get("note", "") + f"（原班次{flight_num}无飞常准API验证，请自行查询）").strip()
+                transport["_verified"] = False
+                transport["_verified_source"] = "未验证（飞常准API无数据）"
+                transport["note"] = (transport.get("note", "") + "（⚠️ 此班次来自AI规划，飞常准API暂无数据，请自行核实）").strip()
 
             elif not flight_num and not all_vf_items:
                 # 飞常准API无数据，AI也没填班次号 → 可接受（保持现状）
@@ -652,13 +651,19 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             print(f"[TRANSPORT] 去程交通缺flight_number，从飞常准API合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["departure_transport"], chosen)
         elif not trip_data["departure_transport"].get("type"):
-            print("[TRANSPORT] 去程交通信息不完整且无API数据，完整填充")
-            trip_data["departure_transport"] = _build_transport_template()
+            # AI生成了transport但缺type和flight_number，从静态数据补全type
+            print("[TRANSPORT] 去程交通信息不完整且无API数据，补全type")
+            from feichangzhun_service import judge_transport
+            try:
+                ti = judge_transport(departure_city, dest)
+                trip_data["departure_transport"]["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
+            except Exception:
+                trip_data["departure_transport"]["type"] = "高铁"
+            trip_data["departure_transport"]["note"] = (trip_data["departure_transport"].get("note", "") + " 暂无实时班次数据，请自行在携程查询").strip()
         else:
-            # 有type但无flight_number且无API数据，尝试从静态数据补全
-            print("[TRANSPORT] 去程交通有type无班次号，尝试从静态数据补全")
-            trip_data["departure_transport"] = _build_transport_template(
-                existing_type_hint=trip_data["departure_transport"].get("type", ""))
+            # 有type但无flight_number且无API数据，保留AI全部数据，仅添加提示
+            print("[TRANSPORT] 去程交通有type无班次号，保留AI数据并添加提示")
+            trip_data["departure_transport"]["note"] = (trip_data["departure_transport"].get("note", "") + " 暂无实时班次数据，请自行在携程查询").strip()
 
     # 确保返程交通
     if not trip_data.get("return_transport") or not isinstance(trip_data.get("return_transport"), dict):
@@ -679,13 +684,19 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             print(f"[TRANSPORT] 返程交通缺flight_number，从飞常准API合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["return_transport"], chosen)
         elif not trip_data["return_transport"].get("type"):
-            print("[TRANSPORT] 返程交通信息不完整且无API数据，完整填充")
-            trip_data["return_transport"] = _build_transport_template(is_return=True)
+            # AI生成了transport但缺type和flight_number，从静态数据补全type
+            print("[TRANSPORT] 返程交通信息不完整且无API数据，补全type")
+            from feichangzhun_service import judge_transport
+            try:
+                ti = judge_transport(dest, departure_city)
+                trip_data["return_transport"]["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
+            except Exception:
+                trip_data["return_transport"]["type"] = "高铁"
+            trip_data["return_transport"]["note"] = (trip_data["return_transport"].get("note", "") + " 暂无实时班次数据，请自行在携程查询").strip()
         else:
-            # 有type但无flight_number且无API数据，尝试从静态数据补全
-            print("[TRANSPORT] 返程交通有type无班次号，尝试从静态数据补全")
-            trip_data["return_transport"] = _build_transport_template(is_return=True,
-                existing_type_hint=trip_data["return_transport"].get("type", ""))
+            # 有type但无flight_number且无API数据，保留AI全部数据，仅添加提示
+            print("[TRANSPORT] 返程交通有type无班次号，保留AI数据并添加提示")
+            trip_data["return_transport"]["note"] = (trip_data["return_transport"].get("note", "") + " 暂无实时班次数据，请自行在携程查询").strip()
 
     return trip_data
 
