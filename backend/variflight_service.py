@@ -2,6 +2,20 @@
 import httpx
 from config import VARIFLIGHT_KEY, VARIFLIGHT_URL
 
+# MCP工具名 → REST端点名映射（飞常准API的MCP工具名与REST端点名不同）
+MCP_TO_REST_ENDPOINT = {
+    "searchFlightsByDepArr": "flights",
+    "searchFlightsByNumber": "flight",
+    "getFlightTransferInfo": "transfer",
+    "flightHappinessIndex": "happiness",
+    "getRealtimeLocationByAnum": "realtimeLocation",
+    "getFutureWeatherByAirport": "futureAirportWeather",
+    # 以下端点名与MCP工具名一致，无需映射
+    "searchFlightItineraries": "searchFlightItineraries",
+    "getFlightPriceByCities": "getFlightPriceByCities",
+    "trainStanTicket": "trainStanTicket",
+}
+
 
 def _fmt_duration(raw: str) -> str:
     """将分钟数或秒数转换为 'XhYmin' 格式"""
@@ -24,30 +38,54 @@ def _fmt_duration(raw: str) -> str:
 
 
 async def _call_variflight(endpoint: str, params: dict) -> dict:
-    """调用飞常准API通用方法，支持两种格式：
-    1. JSON-RPC 2.0 格式（MCP标准协议）
-    2. 自定义REST格式（兜底回退）
+    """调用飞常准API通用方法，使用REST格式
+    飞常准API的MCP工具名与REST端点名不同，需要映射后再调用
     参数必须嵌套在params键下"""
     if not VARIFLIGHT_KEY:
         return {"success": False, "error": "VARIFLIGHT_API_KEY未配置", "data": []}
+    # 将MCP工具名映射为REST端点名
+    rest_endpoint = MCP_TO_REST_ENDPOINT.get(endpoint, endpoint)
     async with httpx.AsyncClient(timeout=30.0) as client:
         common_headers = {
             "X-VARIFLIGHT-KEY": VARIFLIGHT_KEY,
             "Content-Type": "application/json",
         }
-        # 方案1：JSON-RPC 2.0 格式（MCP标准协议，优先尝试）
+        # 方案1：REST格式（优先使用，飞常准API主要支持此格式）
+        try:
+            resp = await client.post(
+                VARIFLIGHT_URL,
+                headers=common_headers,
+                json={"endpoint": rest_endpoint, "params": params},
+            )
+            if resp.status_code == 401:
+                return {"success": False, "error": "飞常准API Key无效", "data": []}
+            if resp.status_code != 200:
+                return {"success": False, "error": f"飞常准API HTTP错误: {resp.status_code}", "data": []}
+            data = resp.json()
+            if data.get("code") == 200:
+                raw_data = data.get("data", data)
+                return {"success": True, "data": raw_data}
+            resp_preview = str(data)[:200]
+            print(f"[VARIFLIGHT] REST响应格式异常: {resp_preview}")
+            return {"success": False, "error": f"飞常准API返回错误: {data.get('message', '')}", "data": []}
+        except Exception as e:
+            last_error = f"REST调用失败: {str(e)}"
+
+        # 方案2：JSON-RPC 2.0 格式（兜底回退，当前服务器不支持此格式）
         jsonrpc_body = {
             "jsonrpc": "2.0",
             "method": "tools/call",
             "params": {"name": endpoint, "arguments": params},
             "id": 1,
         }
-        last_error = ""
         try:
             resp = await client.post(VARIFLIGHT_URL, headers=common_headers, json=jsonrpc_body)
             if resp.status_code == 200:
                 data = resp.json()
-                # JSON-RPC响应格式: {"result": {"content": [{"type": "text", "text": "..."}]}}
+                if isinstance(data, dict) and data.get("code") == 200 and "data" in data:
+                    raw_data = data.get("data")
+                    print(f"[VARIFLIGHT] JSON-RPC直接返回格式: code=200, data_type={type(raw_data).__name__}")
+                    return {"success": True, "data": raw_data}
                 rpc_result = data.get("result", {})
                 if rpc_result:
                     content = rpc_result.get("content", [])
@@ -58,44 +96,11 @@ async def _call_variflight(endpoint: str, params: dict) -> dict:
                             inner_data = json.loads(inner_text)
                             if inner_data.get("code") == 200:
                                 return {"success": True, "data": inner_data.get("data", inner_data)}
-                            else:
-                                last_error = f"JSON-RPC返回错误: {inner_data.get('message', '')}"
-                # JSON-RPC错误响应
-                rpc_error = data.get("error", {})
-                if rpc_error:
-                    last_error = f"JSON-RPC错误: {rpc_error.get('message', str(rpc_error))}"
-                # 如果以上都没匹配，记录原始响应以便调试
-                if not last_error:
-                    resp_preview = str(data)[:200]
-                    print(f"[VARIFLIGHT] JSON-RPC响应格式异常: {resp_preview}")
-                    last_error = f"JSON-RPC响应格式异常"
             elif resp.status_code == 401:
-                last_error = "飞常准API Key无效(JSON-RPC)"
-            else:
-                last_error = f"JSON-RPC HTTP错误: {resp.status_code}"
-        except Exception as e:
-            last_error = f"JSON-RPC调用失败: {str(e)}"
-
-        # 方案2：自定义REST格式（兜底回退）
-        try:
-            resp = await client.post(
-                VARIFLIGHT_URL,
-                headers=common_headers,
-                json={"endpoint": endpoint, "params": params},
-            )
-            if resp.status_code == 401:
-                return {"success": False, "error": "飞常准API Key无效", "data": []}
-            if resp.status_code != 200:
-                return {"success": False, "error": f"飞常准API HTTP错误: {resp.status_code} (JSON-RPC also failed: {last_error})", "data": []}
-            data = resp.json()
-            if data.get("code") == 200:
-                return {"success": True, "data": data.get("data", data)}
-            # 记录REST兜底响应
-            resp_preview = str(data)[:200]
-            print(f"[VARIFLIGHT] REST兜底响应格式异常: {resp_preview}")
-            return {"success": False, "error": f"飞常准API返回错误: {data.get('message', '')} (JSON-RPC also failed: {last_error})", "data": []}
-        except Exception as e:
-            return {"success": False, "error": f"飞常准API调用失败: {str(e)} (JSON-RPC also failed: {last_error})", "data": []}
+                return {"success": False, "error": "飞常准API Key无效(JSON-RPC)", "data": []}
+        except Exception:
+            pass
+        return {"success": False, "error": f"飞常准API调用失败: {last_error}", "data": []}
 
 
 async def _try_flight_query(dep_iata: str, arr_iata: str, date: str) -> dict:
@@ -236,25 +241,42 @@ async def _calibrate_nearby_airport_search(dep_city: str, arr_city: str, date: s
 
 
 async def verify_flight_number(flight_num: str, date: str, dep: str = "", arr: str = "") -> dict:
-    """验证航班号是否真实存在（使用机场代码）
-    MCP searchFlightsByNumber 参数: fnum(航班号), date(日期), dep/arr(可选机场代码)"""
+    """验证航班号是否真实存在
+    优先不带dep/arr参数查询（兼容性最好），失败后回退带dep/arr参数"""
     from feichangzhun_service import get_primary_airport_iata
-    params = {"fnum": flight_num, "date": date}
-    if dep:
-        params["dep"] = get_primary_airport_iata(dep) or dep
-    if arr:
-        params["arr"] = get_primary_airport_iata(arr) or arr
-    result = await _call_variflight("searchFlightsByNumber", params)
+
+    # 策略1：不带dep/arr参数查询（兼容性最好，不会因机场代码不匹配而漏查）
+    result = await _call_variflight("searchFlightsByNumber", {"fnum": flight_num, "date": date})
     if result.get("success"):
         data = result.get("data", {})
-        # API返回航班列表，检查是否有匹配的FlightNo
         if isinstance(data, list) and len(data) > 0:
             for f in data:
                 if f.get("FlightNo", f.get("flightNumber", f.get("fnum", ""))) == flight_num:
                     return {"valid": True, "data": f, "_source": "飞常准实时验证"}
         if isinstance(data, dict) and (data.get("FlightNo") or data.get("flightNumber") or data.get("fnum")):
             return {"valid": True, "data": data, "_source": "飞常准实时验证"}
-    return {"valid": False, "error": result.get("error", "航班不存在"), "_source": "飞常准实时验证"}
+        # 如果data是dict且包含error_code（如{"error_code": 10, "error": "暂无数据"}），回退到策略2
+        if isinstance(data, dict) and data.get("error_code"):
+            print(f"[VARIFLIGHT] 航班{flight_num}无dep/arr查询返回错误: {data.get('error','')}，尝试带dep/arr回退")
+
+    # 策略2：带dep/arr参数回退查询
+    if dep or arr:
+        params = {"fnum": flight_num, "date": date}
+        if dep:
+            params["dep"] = get_primary_airport_iata(dep) or dep
+        if arr:
+            params["arr"] = get_primary_airport_iata(arr) or arr
+        result2 = await _call_variflight("searchFlightsByNumber", params)
+        if result2.get("success"):
+            data2 = result2.get("data", {})
+            if isinstance(data2, list) and len(data2) > 0:
+                for f in data2:
+                    if f.get("FlightNo", f.get("flightNumber", f.get("fnum", ""))) == flight_num:
+                        return {"valid": True, "data": f, "_source": "飞常准实时验证"}
+            if isinstance(data2, dict) and (data2.get("FlightNo") or data2.get("flightNumber") or data2.get("fnum")):
+                return {"valid": True, "data": data2, "_source": "飞常准实时验证"}
+
+    return {"valid": False, "error": "航班不存在或未找到", "_source": "飞常准实时验证"}
 
 
 async def search_train_tickets(dep_city: str, arr_city: str, date: str) -> dict:
