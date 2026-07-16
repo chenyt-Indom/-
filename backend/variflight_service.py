@@ -174,7 +174,7 @@ async def get_flight_transfer(dep_city: str, arr_city: str, date: str) -> dict:
 
 async def get_full_route_data(dep_city: str, arr_city: str, date: str) -> dict:
     """获取完整路线数据：航班+火车票+中转方案（并行查询）
-    当飞常准API无数据时，返回明确的_no_data标记和用户友好的提示"""
+    飞常准API优先，无数据时自动回退预存COMMON_ROUTES数据，确保班次号始终可用"""
     import asyncio
     tasks = [
         search_flights_by_route(dep_city, arr_city, date),
@@ -189,6 +189,26 @@ async def get_full_route_data(dep_city: str, arr_city: str, date: str) -> dict:
     has_flights = bool(flights_result.get("flights"))
     has_trains = bool(trains_result.get("trains"))
     has_data = has_flights or has_trains
+
+    # 飞常准API无数据时，回退预存COMMON_ROUTES数据（确保班次号始终可获取）
+    if not has_data:
+        from feichangzhun_service import get_route_schedule
+        fallback = get_route_schedule(dep_city, arr_city, date)
+        fb_flights = fallback.get("flights", [])
+        fb_trains = fallback.get("trains", [])
+        if fb_flights or fb_trains:
+            print(f"[VARIFLIGHT] API无数据，回退预存COMMON_ROUTES: {len(fb_flights)}航班, {len(fb_trains)}火车")
+            return {
+                "success": True,
+                "flights": fb_flights,
+                "trains": fb_trains,
+                "transfers": transfer_result.get("data", {}),
+                "_source": "预存数据（飞常准API无数据，自动回退）",
+                "_no_data": False,
+                "_no_data_message": "",
+                "flight_error": flights_result.get("error", ""),
+                "train_error": trains_result.get("error", ""),
+            }
 
     return {
         "success": flights_result.get("success") or trains_result.get("success"),

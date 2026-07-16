@@ -97,9 +97,9 @@ async def health_check():
     return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY), "variflight_key": bool(VARIFLIGHT_KEY)}
 
 
-def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = "", variflight_data: dict = None):
-    """飞常准API验证：所有班次必须经飞常准API验证成功后才可安排。
-    原则：飞常准API是唯一数据源，API返回的机场名即为有效名（白名单仅作参考，不强制）。
+def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = "", variflight_data: dict = None, route_schedule: dict = None):
+    """飞常准API验证：所有班次必须经飞常准API或预存数据验证成功后才可安排。
+    原则：飞常准API优先，无数据时回退预存COMMON_ROUTES数据。
     返回: {"valid": bool, "issues": list, "fabricated": list}"""
     from feichangzhun_service import (DECOMMISSIONED_AIRPORTS, SHORT_AIRPORT_MAP)
     from datetime import date as date_type, datetime as dt_type
@@ -124,12 +124,19 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             return "高铁"
         return ""
 
-    # 构建飞常准API数据索引
+    # 构建飞常准API数据索引（优先variflight_data，回退route_schedule预存数据）
     vf_flights = []
     vf_trains = []
     if variflight_data and variflight_data.get("success"):
         vf_flights = variflight_data.get("flights", [])
         vf_trains = variflight_data.get("trains", [])
+
+    # 飞常准API无数据时，回退预存COMMON_ROUTES数据作为验证基准
+    if not vf_flights and not vf_trains and route_schedule:
+        vf_flights = route_schedule.get("flights", [])
+        vf_trains = route_schedule.get("trains", [])
+        if vf_flights or vf_trains:
+            print(f"[VALIDATE] 飞常准API无数据，使用预存COMMON_ROUTES作为验证基准: {len(vf_flights)}航班, {len(vf_trains)}火车")
 
     all_vf_items = vf_flights + vf_trains
     all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
@@ -538,13 +545,21 @@ def _check_transport_type_consistency(trip_data: dict, dep_trans: dict, ret_tran
 
 
 def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str, 
-                           variflight_data: dict = None, days: int = 3) -> dict:
-    """确保行程数据始终包含往返交通信息，缺失时从飞常准API数据自动填充"""
+                           variflight_data: dict = None, days: int = 3,
+                           route_schedule: dict = None) -> dict:
+    """确保行程数据始终包含往返交通信息，缺失时从飞常准API数据或预存COMMON_ROUTES自动填充"""
     vf_flights = []
     vf_trains = []
     if variflight_data and variflight_data.get("success"):
         vf_flights = variflight_data.get("flights", [])
         vf_trains = variflight_data.get("trains", [])
+
+    # 飞常准API无数据时，回退预存COMMON_ROUTES数据
+    if not vf_flights and not vf_trains and route_schedule:
+        vf_flights = route_schedule.get("flights", [])
+        vf_trains = route_schedule.get("trains", [])
+        if vf_flights or vf_trains:
+            print(f"[TRANSPORT] 飞常准API无数据，使用预存COMMON_ROUTES补全: {len(vf_flights)}航班, {len(vf_trains)}火车")
 
     # 构建默认交通模板
     def _build_transport_template(is_return=False, existing_type_hint=""):
@@ -1009,7 +1024,8 @@ async def generate_trip(req: TripRequest):
             try:
                 validation_result = _validate_transport_airports(
                     trip_data, req.departure_city, dest, req.start_date,
-                    transport_info.get("variflight_data"))
+                    transport_info.get("variflight_data"),
+                    transport_info.get("route_schedule"))
             except Exception as e:
                 print(f"[WARN] 交通验证异常（不影响主流程）: {e}")
                 validation_result = {"valid": True, "issues": [], "fabricated": []}
@@ -1037,7 +1053,8 @@ async def generate_trip(req: TripRequest):
         # 确保往返交通信息始终存在
         try:
             _ensure_transport_data(trip_data, req.departure_city, dest,
-                                   transport_info.get("variflight_data"), req.days)
+                                   transport_info.get("variflight_data"), req.days,
+                                   transport_info.get("route_schedule"))
         except Exception as e:
             print(f"[WARN] 交通数据补全失败（不影响主流程）: {e}")
         # 交叉验证：确保行程卡片与交通卡片时间一致性
@@ -1445,7 +1462,8 @@ async def regenerate_trip(request: Request):
             try:
                 validation_result = _validate_transport_airports(
                     new_trip, departure_city, dest, start_date,
-                    transport_info.get("variflight_data"))
+                    transport_info.get("variflight_data"),
+                    transport_info.get("route_schedule"))
             except Exception as e:
                 print(f"[WARN] 重新生成交通验证异常（不影响主流程）: {e}")
                 validation_result = {"valid": True, "issues": [], "fabricated": []}
@@ -1473,7 +1491,8 @@ async def regenerate_trip(request: Request):
         # 确保往返交通信息始终存在
         try:
             _ensure_transport_data(new_trip, departure_city, dest,
-                                   transport_info.get("variflight_data"), days)
+                                   transport_info.get("variflight_data"), days,
+                                   transport_info.get("route_schedule"))
         except Exception as e:
             print(f"[WARN] 重新生成交通数据补全失败（不影响主流程）: {e}")
         # 交叉验证：确保行程卡片与交通卡片时间一致性
