@@ -499,7 +499,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="form-item">
       <label class="label">出行方式</label>
       <div class="tag-group" id="transportGroup">
-        <button class="tag active" data-tag="public" onclick="switchTransport('public')">公共交通</button>
+        <button class="tag" data-tag="plane" onclick="switchTransport('plane')">飞机</button>
+        <button class="tag" data-tag="train" onclick="switchTransport('train')">高铁</button>
+        <button class="tag" data-tag="taxi" onclick="switchTransport('taxi')">打车</button>
         <button class="tag" data-tag="selfdrive" onclick="switchTransport('selfdrive')">自驾</button>
       </div>
     </div>
@@ -690,19 +692,21 @@ window.addEventListener('unhandledrejection', function(e) {
 
 (function() {
 var API = window.location.origin;
-var selectedTags = [];
-var tripData = null;
-var departureCity = '';
-var budgetType = 'total';  // 预算类型：total=总预算, aa=AA制
-var isSelfDrive = false;   // 是否自驾
-var monitorTimer = null;   // 实时监测定时器
-var monitorRejected = false;  // 用户是否拒绝过监测建议
-var monitorStopped = false;   // 用户是否选择不再提示
+let selectedTags = [];
+let tripData = null;
+let departureCity = '';
+let budgetType = 'total';  // 预算类型：total=总预算, aa=AA制
+let isSelfDrive = false;   // 是否自驾（保留兼容性）
+let transportMode = '';     // 出行方式：plane/train/taxi/selfdrive，空字符串=未选择
+let monitorTimer = null;   // 实时监测定时器
+let monitorRejected = false;  // 用户是否拒绝过监测建议
+let monitorStopped = false;   // 用户是否选择不再提示
 
-// 出行方式切换
+// 出行方式切换（飞机/高铁/打车/自驾）
 function switchTransport(type) {
+  transportMode = type;
   isSelfDrive = (type === 'selfdrive');
-  document.querySelectorAll('#transportGroup .tag').forEach(function(b) {
+  document.querySelectorAll('#transportGroup .tag').forEach(b => {
     b.classList.toggle('active', b.dataset.tag === type);
   });
 }
@@ -710,15 +714,15 @@ function switchTransport(type) {
 // 预算类型切换
 function switchBudgetType(type) {
   budgetType = type;
-  document.querySelectorAll('#budgetTypeRow .budget-type-btn').forEach(function(b) {
+  document.querySelectorAll('#budgetTypeRow .budget-type-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.type === type);
   });
 }
 
 // 生成图片兜底URL（用于景点/酒店图片）
 function getFallbackImgUrl(name, type) {
-  var dest = tripData ? tripData.destination : '';
-  var prompt = type === 'weather'
+  const dest = tripData ? tripData.destination : '';
+  const prompt = type === 'weather'
     ? encodeURIComponent('weather landscape ' + name + ', photorealistic, 4K')
     : encodeURIComponent(name + ' ' + dest + ', travel photography, realistic, 4K');
   return 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + prompt + '&image_size=landscape_16_9';
@@ -727,15 +731,15 @@ function getFallbackImgUrl(name, type) {
 // 图片加载失败时的DOM替换兜底（100%可靠，不依赖任何外部资源）
 function imgFallback(img, type, name, onClickFn) {
   // 如果src为空或无效，直接触发API搜索
-  var dest = tripData ? tripData.destination : '';
-  var query = name + (dest ? ' ' + dest : '');
+  const dest = tripData ? tripData.destination : '';
+  const query = name + (dest ? ' ' + dest : '');
   img.style.opacity = '0.5';
   // 优先尝试API搜索真实图片，失败则显示渐变占位卡
   fetch(API + '/api/spot-images?query=' + encodeURIComponent(query) + '&limit=3')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
+    .then(r => r.json())
+    .then(data => {
       if (data.success && data.images && data.images.length > 0) {
-        var newSrc = data.images[0].url;
+        const newSrc = data.images[0].url;
         img.src = newSrc;
         img.style.opacity = '1';
         // 如果新URL也加载失败，显示渐变占位卡
@@ -746,7 +750,7 @@ function imgFallback(img, type, name, onClickFn) {
     })
     .catch(function() {
       // 第二次尝试：直接用text_to_image兜底
-      var fallbackUrl = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(name + ' ' + dest + ', travel photography, realistic, 4K') + '&image_size=landscape_16_9';
+      const fallbackUrl = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=' + encodeURIComponent(name + ' ' + dest + ', travel photography, realistic, 4K') + '&image_size=landscape_16_9';
       img.src = fallbackUrl;
       img.style.opacity = '1';
       img.onerror = function() { showGradientFallback(img, type, name, onClickFn); };
@@ -754,16 +758,16 @@ function imgFallback(img, type, name, onClickFn) {
 }
 
 function showGradientFallback(img, type, name, onClickFn) {
-  var colors = {
+  const colors = {
     spot:   { bg: 'linear-gradient(135deg, #4A90D9, #6DB3F2)', icon: '🏛️', w: '100%', h: '200px' },
     hotel:  { bg: 'linear-gradient(135deg, #E67E22, #F0A04B)', icon: '🏨', w: '100%', h: '160px' },
     weather:{ bg: 'linear-gradient(135deg, #5B9BD5, #7EC8E3)', icon: '🌤️', w: '100%', h: '150px' },
   };
-  var c = colors[type] || colors.spot;
-  var div = document.createElement('div');
+  const c = colors[type] || colors.spot;
+  const div = document.createElement('div');
   div.className = 'img-fallback';
-  div.style.cssText = "width:" + (c.w) + ";height:" + (c.h) + ";background:" + (c.bg) + ";cursor:pointer";
-  div.innerHTML = "<span class=\"fb-icon\">" + (c.icon) + "</span><span class=\"fb-name\">" + (name||'') + "</span><span class=\"fb-hint\">点击查看详情</span>";
+  div.style.cssText = `width:${c.w};height:${c.h};background:${c.bg};cursor:pointer`;
+  div.innerHTML = `<span class="fb-icon">${c.icon}</span><span class="fb-name">${name||''}</span><span class="fb-hint">点击查看详情</span>`;
   if (onClickFn) div.onclick = onClickFn;
   if (img && img.parentNode) img.parentNode.replaceChild(div, img);
 }
@@ -781,15 +785,15 @@ function closeQR() {
 
 // 旅行人数加减
 function changePeople(delta) {
-  var input = document.getElementById('travelers');
-  var val = parseInt(input.value) || 1;
+  const input = document.getElementById('travelers');
+  let val = parseInt(input.value) || 1;
   val = Math.max(1, Math.min(50, val + delta));
   input.value = val;
   updatePeopleHint();
 }
 function updatePeopleHint() {
-  var val = parseInt(document.getElementById('travelers').value) || 1;
-  var hint = document.getElementById('peopleHint');
+  const val = parseInt(document.getElementById('travelers').value) || 1;
+  const hint = document.getElementById('peopleHint');
   if (val <= 1) hint.textContent = '1人出行';
   else if (val <= 2) hint.textContent = '情侣出游';
   else if (val <= 4) hint.textContent = '家庭/小团体';
@@ -799,8 +803,8 @@ function updatePeopleHint() {
 
 // 游玩节奏滑块（连续拖曳 0-100）
 function updatePace() {
-  var v = parseInt(document.getElementById('paceSlider').value);
-  var label;
+  const v = parseInt(document.getElementById('paceSlider').value);
+  let label;
   if (v <= 10) label = '极慢节奏';
   else if (v <= 25) label = '慢节奏';
   else if (v <= 40) label = '偏休闲';
@@ -813,17 +817,17 @@ function updatePace() {
 
 // 定位：优先GPS精确坐标→逆地理编码，失败则IP定位兜底
 async function locateCity() {
-  var badge = document.getElementById('cityName');
-  var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const badge = document.getElementById('cityName');
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   // 第一步：尝试浏览器GPS定位
   if (navigator.geolocation) {
     try {
-      var pos = await new Promise(function(resolve, reject) {
+      const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject,
           { enableHighAccuracy: true, timeout: isMobile ? 15000 : 8000, maximumAge: 600000 });
       });
-      var res = await fetch(API + "/api/regeo?lat=" + (pos.coords.latitude) + "&lng=" + (pos.coords.longitude));
-      var data = await res.json();
+      const res = await fetch(API + `/api/regeo?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`);
+      const data = await res.json();
       if (data.success && data.city) {
         departureCity = data.city;
         badge.textContent = departureCity;
@@ -840,14 +844,14 @@ async function locateCity() {
   // 第二步：IP定位兜底
   badge.textContent = '定位中…';
   try {
-    var res = await fetch(API + '/api/locate');
-    var data = await res.json();
+    const res = await fetch(API + '/api/locate');
+    const data = await res.json();
     if (data.success && data.city) {
       departureCity = data.city;
       badge.textContent = departureCity;
       badge.title = isMobile ? '基于IP定位，可能不准确，点击可手动修改' : 'IP定位';
       // 添加小提示标记
-      var marker = document.getElementById('locateType');
+      const marker = document.getElementById('locateType');
       if (marker) marker.textContent = isMobile ? ' 📍(IP)' : '';
     } else {
       badge.textContent = '点击设置城市';
@@ -864,7 +868,7 @@ function editCity() {
   document.getElementById('cityInput').focus();
 }
 function confirmCity() {
-  var val = document.getElementById('cityInput').value.trim();
+  const val = document.getElementById('cityInput').value.trim();
   if (val) {
     departureCity = val;
     document.getElementById('cityName').textContent = departureCity;
@@ -878,10 +882,10 @@ function cancelCity() {
 try { locateCity(); } catch(e) { console.warn('定位初始化失败:', e); }
 // 用事件监听器绑定编辑按钮（兜底onclick可能被拦截）
 document.getElementById('cityBadge').addEventListener('click', editCity);
-var overviewMap = null;  // 总览页地图实例
-var dayMap = null;       // 行程页弹窗地图实例
-var allMarkers = [];     // 总览页所有标记点
-var PROGRESS_TEXTS = [
+let overviewMap = null;  // 总览页地图实例
+let dayMap = null;       // 行程页弹窗地图实例
+let allMarkers = [];     // 总览页所有标记点
+const PROGRESS_TEXTS = [
   '正在查询目的地信息...',
   '正在获取景点数据...',
   '正在查询天气情况...',
@@ -893,14 +897,14 @@ var PROGRESS_TEXTS = [
 
 function loadHistory() { try { return JSON.parse(localStorage.getItem('trip_history')||'[]'); } catch(e){ return []; } }
 function saveToHistory(data) {
-  var history = loadHistory();
-  var now = Date.now();
-  var threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
-  history = history.filter(function(h) { return h.fav || (h.id && h.id > threeDaysAgo; }));
-  var idx = history.findIndex(function(h) { return h.destination===data.destination && h.days===data.days; });
+  let history = loadHistory();
+  const now = Date.now();
+  const threeDaysAgo = now - 3 * 24 * 60 * 60 * 1000;
+  history = history.filter(h => h.fav || (h.id && h.id > threeDaysAgo));
+  const idx = history.findIndex(h => h.destination===data.destination && h.days===data.days);
   // 保留已有的收藏状态，避免覆盖用户的收藏操作
-  var existingFav = idx > -1 ? history[idx].fav : false;
-  var record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data, fav: existingFav };
+  const existingFav = idx > -1 ? history[idx].fav : false;
+  const record = { id: Date.now(), destination: data.destination, days: data.days, budget: data.budget||'', time: new Date().toLocaleString(), data: data, fav: existingFav };
   if(idx>-1) history[idx]=record; else history.unshift(record);
   if(history.length>20) {
     var nonFav = history.filter(function(h) { return !h.fav; });
@@ -935,14 +939,14 @@ function renderHistory() {
   document.getElementById('historyList').innerHTML = html;
 }
 function toggleHistory() {
-  var list = document.getElementById('historyList');
-  var arrow = document.getElementById('historyArrow');
+  const list = document.getElementById('historyList');
+  const arrow = document.getElementById('historyArrow');
   if(list.classList.contains('show')){ list.classList.remove('show'); arrow.textContent='展开'; }
   else { list.classList.add('show'); arrow.textContent='收起'; }
 }
 function loadHistoryTrip(id) {
-  var history = loadHistory();
-  var record = history.find(function(h) { return h.id===id; });
+  const history = loadHistory();
+  const record = history.find(h => h.id===id);
   if(record && record.data) { tripData = record.data; renderOverview(record.data); }
 }
 
@@ -951,8 +955,8 @@ var tagBtns = document.querySelectorAll('#tagGroup .tag');
 if (tagBtns && tagBtns.length) {
   tagBtns.forEach(function(btn) {
     btn.addEventListener('click', function(){
-      var tag = this.dataset.tag;
-      var idx = selectedTags.indexOf(tag);
+      const tag = this.dataset.tag;
+      const idx = selectedTags.indexOf(tag);
       if(idx > -1){ selectedTags.splice(idx,1); this.classList.remove('active'); }
       else { selectedTags.push(tag); this.classList.add('active'); }
     });
@@ -1006,12 +1010,12 @@ function enableControls() {
 }
 
 // 生成攻略
-var progressTimer = null;
+let progressTimer = null;
 var btnGen = document.getElementById('btnGenerate');
 if (btnGen) {
 btnGen.addEventListener('click', async function(){
-  var dest = document.getElementById('destination').value.trim();
-  var days = updateDays();
+  const dest = document.getElementById('destination').value.trim();
+  const days = updateDays();
   if(!dest){ alert('请输入目的地'); return; }
   if(days < 1){ alert('请选择出行日期'); return; }
   document.getElementById('generateHint').style.display = 'block';
@@ -1020,12 +1024,12 @@ btnGen.addEventListener('click', async function(){
   document.getElementById('btnNormal').style.display='none';
   document.getElementById('btnLoading').style.display='flex';
   this.disabled = true;
-  var idx = 0;
-  var progEl = document.getElementById('progressText');
+  let idx = 0;
+  const progEl = document.getElementById('progressText');
   progEl.textContent = PROGRESS_TEXTS[0];
-  progressTimer = setInterval(function() { idx=(idx+1)%PROGRESS_TEXTS.length; progEl.textContent=PROGRESS_TEXTS[idx]; }, 2000);
+  progressTimer = setInterval(() => { idx=(idx+1)%PROGRESS_TEXTS.length; progEl.textContent=PROGRESS_TEXTS[idx]; }, 2000);
   try {
-    var res = await fetch(API+'/api/generate-trip',{
+    const res = await fetch(API+'/api/generate-trip',{
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         destination: dest, days: days,
@@ -1037,10 +1041,11 @@ btnGen.addEventListener('click', async function(){
         travelers: parseInt(document.getElementById('travelers').value) || 1,
         pace: parseInt(document.getElementById('paceSlider').value),
         is_self_drive: isSelfDrive,
+        transport_mode: transportMode,
       })
     });
     clearInterval(progressTimer);
-    var data = await res.json();
+    const data = await res.json();
     if(!data.success) {
       alert('攻略生成失败，请检查网络后重试\n'+(data.error||''));
       enableControls();
@@ -1080,27 +1085,27 @@ async function showLoadingAndPreload(data) {
   document.getElementById('homePage').style.display='none';
   document.getElementById('tripPage').style.display='none';
   document.getElementById('overviewPage').style.display='none';
-  var loadPage = document.getElementById('loadingPage');
+  const loadPage = document.getElementById('loadingPage');
   loadPage.classList.add('show');
   document.getElementById('loadProgress').textContent = '正在收集图片...';
   document.getElementById('loadBarFill').style.width = '0%';
 
   // 收集所有需要预加载的图片URL
-  var imgTasks = [];
-  (data.itinerary||[]).forEach(function(day) {
-    var w = day.weather||{};
+  const imgTasks = [];
+  (data.itinerary||[]).forEach(day => {
+    const w = day.weather||{};
     if (w.image) imgTasks.push({url: w.image, type: 'weather', name: day.date});
-    ['morning','afternoon','evening'].forEach(function(slot) {
-      var s = day[slot];
+    ['morning','afternoon','evening'].forEach(slot => {
+      const s = day[slot];
       if (s && s.image) imgTasks.push({url: s.image, type: 'spot', name: s.spot});
     });
   });
-  var bk = data.booking_info||{};
-  (bk.hotels||[]).forEach(function(h) { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.name}); });
-  (bk.hotel_changes||[]).forEach(function(h) { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.to_hotel}); });
+  const bk = data.booking_info||{};
+  (bk.hotels||[]).forEach(h => { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.name}); });
+  (bk.hotel_changes||[]).forEach(h => { if (h.image) imgTasks.push({url: h.image, type: 'hotel', name: h.to_hotel}); });
 
-  var total = imgTasks.length;
-  document.getElementById('loadProgress').textContent = "0/" + (total) + " 张图片已加载";
+  const total = imgTasks.length;
+  document.getElementById('loadProgress').textContent = `0/${total} 张图片已加载`;
   document.getElementById('loadBarFill').style.width = '0%';
 
   if (total === 0) {
@@ -1110,23 +1115,23 @@ async function showLoadingAndPreload(data) {
   }
 
   // 预加载所有图片（带进度条）
-  var loaded = 0;
-  var updateProgress = function() {
+  let loaded = 0;
+  const updateProgress = () => {
     loaded++;
-    var pct = Math.round(loaded / total * 100);
-    document.getElementById('loadProgress').textContent = (loaded) + "/" + (total) + " 张图片已加载";
+    const pct = Math.round(loaded / total * 100);
+    document.getElementById('loadProgress').textContent = `${loaded}/${total} 张图片已加载`;
     document.getElementById('loadBarFill').style.width = pct + '%';
   };
 
-  var preloadOne = function(url) { return new Promise(function(resolve) {; }
-    var img = new Image();
-    img.onload = function() { updateProgress(); resolve(); };
-    img.onerror = function() { updateProgress(); resolve(); };
+  const preloadOne = (url) => new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => { updateProgress(); resolve(); };
+    img.onerror = () => { updateProgress(); resolve(); };
     img.src = url;
-    setTimeout(function() { updateProgress(); resolve(); }, 8000);
+    setTimeout(() => { updateProgress(); resolve(); }, 8000);
   });
 
-  await Promise.all(imgTasks.map(function(t) { return preloadOne(t.url; })));
+  await Promise.all(imgTasks.map(t => preloadOne(t.url)));
 
   // 预加载完成后显示总览
   loadPage.classList.remove('show');
@@ -1147,9 +1152,9 @@ function renderOverview(data){
   // 收藏按钮：先移除旧按钮再创建新按钮，避免重复
   var oldBtn = document.getElementById('favBtn');
   if (oldBtn) oldBtn.remove();
-  var history = loadHistory();
-  var favRecord = history.find(function(h) { return h.destination===data.destination && h.days===data.days && h.fav; });
-  var isFav = !!favRecord;
+  const history = loadHistory();
+  const favRecord = history.find(function(h) { return h.destination===data.destination && h.days===data.days && h.fav; });
+  const isFav = !!favRecord;
   var favBtn = document.createElement('button');
   favBtn.className = 'fav-btn' + (isFav ? ' favorited' : '');
   favBtn.id = 'favBtn';
@@ -1161,17 +1166,17 @@ function renderOverview(data){
   header.appendChild(favBtn);
 
   // 按天构建列表 + 收集所有景点坐标
-  var allSpots = 0;
-  var listHtml = '';
+  let allSpots = 0;
+  let listHtml = '';
   allMarkers = [];
-  var globalOrder = 1;
+  let globalOrder = 1;
 
-  (data.itinerary||[]).forEach(function(day, idx) {
-    var spots = [];
-    ['morning','afternoon','evening'].forEach(function(slot) {
-      var s = day[slot];
+  (data.itinerary||[]).forEach((day, idx) => {
+    const spots = [];
+    ['morning','afternoon','evening'].forEach(slot => {
+      const s = day[slot];
       if(s && s.spot){
-        var [lng, lat] = (s.location||'').split(',').map(Number);
+        const [lng, lat] = (s.location||'').split(',').map(Number);
         if (!isNaN(lng) && !isNaN(lat)) {
           spots.push({ name: s.spot, time: slot==='morning'?'上午':slot==='afternoon'?'下午':'晚上', location: s.location, need_booking: s.need_booking, lng, lat, order: globalOrder });
           allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
@@ -1182,36 +1187,46 @@ function renderOverview(data){
       }
     });
     allSpots += spots.length;
-    listHtml += "<div class=\"day-summary\">\n      <div class=\"day-summary-header\" onclick=\"toggleDay(" + (idx) + ")\">\n        <span class=\"day-label\">Day " + (day.day) + "</span>\n        <span class=\"day-summary-date\">" + (day.date||'') + "</span>\n        <span class=\"day-arrow\" id=\"dayArrow" + (idx) + "\">▶</span>\n      </div>\n      <div class=\"day-spots\" id=\"daySpots" + (idx) + "\">";
-    spots.forEach(function(s, si) {
-      listHtml += "<div class=\"day-spot\">\n        <span class=\"spot-num\">" + (s.order||(si+1)) + "</span>\n        <div class=\"spot-info\"><span class=\"spot-name\">" + (s.name) + (s.need_booking?' ⚠需预约':'') + "</span><span class=\"spot-time\">" + (s.time) + "</span></div>\n        " + (s.location ? "<span class=\"spot-loc-icon\" onclick=\"focusSpot('" + (s.name) + "'," + (s.lat) + "," + (s.lng) + ")\">📍</span>" : '') + "\n      </div>";
+    listHtml += `<div class="day-summary">
+      <div class="day-summary-header" onclick="toggleDay(${idx})">
+        <span class="day-label">Day ${day.day}</span>
+        <span class="day-summary-date">${day.date||''}</span>
+        <span class="day-arrow" id="dayArrow${idx}">▶</span>
+      </div>
+      <div class="day-spots" id="daySpots${idx}">`;
+    spots.forEach((s, si) => {
+      listHtml += `<div class="day-spot">
+        <span class="spot-num">${s.order||(si+1)}</span>
+        <div class="spot-info"><span class="spot-name">${s.name}${s.need_booking?' ⚠需预约':''}</span><span class="spot-time">${s.time}</span></div>
+        ${s.location ? `<span class="spot-loc-icon" onclick="focusSpot('${s.name}',${s.lat},${s.lng})">📍</span>` : ''}
+      </div>`;
     });
-    listHtml += "</div></div>";
+    listHtml += `</div></div>`;
   });
   document.getElementById('dayList').innerHTML = listHtml;
-  document.getElementById('spotSummary').textContent = "共 " + (allMarkers.length) + " 个景点已标注";
+  document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个景点已标注`;
 
   // 收集酒店和门票预约位置到地图
-  var bk = data.booking_info || {};
-  (bk.hotels || []).forEach(function(h) {
+  const bk = data.booking_info || {};
+  (bk.hotels || []).forEach(h => {
     if (h.location) {
-      var [lng, lat] = h.location.split(',').map(Number);
+      const [lng, lat] = h.location.split(',').map(Number);
       if (!isNaN(lng) && !isNaN(lat)) {
         allMarkers.push({ name: h.name, lng, lat, order: globalOrder, day: 0, type: 'hotel' });
         globalOrder++;
       }
     }
   });
-  (bk.tickets || []).forEach(function(t) {
+  (bk.tickets || []).forEach(t => {
     if (t.location && t.need_booking) {
-      var [lng, lat] = t.location.split(',').map(Number);
+      const [lng, lat] = t.location.split(',').map(Number);
       if (!isNaN(lng) && !isNaN(lat)) {
         allMarkers.push({ name: t.spot, lng, lat, order: globalOrder, day: 0, type: 'ticket' });
         globalOrder++;
       }
     }
   });
-  document.getElementById('spotSummary').textContent = "共 " + (allMarkers.length) + " 个地点已标注（含酒店、需预约景点）";
+  document.getElementById('spotSummary').textContent = `共 ${allMarkers.length} 个地点已标注（含酒店、需预约景点）`;
 
   // 初始化高德地图
   initOverviewMap(allMarkers);
@@ -1221,17 +1236,17 @@ function renderOverview(data){
 // 初始化总览页高德地图
 function initOverviewMap(markers) {
   if (typeof AMap === 'undefined') { console.warn('高德地图 SDK 未加载'); return; }
-  var container = document.getElementById('overviewMapContainer');
+  const container = document.getElementById('overviewMapContainer');
   if (!container) return;
 
   // 销毁旧地图
   if (overviewMap) { overviewMap.destroy(); overviewMap = null; }
 
   // 计算中心点
-  var centerLng = 116.4, centerLat = 39.9;
+  let centerLng = 116.4, centerLat = 39.9;
   if (markers.length > 0) {
-    centerLng = markers.reduce(function(s, m) { return s + m.lng; }, 0) / markers.length;
-    centerLat = markers.reduce(function(s, m) { return s + m.lat; }, 0) / markers.length;
+    centerLng = markers.reduce((s,m) => s + m.lng, 0) / markers.length;
+    centerLat = markers.reduce((s,m) => s + m.lat, 0) / markers.length;
   }
 
   overviewMap = new AMap.Map('overviewMapContainer', {
@@ -1241,24 +1256,24 @@ function initOverviewMap(markers) {
   });
 
   // 添加标记点
-  markers.forEach(function(m) {
-    var bgColor = '#4A90D9';
-    var label = (m.order);
+  markers.forEach(m => {
+    let bgColor = '#4A90D9';
+    let label = `${m.order}`;
     if (m.type === 'hotel') { bgColor = '#E67E22'; label = '🏨'; }
     else if (m.type === 'ticket') { bgColor = '#E74C3C'; label = '🎫'; }
-    var content = "<div style=\"background:" + (bgColor) + ";color:#fff;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;font-weight:700\">" + (label) + "</div>";
-    var marker = new AMap.Marker({
+    const content = `<div style="background:${bgColor};color:#fff;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;font-weight:700">${label}</div>`;
+    const marker = new AMap.Marker({
       position: [m.lng, m.lat],
       content: content,
       offset: new AMap.Pixel(-11, -11),
-      title: m.type === 'hotel' ? "🏨 " + (m.name) : m.type === 'ticket' ? "🎫 " + (m.name) : (m.order) + ". Day" + (m.day) + " " + (m.name),
+      title: m.type === 'hotel' ? `🏨 ${m.name}` : m.type === 'ticket' ? `🎫 ${m.name}` : `${m.order}. Day${m.day} ${m.name}`,
     });
     marker.setMap(overviewMap);
 
-    marker.on('click', function() {
-      var prefix = m.type === 'hotel' ? '🏨 ' : m.type === 'ticket' ? '🎫 需预约 ' : '';
-      var info = new AMap.InfoWindow({
-        content: "<div style=\"padding:4px 8px;font-size:13px\"><b>" + (prefix) + (m.name) + "</b>" + (m.day ? '<br>Day'+m.day : '') + "</div>",
+    marker.on('click', () => {
+      const prefix = m.type === 'hotel' ? '🏨 ' : m.type === 'ticket' ? '🎫 需预约 ' : '';
+      const info = new AMap.InfoWindow({
+        content: `<div style="padding:4px 8px;font-size:13px"><b>${prefix}${m.name}</b>${m.day ? '<br>Day'+m.day : ''}</div>`,
         offset: new AMap.Pixel(0, -30),
       });
       info.open(overviewMap, [m.lng, m.lat]);
@@ -1276,8 +1291,8 @@ function focusSpot(name, lat, lng) {
   if (overviewMap) {
     overviewMap.setCenter([lng, lat]);
     overviewMap.setZoom(15);
-    var info = new AMap.InfoWindow({
-      content: "<div style=\"padding:4px 8px;font-size:13px\"><b>" + (name) + "</b></div>",
+    const info = new AMap.InfoWindow({
+      content: `<div style="padding:4px 8px;font-size:13px"><b>${name}</b></div>`,
       offset: new AMap.Pixel(0, -30),
     });
     info.open(overviewMap, [lng, lat]);
@@ -1285,8 +1300,8 @@ function focusSpot(name, lat, lng) {
 }
 
 function toggleDay(idx) {
-  var el = document.getElementById('daySpots'+idx);
-  var arrow = document.getElementById('dayArrow'+idx);
+  const el = document.getElementById('daySpots'+idx);
+  const arrow = document.getElementById('dayArrow'+idx);
   if (el.classList.contains('show')) { el.classList.remove('show'); arrow.textContent='▶'; }
   else { el.classList.add('show'); arrow.textContent='▼'; }
 }
@@ -1310,16 +1325,16 @@ function goToOverview(){
   document.getElementById('tripPage').style.display='none';
   document.getElementById('overviewPage').style.display='flex';
   // 重新初始化总览地图
-  setTimeout(function() { initOverviewMap(allMarkers); }, 100);
+  setTimeout(() => initOverviewMap(allMarkers), 100);
   window.scrollTo(0,0);
 }
 
 // 收藏/取消收藏行程
 function toggleFavorite() {
   if (!tripData) return;
-  var btn = document.getElementById('favBtn');
-  var star = document.getElementById('favStar');
-  var hint = document.getElementById('favHint');
+  const btn = document.getElementById('favBtn');
+  const star = document.getElementById('favStar');
+  const hint = document.getElementById('favHint');
   if (!btn || !star || !hint) return;
   if (btn.classList.contains('favorited')) {
     btn.classList.remove('favorited');
@@ -1354,14 +1369,14 @@ function toggleFavorite() {
 // 刷新收藏行程的天气和价格
 async function refreshSavedTrip(city) {
   try {
-    var res = await fetch(API + "/api/saved-trips/refresh?city=" + (encodeURIComponent(city)) + "&days=1");
-    var data = await res.json();
+    const res = await fetch(API + `/api/saved-trips/refresh?city=${encodeURIComponent(city)}&days=1`);
+    const data = await res.json();
     if (data.success) {
       // 更新localStorage中的天气数据
-      Object.keys(localStorage).forEach(function(key) {
+      Object.keys(localStorage).forEach(key => {
         if (key.startsWith('saved_trip_') && key.includes(city)) {
           try {
-            var saved = JSON.parse(localStorage.getItem(key));
+            const saved = JSON.parse(localStorage.getItem(key));
             saved.weather = data.weather;
             saved.updated_at = data.updated_at;
             localStorage.setItem(key, JSON.stringify(saved));
@@ -1374,22 +1389,22 @@ async function refreshSavedTrip(city) {
 
 // 加载已收藏的行程列表（首页显示）
 function loadSavedTrips() {
-  var savedTrips = [];
-  Object.keys(localStorage).forEach(function(key) {
+  const savedTrips = [];
+  Object.keys(localStorage).forEach(key => {
     if (key.startsWith('saved_trip_')) {
       try {
-        var data = JSON.parse(localStorage.getItem(key));
+        const data = JSON.parse(localStorage.getItem(key));
         if (data && data.destination) savedTrips.push(data);
       } catch(e) {}
     }
   });
-  return savedTrips.sort(function(a, b) { return new Date(b.saved_at; }) - new Date(a.saved_at));
+  return savedTrips.sort((a,b) => new Date(b.saved_at) - new Date(a.saved_at));
 }
 
 function openAmapLink(name, location){
   if(!location) return;
-  var [lng, lat] = location.split(',');
-  var uri = "https://uri.amap.com/marker?position=" + (lng) + "," + (lat) + "&name=" + (encodeURIComponent(name)) + "&coordinate=gaode&callnative=1";
+  const [lng, lat] = location.split(',');
+  const uri = `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name)}&coordinate=gaode&callnative=1`;
   window.open(uri, '_blank');
 }
 
@@ -1476,16 +1491,16 @@ function getWeatherIcon(desc) {
 
 function renderTrip(data){
   tripData = data;
-  var bk = data.booking_info || {};
+  const bk = data.booking_info || {};
   document.getElementById('tripTitle').textContent = data.destination + data.days + '日游';
-  var wHtml = '';
-  (data.weather||[]).forEach(function(w) {
-    wHtml += "<div class=\"weather-item\"><span class=\"w-icon\">" + (w.icon||'☀️') + "</span><span class=\"w-date\">" + (w.date) + "</span><span class=\"w-desc\">" + (w.weather) + "</span><span class=\"w-temp\">" + (w.temp) + "</span></div>";
+  let wHtml = '';
+  (data.weather||[]).forEach(w=>{
+    wHtml += `<div class="weather-item"><span class="w-icon">${w.icon||'☀️'}</span><span class="w-date">${w.date}</span><span class="w-desc">${w.weather}</span><span class="w-temp">${w.temp}</span></div>`;
   });
   document.getElementById('weatherBar').innerHTML = wHtml;
 
   // 出发/返程交通卡片
-  var transHtml = '';
+  let transHtml = '';
   var viMap = {airplane:'transport/plane.jpg',high_speed_rail:'transport/train.jpg',car:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=car+on+highway+scenic+road+trip+photorealistic+4k&image_size=landscape_16_9',bus:'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=modern+long+distance+bus+on+highway+photorealistic+4k&image_size=landscape_16_9'};
   // 根据交通方式类型自动选择合适的配图
   function getTransportImg(transport, vehicleImage) {
@@ -1738,12 +1753,12 @@ function renderTrip(data){
     return html;
   }
 
-  var dHtml = '';
-  (data.itinerary||[]).forEach(function(day, dayIdx) {
-    var w = day.weather||{};
-    var wDesc = w.desc||'晴';
-    var wIcon = w.icon||'☀️';
-    var wTemp = w.temp||'';
+  let dHtml = '';
+  (data.itinerary||[]).forEach((day,dayIdx)=>{
+    const w = day.weather||{};
+    const wDesc = w.desc||'晴';
+    const wIcon = w.icon||'☀️';
+    const wTemp = w.temp||'';
     // 天气图片：优先使用后端生成的图片，晴天回退到本地sunny.webp
     var wImg = w.image || '';
     var wGrad = getWeatherGradient(wDesc);
@@ -1755,7 +1770,25 @@ function renderTrip(data){
     if (wImg) {
       wImgHtml = '<img class="weather-card-bg" src="' + wImg + '" onerror="this.style.display=\'none\'" alt="">';
     }
-    dHtml += "<div class=\"day-card\">\n      <div class=\"card-header\"><span class=\"day-badge\">Day " + (day.day) + "</span><span class=\"day-date\">" + (day.date) + "</span><span class=\"day-weather\">" + (wIcon) + " " + (wDesc) + " " + (wTemp) + "</span><button class=\"map-btn\" onclick=\"openDayAmap(" + (dayIdx) + ")\">🗺️ 高德地图</button></div>\n      <div class=\"weather-card\" style=\"" + (wBgStyle) + "\" onclick=\"showWeatherHourly(" + (dayIdx) + ")\">\n        " + (wImgHtml) + "\n        <span class=\"wc-icon\">" + (getWeatherIcon(wDesc)) + "</span>\n        <span class=\"wc-desc\">" + (wDesc) + "</span>\n        <span class=\"wc-temp\">" + (wTemp) + "</span>\n        <span class=\"wc-hint\">点击查看逐时天气 ›</span>\n      </div>\n      " + ((dayIdx===0 && data.departure_transport) ? _buildDayTransportCard(data.departure_transport, '出发') : '') + "\n      " + ((dayIdx===data.itinerary.length-1 && data.return_transport) ? _buildDayTransportCard(data.return_transport, '返程') : '') + "\n      " + (renderSlot('上午','morning',day.morning,dayIdx,0)) + "\n      " + (renderSlot('下午','afternoon',day.afternoon,dayIdx,1)) + "\n      " + (renderSlot('晚上','evening',day.evening,dayIdx,2)) + "\n      <div class=\"day-footer\">\n        <div class=\"footer-row\"><span class=\"footer-icon\">🍜</span><span class=\"footer-label\">午餐：</span><span class=\"footer-text\">" + (day.lunch||'') + "</span></div>\n        <div class=\"footer-row\"><span class=\"footer-icon\">🍽️</span><span class=\"footer-label\">晚餐：</span><span class=\"footer-text\">" + (day.dinner||'') + "</span></div>\n        <div class=\"footer-row\"><span class=\"footer-icon\">🚗</span><span class=\"footer-label\">交通：</span><span class=\"footer-text\">" + (day.transport||'') + "</span></div>\n      </div></div>";
+    dHtml += `<div class="day-card">
+      <div class="card-header"><span class="day-badge">Day ${day.day}</span><span class="day-date">${day.date}</span><span class="day-weather">${wIcon} ${wDesc} ${wTemp}</span><button class="map-btn" onclick="openDayAmap(${dayIdx})">🗺️ 高德地图</button></div>
+      <div class="weather-card" style="${wBgStyle}" onclick="showWeatherHourly(${dayIdx})">
+        ${wImgHtml}
+        <span class="wc-icon">${getWeatherIcon(wDesc)}</span>
+        <span class="wc-desc">${wDesc}</span>
+        <span class="wc-temp">${wTemp}</span>
+        <span class="wc-hint">点击查看逐时天气 ›</span>
+      </div>
+      ${(dayIdx===0 && data.departure_transport) ? _buildDayTransportCard(data.departure_transport, '出发') : ''}
+      ${(dayIdx===data.itinerary.length-1 && data.return_transport) ? _buildDayTransportCard(data.return_transport, '返程') : ''}
+      ${renderSlot('上午','morning',day.morning,dayIdx,0)}
+      ${renderSlot('下午','afternoon',day.afternoon,dayIdx,1)}
+      ${renderSlot('晚上','evening',day.evening,dayIdx,2)}
+      <div class="day-footer">
+        <div class="footer-row"><span class="footer-icon">🍜</span><span class="footer-label">午餐：</span><span class="footer-text">${day.lunch||''}</span></div>
+        <div class="footer-row"><span class="footer-icon">🍽️</span><span class="footer-label">晚餐：</span><span class="footer-text">${day.dinner||''}</span></div>
+        <div class="footer-row"><span class="footer-icon">🚗</span><span class="footer-label">交通：</span><span class="footer-text">${day.transport||''}</span></div>
+      </div></div>`;
   });
   document.getElementById('dayCards').innerHTML = dHtml;
 
@@ -1828,41 +1861,60 @@ function renderTrip(data){
   })();
 
   // 预算
-  var bd = data.budget_breakdown||{};
-  var bHtml = '<div class="bottom-card"><div class="bottom-title">预算明细</div><div class="budget-grid">';
-  for(var k in bd) bHtml += "<div class=\"budget-item\"><span class=\"budget-name\">" + (k) + "</span><span class=\"budget-value\">" + (bd[k]) + "</span></div>";
+  let bd = data.budget_breakdown||{};
+  let bHtml = '<div class="bottom-card"><div class="bottom-title">预算明细</div><div class="budget-grid">';
+  for(let k in bd) bHtml += `<div class="budget-item"><span class="budget-name">${k}</span><span class="budget-value">${bd[k]}</span></div>`;
   bHtml += '</div></div>';
   document.getElementById('budgetCard').innerHTML = bHtml;
 
-  var hHtml = '';
+  let hHtml = '';
   if (bk.hotels && bk.hotels.length) {
     hHtml = '<div class="bottom-card"><div class="bottom-title">🏨 酒店推荐</div>';
-    bk.hotels.forEach(function(h, hotelIdx) {
-      var hImg = h.image || '';
-      var hEscName = (h.name||'').replace(/'/g,"\\'");
-      var hEscReason = (h.reason||'').replace(/'/g,"\\'");
-      var hClick = hImg
-        ? "onclick=\"showHotelDetail('" + (hEscName) + "','" + (hImg.replace(/'/g,"\\'")) + "','" + (hEscReason) + "','" + (h.location||'') + "','" + (h.area||'') + "','" + (h.price||'') + "','" + (h.stay_days||'') + "')\""
-        : "onclick=\"showHotelDetail('" + (hEscName) + "','','" + (hEscReason) + "','" + (h.location||'') + "','" + (h.area||'') + "','" + (h.price||'') + "','" + (h.stay_days||'') + "')\"";
-      var hImgHtml = hImg
-        ? "<img class=\"hotel-img\" src=\"" + (hImg) + "\" alt=\"" + (h.name) + "\" onerror=\"imgFallback(this,'hotel','" + (hEscName) + "',this.onclick)\" " + (hClick) + ">"
-        : "<div class=\"hotel-placeholder\" " + (hClick) + "><div class=\"ph-hotel-name\">" + (h.name) + "</div><div class=\"ph-hint\">暂无真实照片</div></div>";
-      hHtml += "<div class=\"booking-item\">\n        <div class=\"booking-row\"><span class=\"booking-hotel-name\">" + (h.name) + "</span></div>\n        <div class=\"booking-row\"><span class=\"booking-area\">" + (h.area||'') + "</span><span class=\"booking-price\">" + (h.price) + "</span></div>\n        <div class=\"booking-reason\">" + (h.reason||'') + "</div>\n        " + (h.stay_days ? "<div class=\"booking-reason\" style=\"color:#4A90D9\">📅 " + (h.stay_days) + "入住</div>" : '') + "\n        " + (hImgHtml) + "\n        " + (h.location ? "<div class=\"spot-coord\"><span class=\"coord-icon\">📌</span>" + (h.location) + "</div>" : '') + "\n        <div class=\"btn-book-row\">\n          <button class=\"btn-book\" onclick=\"window.open('" + (h.link) + "','_blank')\">预订酒店</button>\n          " + (h.location ? "<button class=\"btn-map\" onclick=\"openHotelMap(" + (hotelIdx) + ")\">🗺️ 查看地图</button>" : '') + "\n        </div>\n      </div>";
+    bk.hotels.forEach((h, hotelIdx) => {
+      const hImg = h.image || '';
+      const hEscName = (h.name||'').replace(/'/g,"\\'");
+      const hEscReason = (h.reason||'').replace(/'/g,"\\'");
+      const hClick = hImg
+        ? `onclick="showHotelDetail('${hEscName}','${hImg.replace(/'/g,"\\'")}','${hEscReason}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')"`
+        : `onclick="showHotelDetail('${hEscName}','','${hEscReason}','${h.location||''}','${h.area||''}','${h.price||''}','${h.stay_days||''}')"`;
+      const hImgHtml = hImg
+        ? `<img class="hotel-img" src="${hImg}" alt="${h.name}" onerror="imgFallback(this,'hotel','${hEscName}',this.onclick)" ${hClick}>`
+        : `<div class="hotel-placeholder" ${hClick}><div class="ph-hotel-name">${h.name}</div><div class="ph-hint">暂无真实照片</div></div>`;
+      hHtml += `<div class="booking-item">
+        <div class="booking-row"><span class="booking-hotel-name">${h.name}</span></div>
+        <div class="booking-row"><span class="booking-area">${h.area||''}</span><span class="booking-price">${h.price}</span></div>
+        <div class="booking-reason">${h.reason||''}</div>
+        ${h.stay_days ? `<div class="booking-reason" style="color:#4A90D9">📅 ${h.stay_days}入住</div>` : ''}
+        ${hImgHtml}
+        ${h.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${h.location}</div>` : ''}
+        <div class="btn-book-row">
+          <button class="btn-book" onclick="window.open('${h.link}','_blank')">预订酒店</button>
+          ${h.location ? `<button class="btn-map" onclick="openHotelMap(${hotelIdx})">🗺️ 查看地图</button>` : ''}
+        </div>
+      </div>`;
     });
     // 换酒店推荐
     if (bk.hotel_changes && bk.hotel_changes.length) {
       hHtml += '<div style="margin-top:16px"><div class="bottom-title" style="border-left-color:#E67E22">🔄 换酒店建议</div>';
-      bk.hotel_changes.forEach(function(ch) {
-        var chImg = ch.image || '';
-        var chEscName = (ch.to_hotel||'').replace(/'/g,"\\'");
-        var chEscReason = (ch.reason||'').replace(/'/g,"\\'");
-        var chClick = chImg
-          ? "onclick=\"showHotelDetail('" + (chEscName) + "','" + (chImg.replace(/'/g,"\\'")) + "','" + (chEscReason) + "','" + (ch.location||'') + "','" + (ch.new_area||'') + "','" + (ch.price||'') + "','Day" + (ch.change_day) + "起')\""
-          : "onclick=\"showHotelDetail('" + (chEscName) + "','','" + (chEscReason) + "','" + (ch.location||'') + "','" + (ch.new_area||'') + "','" + (ch.price||'') + "','Day" + (ch.change_day) + "起')\"";
-        var chImgHtml = chImg
-          ? "<img class=\"hotel-img\" src=\"" + (chImg) + "\" alt=\"" + (ch.to_hotel) + "\" onerror=\"imgFallback(this,'hotel','" + (chEscName) + "',this.onclick)\" " + (chClick) + ">"
-          : "<div class=\"hotel-placeholder\" " + (chClick) + "><div class=\"ph-hotel-name\">" + (ch.to_hotel) + "</div><div class=\"ph-hint\">暂无真实照片</div></div>";
-        hHtml += "<div class=\"hotel-change-card\">\n          <div class=\"hotel-change-title\">Day " + (ch.change_day) + " 换酒店</div>\n          " + (chImgHtml) + "\n          <div class=\"hotel-change-row\">🏨 <b>" + (ch.from_hotel) + "</b> → <b>" + (ch.to_hotel) + "</b></div>\n          <div class=\"hotel-change-row\">📍 " + (ch.new_area||'') + " | " + (ch.price||'') + "</div>\n          <div class=\"hotel-change-row\">💡 " + (ch.reason||'') + "</div>\n          " + (ch.location ? "<div class=\"spot-coord\"><span class=\"coord-icon\">📌</span>" + (ch.location) + "</div>" : '') + "\n          <button class=\"btn-book\" style=\"margin-top:8px\" onclick=\"window.open('" + (ch.link) + "','_blank')\">预订新酒店</button>\n        </div>";
+      bk.hotel_changes.forEach(ch => {
+        const chImg = ch.image || '';
+        const chEscName = (ch.to_hotel||'').replace(/'/g,"\\'");
+        const chEscReason = (ch.reason||'').replace(/'/g,"\\'");
+        const chClick = chImg
+          ? `onclick="showHotelDetail('${chEscName}','${chImg.replace(/'/g,"\\'")}','${chEscReason}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')"`
+          : `onclick="showHotelDetail('${chEscName}','','${chEscReason}','${ch.location||''}','${ch.new_area||''}','${ch.price||''}','Day${ch.change_day}起')"`;
+        const chImgHtml = chImg
+          ? `<img class="hotel-img" src="${chImg}" alt="${ch.to_hotel}" onerror="imgFallback(this,'hotel','${chEscName}',this.onclick)" ${chClick}>`
+          : `<div class="hotel-placeholder" ${chClick}><div class="ph-hotel-name">${ch.to_hotel}</div><div class="ph-hint">暂无真实照片</div></div>`;
+        hHtml += `<div class="hotel-change-card">
+          <div class="hotel-change-title">Day ${ch.change_day} 换酒店</div>
+          ${chImgHtml}
+          <div class="hotel-change-row">🏨 <b>${ch.from_hotel}</b> → <b>${ch.to_hotel}</b></div>
+          <div class="hotel-change-row">📍 ${ch.new_area||''} | ${ch.price||''}</div>
+          <div class="hotel-change-row">💡 ${ch.reason||''}</div>
+          ${ch.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>${ch.location}</div>` : ''}
+          <button class="btn-book" style="margin-top:8px" onclick="window.open('${ch.link}','_blank')">预订新酒店</button>
+        </div>`;
       });
       hHtml += '</div>';
     }
@@ -1870,7 +1922,7 @@ function renderTrip(data){
   }
   document.getElementById('hotelsCard').innerHTML = hHtml;
 
-  var ticketHtml = '';
+  let ticketHtml = '';
   if (bk.tickets && bk.tickets.length) {
     ticketHtml = '<div class="bottom-card"><div class="bottom-title">🎫 门票预约</div>';
     var hasBookingTicket = false;
@@ -1906,16 +1958,16 @@ function renderTrip(data){
   }
   document.getElementById('ticketsCard').innerHTML = ticketHtml;
 
-  var btipHtml = '';
+  let btipHtml = '';
   if (bk.booking_tips && bk.booking_tips.length) {
     btipHtml = '<div class="bottom-card"><div class="bottom-title">📋 预约贴士</div>';
-    bk.booking_tips.forEach(function(t) { btipHtml += "<div class=\"tip-item\"><span class=\"tip-dot\">•</span><span class=\"tip-text\">" + (t) + "</span></div>"; });
+    bk.booking_tips.forEach(t => { btipHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
     btipHtml += '</div>';
   }
   document.getElementById('bookingTipsCard').innerHTML = btipHtml;
 
-  var tipHtml = '<div class="bottom-card"><div class="bottom-title">出行贴士</div>';
-  (data.tips||[]).forEach(function(t) { tipHtml += "<div class=\"tip-item\"><span class=\"tip-dot\">•</span><span class=\"tip-text\">" + (t) + "</span></div>"; });
+  let tipHtml = '<div class="bottom-card"><div class="bottom-title">出行贴士</div>';
+  (data.tips||[]).forEach(t=>{ tipHtml += `<div class="tip-item"><span class="tip-dot">•</span><span class="tip-text">${t}</span></div>`; });
   tipHtml += '</div>';
   document.getElementById('tipsCard').innerHTML = tipHtml;
   window.scrollTo(0,0);
@@ -1926,58 +1978,73 @@ function renderSlot(title, cls, slot, dayIdx, slotIdx){
   // 优先使用后端AI生成的time_slot（如"9:00-11:30"），fallback到前端计算
   var timeRange = slot.time_slot || '';
   if (!timeRange && slot.duration) {
-    var slotStartTimes = {morning: '9:00', afternoon: '13:00', evening: '18:00'};
-    var durMatch = slot.duration.match(/(\d+(?:\.\d+)?)\s*小时/);
+    const slotStartTimes = {morning: '9:00', afternoon: '13:00', evening: '18:00'};
+    const durMatch = slot.duration.match(/(\d+(?:\.\d+)?)\s*小时/);
     if (durMatch) {
-      var hours = parseFloat(durMatch[1]);
-      var startTime = slotStartTimes[cls] || '9:00';
-      var [sh, sm] = startTime.split(':').map(Number);
-      var totalMin = sh * 60 + sm + Math.round(hours * 60);
-      var eh = Math.floor(totalMin / 60);
-      var em = totalMin % 60;
+      const hours = parseFloat(durMatch[1]);
+      const startTime = slotStartTimes[cls] || '9:00';
+      const [sh, sm] = startTime.split(':').map(Number);
+      const totalMin = sh * 60 + sm + Math.round(hours * 60);
+      let eh = Math.floor(totalMin / 60);
+      const em = totalMin % 60;
       if (eh >= 24) {
-        var nextDayHour = eh % 24;
+        let nextDayHour = eh % 24;
         timeRange = startTime + ' - 次日' + String(nextDayHour).padStart(2,'0') + ':' + String(em).padStart(2,'0');
       } else {
         timeRange = startTime + ' - ' + String(eh).padStart(2,'0') + ':' + String(em).padStart(2,'0');
       }
     }
   }
-  var spotName = slot.spot||'';
-  var imgUrl = slot.image || '';
-  var escName = spotName.replace(/'/g,"\\'");
-  var escImgUrl = imgUrl.replace(/'/g,"\\'");
-  var escReason = (slot.reason||'').replace(/'/g,"\\'");
-  var escRouteDetail = (slot.route_detail||'').replace(/'/g,"\\'");
-  var clickHandler = imgUrl
-    ? "onclick=\"showSpotDetail('" + (escName) + "','" + (escImgUrl) + "','" + (escReason) + "','" + (slot.location||'') + "','" + (slot.duration||'') + "'," + (slot.need_booking||false) + ",'" + (escRouteDetail) + "','" + (timeRange) + "'," + (dayIdx) + "," + (slotIdx) + ")\""
-    : "onclick=\"showSpotDetail('" + (escName) + "','','" + (escReason) + "','" + (slot.location||'') + "','" + (slot.duration||'') + "'," + (slot.need_booking||false) + ",'" + (escRouteDetail) + "','" + (timeRange) + "'," + (dayIdx) + "," + (slotIdx) + ")\"";
-  var imgHtml = imgUrl
-    ? "<img class=\"spot-img\" src=\"" + (imgUrl) + "\" alt=\"" + (escName) + "\" onerror=\"imgFallback(this,'spot','" + (escName) + "',this.onclick)\" " + (clickHandler) + ">"
-    : "<div class=\"spot-placeholder\" " + (clickHandler) + "><div class=\"ph-spot-name\">" + (escName) + "</div><div class=\"ph-hint\">暂无真实照片</div></div>";
+  const spotName = slot.spot||'';
+  const imgUrl = slot.image || '';
+  const escName = spotName.replace(/'/g,"\\'");
+  const escImgUrl = imgUrl.replace(/'/g,"\\'");
+  const escReason = (slot.reason||'').replace(/'/g,"\\'");
+  const escRouteDetail = (slot.route_detail||'').replace(/'/g,"\\'");
+  const clickHandler = imgUrl
+    ? `onclick="showSpotDetail('${escName}','${escImgUrl}','${escReason}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${escRouteDetail}','${timeRange}',${dayIdx},${slotIdx})"`
+    : `onclick="showSpotDetail('${escName}','','${escReason}','${slot.location||''}','${slot.duration||''}',${slot.need_booking||false},'${escRouteDetail}','${timeRange}',${dayIdx},${slotIdx})"`;
+  const imgHtml = imgUrl
+    ? `<img class="spot-img" src="${imgUrl}" alt="${escName}" onerror="imgFallback(this,'spot','${escName}',this.onclick)" ${clickHandler}>`
+    : `<div class="spot-placeholder" ${clickHandler}><div class="ph-spot-name">${escName}</div><div class="ph-hint">暂无真实照片</div></div>`;
   // 推荐游览路线（在图片下方展示）
-  var routes = slot.recommended_routes;
-  var routesHtml = '';
+  const routes = slot.recommended_routes;
+  let routesHtml = '';
   if (routes && Array.isArray(routes) && routes.length > 0) {
-    var rid = 'rr_' + dayIdx + '_' + slotIdx;
-    routesHtml = "<div class=\"recommend-routes\">\n      <div class=\"recommend-routes-header\" onclick=\"var b=document.getElementById('" + (rid) + "');var a=this.querySelector('.rr-arrow');b.classList.toggle('show');a.classList.toggle('open')\">\n        <span>🗺️</span><span>推荐游览路线</span><span class=\"rr-arrow\">▶</span>\n      </div>\n      <div class=\"recommend-routes-body\" id=\"" + (rid) + "\">";
-    routes.forEach(function(r, ri) {
-      routesHtml += "<div class=\"recommend-routes-item\"><span class=\"rr-num\">" + (ri+1) + "</span><span class=\"rr-text\">" + (r) + "</span></div>";
+    const rid = 'rr_' + dayIdx + '_' + slotIdx;
+    routesHtml = `<div class="recommend-routes">
+      <div class="recommend-routes-header" onclick="var b=document.getElementById('${rid}');var a=this.querySelector('.rr-arrow');b.classList.toggle('show');a.classList.toggle('open')">
+        <span>🗺️</span><span>推荐游览路线</span><span class="rr-arrow">▶</span>
+      </div>
+      <div class="recommend-routes-body" id="${rid}">`;
+    routes.forEach((r, ri) => {
+      routesHtml += `<div class="recommend-routes-item"><span class="rr-num">${ri+1}</span><span class="rr-text">${r}</span></div>`;
     });
     routesHtml += '</div></div>';
   }
-  return "<div class=\"time-slot\">\n    <div class=\"slot-header\"><div class=\"slot-dot " + (cls) + "\"></div><span class=\"slot-title\">" + (title) + "</span>" + (slot.location ? "<span class=\"map-pin\" onclick=\"openAmapLink('" + (escName) + "','" + (slot.location) + "')\">📍</span>" : '') + "</div>\n    " + (imgHtml) + "\n    " + (routesHtml) + "\n    <div class=\"spot-name\">" + (spotName) + "</div>\n    " + (timeRange ? "<div class=\"spot-time-range\"><span class=\"sr-icon\">🕐</span>" + (timeRange) + "</div>" : '') + "\n    " + (slot.duration ? "<span class=\"meta-tag\">时长：" + (slot.duration) + "</span>" : '') + "\n    " + (slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : '') + "\n    " + (slot.location ? "<div class=\"spot-coord\"><span class=\"coord-icon\">📌</span>坐标：" + (slot.location) + "</div>" : '') + "\n    " + (slot.route_detail ? "<div class=\"route-detail\"><span class=\"route-icon\">🗺️</span>游玩路线：" + (slot.route_detail) + "</div>" : '') + "\n    <div class=\"spot-reason\">推荐理由：" + (slot.reason||'') + "</div>\n  </div>";
+  return `<div class="time-slot">
+    <div class="slot-header"><div class="slot-dot ${cls}"></div><span class="slot-title">${title}</span>${slot.location ? `<span class="map-pin" onclick="openAmapLink('${escName}','${slot.location}')">📍</span>` : ''}</div>
+    ${imgHtml}
+    ${routesHtml}
+    <div class="spot-name">${spotName}</div>
+    ${timeRange ? `<div class="spot-time-range"><span class="sr-icon">🕐</span>${timeRange}</div>` : ''}
+    ${slot.duration ? `<span class="meta-tag">时长：${slot.duration}</span>` : ''}
+    ${slot.need_booking ? '<span class="meta-tag booking">⚠需预约</span>' : ''}
+    ${slot.location ? `<div class="spot-coord"><span class="coord-icon">📌</span>坐标：${slot.location}</div>` : ''}
+    ${slot.route_detail ? `<div class="route-detail"><span class="route-icon">🗺️</span>游玩路线：${slot.route_detail}</div>` : ''}
+    <div class="spot-reason">推荐理由：${slot.reason||''}</div>
+  </div>`;
 }
 
 function openDayAmap(dayIdx){
   if(!tripData || !tripData.itinerary) return;
-  var day = tripData.itinerary[dayIdx];
+  const day = tripData.itinerary[dayIdx];
   if(!day) return;
-  var spots = [];
-  ['morning','afternoon','evening'].forEach(function(slot) {
-    var s = day[slot];
+  const spots = [];
+  ['morning','afternoon','evening'].forEach(slot => {
+    const s = day[slot];
     if(s && s.spot && s.location){
-      var [lng, lat] = s.location.split(',').map(Number);
+      const [lng, lat] = s.location.split(',').map(Number);
       if (!isNaN(lng) && !isNaN(lat)) spots.push({ name: s.spot, location: s.location, lng, lat });
     }
   });
@@ -1987,14 +2054,14 @@ function openDayAmap(dayIdx){
   document.getElementById('mapOverlay').classList.add('show');
 
   // 初始化弹窗地图
-  setTimeout(function() {
+  setTimeout(() => {
     if (typeof AMap === 'undefined') { console.warn('高德地图 SDK 未加载'); return; }
-    var container = document.getElementById('dayMapContainer');
+    const container = document.getElementById('dayMapContainer');
     if (!container) return;
     if (dayMap) { dayMap.destroy(); dayMap = null; }
 
-    var centerLng = spots.reduce(function(s, m) { return s + m.lng; }, 0) / spots.length;
-    var centerLat = spots.reduce(function(s, m) { return s + m.lat; }, 0) / spots.length;
+    const centerLng = spots.reduce((s,m) => s + m.lng, 0) / spots.length;
+    const centerLat = spots.reduce((s,m) => s + m.lat, 0) / spots.length;
 
     dayMap = new AMap.Map('dayMapContainer', {
       center: [centerLng, centerLat],
@@ -2002,18 +2069,18 @@ function openDayAmap(dayIdx){
       resizeEnable: true,
     });
 
-    spots.forEach(function(s, i) {
-      var content = "<div style=\"background:#4A90D9;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700\">" + (i+1) + "</div>";
-      var marker = new AMap.Marker({
+    spots.forEach((s, i) => {
+      const content = `<div style="background:#4A90D9;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700">${i+1}</div>`;
+      const marker = new AMap.Marker({
         position: [s.lng, s.lat],
         content: content,
         offset: new AMap.Pixel(-12, -12),
         title: s.name,
       });
       marker.setMap(dayMap);
-      marker.on('click', function() {
-        var info = new AMap.InfoWindow({
-          content: "<div style=\"padding:4px 8px;font-size:13px\"><b>" + (i+1) + ". " + (s.name) + "</b></div>",
+      marker.on('click', () => {
+        const info = new AMap.InfoWindow({
+          content: `<div style="padding:4px 8px;font-size:13px"><b>${i+1}. ${s.name}</b></div>`,
           offset: new AMap.Pixel(0, -32),
         });
         info.open(dayMap, [s.lng, s.lat]);
@@ -2024,39 +2091,39 @@ function openDayAmap(dayIdx){
   }, 200);
 
   // 构建景点列表
-  var html = '';
-  spots.forEach(function(s, i) {
-    html += "<div class=\"map-spot-item\"><span class=\"map-spot-num\">" + (i+1) + "</span><div class=\"map-spot-info\"><span class=\"map-spot-name\">" + (s.name) + "</span><span class=\"map-spot-loc\">坐标：" + (s.location) + "</span></div></div>";
+  let html = '';
+  spots.forEach((s, i) => {
+    html += `<div class="map-spot-item"><span class="map-spot-num">${i+1}</span><div class="map-spot-info"><span class="map-spot-name">${s.name}</span><span class="map-spot-loc">坐标：${s.location}</span></div></div>`;
   });
   document.getElementById('daySpotList').innerHTML = html;
 }
 // 酒店地图：显示酒店位置和附近所有景点，方便用户根据景点远近选择酒店
 function openHotelMap(hotelIdx){
   if(!tripData || !tripData.booking_info) return;
-  var hotels = tripData.booking_info.hotels || [];
-  var hotel = hotels[hotelIdx];
+  const hotels = tripData.booking_info.hotels || [];
+  const hotel = hotels[hotelIdx];
   if(!hotel || !hotel.location) return;
   // 收集所有景点坐标
-  var spots = [];
-  (tripData.itinerary||[]).forEach(function(day) {
-    ['morning','afternoon','evening'].forEach(function(slot) {
-      var s = day[slot];
+  const spots = [];
+  (tripData.itinerary||[]).forEach(day => {
+    ['morning','afternoon','evening'].forEach(slot => {
+      const s = day[slot];
       if(s && s.spot && s.location){
-        var [lng, lat] = s.location.split(',').map(Number);
+        const [lng, lat] = s.location.split(',').map(Number);
         if (!isNaN(lng) && !isNaN(lat)) spots.push({ name: s.spot, location: s.location, lng, lat, day: day.day });
       }
     });
   });
   // 解析酒店坐标
-  var [hLng, hLat] = hotel.location.split(',').map(Number);
+  const [hLng, hLat] = hotel.location.split(',').map(Number);
   if (isNaN(hLng) || isNaN(hLat)) return;
 
   document.getElementById('mapDialogTitle').textContent = hotel.name + ' + 附近景点';
   document.getElementById('mapOverlay').classList.add('show');
 
-  setTimeout(function() {
+  setTimeout(() => {
     if (typeof AMap === 'undefined') { console.warn('高德地图 SDK 未加载'); return; }
-    var container = document.getElementById('dayMapContainer');
+    const container = document.getElementById('dayMapContainer');
     if (!container) return;
     if (dayMap) { dayMap.destroy(); dayMap = null; }
 
@@ -2067,8 +2134,8 @@ function openHotelMap(hotelIdx){
     });
 
     // 酒店标记（红色特殊图标）
-    var hotelContent = '<div style="background:#E74C3C;color:#fff;width:32px;height:32px;border-radius:50%;text-align:center;line-height:32px;font-size:16px;box-shadow:0 2px 8px rgba(231,76,60,.4)">🏨</div>';
-    var hotelMarker = new AMap.Marker({
+    const hotelContent = '<div style="background:#E74C3C;color:#fff;width:32px;height:32px;border-radius:50%;text-align:center;line-height:32px;font-size:16px;box-shadow:0 2px 8px rgba(231,76,60,.4)">🏨</div>';
+    const hotelMarker = new AMap.Marker({
       position: [hLng, hLat],
       content: hotelContent,
       offset: new AMap.Pixel(-16, -16),
@@ -2076,7 +2143,7 @@ function openHotelMap(hotelIdx){
       zIndex: 999,
     });
     hotelMarker.setMap(dayMap);
-    hotelMarker.on('click', function() {
+    hotelMarker.on('click', () => {
       new AMap.InfoWindow({
         content: '<div style="padding:6px 10px;font-size:14px"><b>🏨 '+hotel.name+'</b><br><span style="color:#999;font-size:12px">'+hotel.area+'</span></div>',
         offset: new AMap.Pixel(0, -36),
@@ -2084,16 +2151,16 @@ function openHotelMap(hotelIdx){
     });
 
     // 景点标记（蓝色编号）
-    spots.forEach(function(s, i) {
-      var content = '<div style="background:#4A90D9;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700">'+(i+1)+'</div>';
-      var marker = new AMap.Marker({
+    spots.forEach((s, i) => {
+      const content = '<div style="background:#4A90D9;color:#fff;width:24px;height:24px;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700">'+(i+1)+'</div>';
+      const marker = new AMap.Marker({
         position: [s.lng, s.lat],
         content: content,
         offset: new AMap.Pixel(-12, -12),
         title: s.name,
       });
       marker.setMap(dayMap);
-      marker.on('click', function() {
+      marker.on('click', () => {
         new AMap.InfoWindow({
           content: '<div style="padding:4px 8px;font-size:13px"><b>'+(i+1)+'. '+s.name+'</b><br><span style="color:#999;font-size:11px">Day'+s.day+'</span></div>',
           offset: new AMap.Pixel(0, -32),
@@ -2102,13 +2169,13 @@ function openHotelMap(hotelIdx){
     });
 
     // 自动适配视野
-    var allPoints = [[hLng, hLat], ...spots.map(function(s) { return [s.lng, s.lat]; })];
+    const allPoints = [[hLng, hLat], ...spots.map(s => [s.lng, s.lat])];
     dayMap.setFitView(allPoints, false, [40, 40, 40, 40]);
   }, 200);
 
   // 构建列表：酒店在最前面（红色），后面是景点（蓝色编号）
-  var html = '<div class="map-spot-item"><span class="map-spot-num hotel">🏨</span><div class="map-spot-info"><span class="map-spot-name">'+hotel.name+'</span><span class="map-spot-loc">坐标：'+hotel.location+' | '+hotel.area+'</span></div></div>';
-  spots.forEach(function(s, i) {
+  let html = '<div class="map-spot-item"><span class="map-spot-num hotel">🏨</span><div class="map-spot-info"><span class="map-spot-name">'+hotel.name+'</span><span class="map-spot-loc">坐标：'+hotel.location+' | '+hotel.area+'</span></div></div>';
+  spots.forEach((s, i) => {
     html += '<div class="map-spot-item"><span class="map-spot-num">'+(i+1)+'</span><div class="map-spot-info"><span class="map-spot-name">'+s.name+'</span><span class="map-spot-loc">坐标：'+s.location+' | Day'+s.day+'</span></div></div>';
   });
   document.getElementById('daySpotList').innerHTML = html;
@@ -2180,61 +2247,61 @@ function goHome(){
 // 景点详情卡片（AI生成文本介绍 + 直接使用槽位已有图片）
 
 async function showSpotDetail(name, image, reason, location, duration, need_booking, route_detail, timeRange, dayIdx, slotIdx) {
-  var card = document.getElementById('detailCard');
-  var overlay = document.getElementById('detailOverlay');
-  var dest = tripData ? tripData.destination : '';
-  var cacheKey = "spot_detail_" + (name) + "_" + (dest);
+  const card = document.getElementById('detailCard');
+  const overlay = document.getElementById('detailOverlay');
+  const dest = tripData ? tripData.destination : '';
+  const cacheKey = `spot_detail_${name}_${dest}`;
   // 显示加载动画
-  card.innerHTML = "<div style=\"display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px\"><div class=\"ai-loading\"><span></span><span></span><span></span></div><div style=\"font-size:16px;color:#4A90D9;font-weight:500\">AI正在生成详细介绍</div><div style=\"font-size:13px;color:#999\">正在生成" + (name) + "介绍…</div></div>";
+  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在生成${name}介绍…</div></div>`;
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
   // 直接使用槽位已有图片，不走额外API请求
-  var finalImage = image || '';
+  const finalImage = image || '';
   // 获取文本介绍（带缓存）
-  var cached = localStorage.getItem(cacheKey);
-  var content = '', fromCache = false;
+  const cached = localStorage.getItem(cacheKey);
+  let content = '', fromCache = false;
   if (cached) {
-    try { var parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
+    try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
   }
   if (!fromCache) {
     try {
-      var params = new URLSearchParams({name, city: dest, reason, route_detail});
-      var res = await fetch((API) + "/api/spot-detail?" + (params));
-      var data = await res.json();
+      const params = new URLSearchParams({name, city: dest, reason, route_detail});
+      const res = await fetch(`${API}/api/spot-detail?${params}`);
+      const data = await res.json();
       content = data.content || reason;
       localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
-    } catch(e) { content = reason || (name) + "是" + (dest) + "的著名景点。"; }
+    } catch(e) { content = reason || `${name}是${dest}的著名景点。`; }
   }
   // 路线规划
-  var routeInfo = '';
-  var recommendedRoutes = [];
+  let routeInfo = '';
+  let recommendedRoutes = [];
   if (dayIdx !== undefined && slotIdx !== undefined && tripData && tripData.itinerary) {
-    var day = tripData.itinerary[dayIdx];
+    const day = tripData.itinerary[dayIdx];
     if (day) {
-      var slots = ['morning', 'afternoon', 'evening'];
-      var slot = day[slots[slotIdx]];
+      const slots = ['morning', 'afternoon', 'evening'];
+      const slot = day[slots[slotIdx]];
       if (slot && slot.recommended_routes) {
         recommendedRoutes = slot.recommended_routes;
       }
-      var prevSpot = null;
-      for (var i = slotIdx - 1; i >= 0; i--) {
-        var s = day[slots[i]];
+      let prevSpot = null;
+      for (let i = slotIdx - 1; i >= 0; i--) {
+        const s = day[slots[i]];
         if (s && s.spot && s.location) { prevSpot = s; break; }
       }
       if (prevSpot && location) {
-        var [plng, plat] = prevSpot.location.split(',').map(Number);
-        var [clng, clat] = location.split(',').map(Number);
+        const [plng, plat] = prevSpot.location.split(',').map(Number);
+        const [clng, clat] = location.split(',').map(Number);
         if (!isNaN(plng) && !isNaN(plat) && !isNaN(clng) && !isNaN(clat)) {
           try {
-            var res = await fetch(API + '/api/route-plan', {
+            const res = await fetch(API + '/api/route-plan', {
               method: 'POST', headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({spots: [{name: prevSpot.spot, lng: plng, lat: plat}, {name, lng: clng, lat: clat}]})
             });
-            var data = await res.json();
+            const data = await res.json();
             if (data.success && data.routes && data.routes[0] && data.routes[0].duration) {
-              var r = data.routes[0];
-              var trafficMap = {'畅通':'green','缓行':'orange','拥堵':'red'};
-              routeInfo = "<div class=\"route-info\"><span class=\"ri-icon\">🚗</span>从「" + (prevSpot.spot) + "」出发：" + (r.distance) + "，约" + (r.duration) + "分钟 <span class=\"ri-traffic " + (trafficMap[r.traffic]||'green') + "\">" + (r.traffic) + "</span></div>";
+              const r = data.routes[0];
+              const trafficMap = {'畅通':'green','缓行':'orange','拥堵':'red'};
+              routeInfo = `<div class="route-info"><span class="ri-icon">🚗</span>从「${prevSpot.spot}」出发：${r.distance}，约${r.duration}分钟 <span class="ri-traffic ${trafficMap[r.traffic]||'green'}">${r.traffic}</span></div>`;
             }
           } catch(e) {}
         }
@@ -2248,30 +2315,30 @@ async function showSpotDetail(name, image, reason, location, duration, need_book
 
 // 酒店详情卡片（直接使用槽位已有图片，只异步获取文本介绍）
 async function showHotelDetail(name, image, reason, location, area, price, stay_days) {
-  var card = document.getElementById('detailCard');
-  var overlay = document.getElementById('detailOverlay');
-  var dest = tripData ? tripData.destination : '';
-  var cacheKey = "hotel_detail_" + (name) + "_" + (dest);
+  const card = document.getElementById('detailCard');
+  const overlay = document.getElementById('detailOverlay');
+  const dest = tripData ? tripData.destination : '';
+  const cacheKey = `hotel_detail_${name}_${dest}`;
   // 显示加载动画
-  card.innerHTML = "<div style=\"display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px\"><div class=\"ai-loading\"><span></span><span></span><span></span></div><div style=\"font-size:16px;color:#4A90D9;font-weight:500\">AI正在生成详细介绍</div><div style=\"font-size:13px;color:#999\">正在生成" + (name) + "介绍…</div></div>";
+  card.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:16px"><div class="ai-loading"><span></span><span></span><span></span></div><div style="font-size:16px;color:#4A90D9;font-weight:500">AI正在生成详细介绍</div><div style="font-size:13px;color:#999">正在生成${name}介绍…</div></div>`;
   overlay.classList.add('show');
   document.body.style.overflow = 'hidden';
   // 直接使用槽位已有图片，不走额外API请求
-  var finalImage = image || '';
+  const finalImage = image || '';
   // 获取文本介绍（带缓存）
-  var cached = localStorage.getItem(cacheKey);
-  var content = '', fromCache = false;
+  const cached = localStorage.getItem(cacheKey);
+  let content = '', fromCache = false;
   if (cached) {
-    try { var parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
+    try { const parsed = JSON.parse(cached); if (parsed.content) { content = parsed.content; fromCache = true; } } catch(e) {}
   }
   if (!fromCache) {
     try {
-      var params = new URLSearchParams({name, city: dest, area, reason});
-      var res = await fetch((API) + "/api/hotel-detail?" + (params));
-      var data = await res.json();
+      const params = new URLSearchParams({name, city: dest, area, reason});
+      const res = await fetch(`${API}/api/hotel-detail?${params}`);
+      const data = await res.json();
       content = data.content || reason;
       localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
-    } catch(e) { content = reason || (name) + "位于" + (dest) + (area) + "，地理位置优越。"; }
+    } catch(e) { content = reason || `${name}位于${dest}${area}，地理位置优越。`; }
   }
   renderDetailCard(card, 'hotel', {name, image: finalImage, area, price, stay_days, location, content, cacheKey, fromCache, dest, reason});
   document.body.style.overflow = '';
@@ -2279,70 +2346,72 @@ async function showHotelDetail(name, image, reason, location, area, price, stay_
 
 // 统一渲染详情卡片
 function renderDetailCard(card, type, opts) {
-  var {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, area, price, stay_days, routeInfo, recommended_routes} = opts;
-  var html = '';
+  const {name, image, duration, need_booking, route_detail, timeRange, location, content, cacheKey, fromCache, area, price, stay_days, routeInfo, recommended_routes} = opts;
+  let html = '';
   // 确保图片src永不为空，天气用text_to_image兜底，景点/酒店用占位提示
-  var imgSrc = image || (type === 'weather' ? getFallbackImgUrl(name, 'weather') : '');
-  var escapedName = name.replace(/'/g, "\\'");
+  const imgSrc = image || (type === 'weather' ? getFallbackImgUrl(name, 'weather') : '');
+  const escapedName = name.replace(/'/g, "\\'");
   if (imgSrc) {
-    html += "<img class=\"detail-img\" src=\"" + (imgSrc) + "\" alt=\"" + (name) + "\" onerror=\"imgFallback(this,'" + (type) + "','" + (escapedName) + "')\">";
+    html += `<img class="detail-img" src="${imgSrc}" alt="${name}" onerror="imgFallback(this,'${type}','${escapedName}')">`;
   } else {
-    html += "<div class=\"detail-placeholder\"><div class=\"ph-detail-name\">" + (name) + "</div><div class=\"ph-detail-hint\">暂无真实照片</div></div>";
+    html += `<div class="detail-placeholder"><div class="ph-detail-name">${name}</div><div class="ph-detail-hint">暂无真实照片</div></div>`;
   }
-  html += "<div class=\"detail-body\">\n    <div class=\"detail-title\">" + (type==='hotel'?'🏨 ':'') + (name) + "</div>\n    <div class=\"detail-meta\">";
+  html += `<div class="detail-body">
+    <div class="detail-title">${type==='hotel'?'🏨 ':''}${name}</div>
+    <div class="detail-meta">`;
   if (type === 'spot') {
-    if (timeRange) html += "<span class=\"detail-meta-tag\">🕐 " + (timeRange) + "</span>";
-    else if (duration) html += "<span class=\"detail-meta-tag\">⏱ " + (duration) + "</span>";
+    if (timeRange) html += `<span class="detail-meta-tag">🕐 ${timeRange}</span>`;
+    else if (duration) html += `<span class="detail-meta-tag">⏱ ${duration}</span>`;
     if (need_booking) html += '<span class="detail-meta-tag warn">⚠ 需提前预约</span>';
   } else {
-    if (area) html += "<span class=\"detail-meta-tag\">📍 " + (area) + "</span>";
-    if (price) html += "<span class=\"detail-meta-tag\" style=\"color:#E67E22\">💰 " + (price) + "</span>";
-    if (stay_days) html += "<span class=\"detail-meta-tag\">📅 " + (stay_days) + "</span>";
+    if (area) html += `<span class="detail-meta-tag">📍 ${area}</span>`;
+    if (price) html += `<span class="detail-meta-tag" style="color:#E67E22">💰 ${price}</span>`;
+    if (stay_days) html += `<span class="detail-meta-tag">📅 ${stay_days}</span>`;
   }
-  html += "</div>";
+  html += `</div>`;
   if (routeInfo) html += routeInfo;
-  if (route_detail) html += "<div class=\"detail-section\"><div class=\"detail-section-title\">🗺️ 游玩路线</div><div class=\"detail-section-text\">" + (route_detail) + "</div></div>";
+  if (route_detail) html += `<div class="detail-section"><div class="detail-section-title">🗺️ 游玩路线</div><div class="detail-section-text">${route_detail}</div></div>`;
   if (recommended_routes && Array.isArray(recommended_routes) && recommended_routes.length > 0) {
-    html += "<div class=\"detail-section\"><div class=\"detail-section-title\">🗺️ 推荐游览路线</div>";
-    recommended_routes.forEach(function(r, i) {
-      html += "<div class=\"detail-route-item\"><span class=\"rr-num-detail\">" + (i+1) + "</span>" + (r) + "</div>";
+    html += `<div class="detail-section"><div class="detail-section-title">🗺️ 推荐游览路线</div>`;
+    recommended_routes.forEach((r, i) => {
+      html += `<div class="detail-route-item"><span class="rr-num-detail">${i+1}</span>${r}</div>`;
     });
-    html += "</div>";
+    html += `</div>`;
   }
-  html += "<div class=\"detail-section\" style=\"margin-top:12px\"><div class=\"detail-section-title\">📖 详细介绍" + (fromCache?' <span style="font-size:12px;color:#52C41A">(已缓存)</span>':'') + "</div><div class=\"detail-long-text\">" + (content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')) + "</div></div>";
-  if (location) html += "<div class=\"detail-section\"><div class=\"detail-section-title\">📍 坐标位置</div><div class=\"detail-section-text\">" + (location) + "</div></div>";
-  html += "<button class=\"btn-regenerate\" onclick=\"regenerateDetail('" + (cacheKey) + "','" + (type) + "','" + (name.replace(/'/g,"\\'")) + "')\">🔄 重新生成介绍</button>";
-  html += "<button class=\"detail-close\" onclick=\"closeDetail()\">关闭</button></div>";
+  html += `<div class="detail-section" style="margin-top:12px"><div class="detail-section-title">📖 详细介绍${fromCache?' <span style="font-size:12px;color:#52C41A">(已缓存)</span>':''}</div><div class="detail-long-text">${content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</div></div>`;
+  if (location) html += `<div class="detail-section"><div class="detail-section-title">📍 坐标位置</div><div class="detail-section-text">${location}</div></div>`;
+  html += `<button class="btn-regenerate" onclick="regenerateDetail('${cacheKey}','${type}','${name.replace(/'/g,"\\'")}')">🔄 重新生成介绍</button>`;
+  html += `<button class="detail-close" onclick="closeDetail()">关闭</button></div>`;
   card.innerHTML = html;
 }
 
 // 重新生成详情介绍（同时刷新图片）
 async function regenerateDetail(cacheKey, type, name) {
-  var card = document.getElementById('detailCard');
+  const card = document.getElementById('detailCard');
   localStorage.removeItem(cacheKey);
-  var btn = card.querySelector('.btn-regenerate');
+  const btn = card.querySelector('.btn-regenerate');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 重新生成中...'; }
-  var dest = tripData ? tripData.destination : '';
-  var endpoint = type === 'spot' ? '/api/spot-detail' : '/api/hotel-detail';
+  const dest = tripData ? tripData.destination : '';
+  const endpoint = type === 'spot' ? '/api/spot-detail' : '/api/hotel-detail';
   try {
     // 并行：刷新文本 + 刷新图片
-    var params = new URLSearchParams({name, city: dest});
-    var [textRes, imgRes] = await Promise.all([
-      fetch((API) + (endpoint) + "?" + (params)),
-      fetch((API) + "/api/spot-images?query=" + (encodeURIComponent(name + ' ' + dest)) + "&limit=1")
+    const params = new URLSearchParams({name, city: dest});
+    const [textRes, imgRes] = await Promise.all([
+      fetch(`${API}${endpoint}?${params}`),
+      fetch(`${API}/api/spot-images?query=${encodeURIComponent(name + ' ' + dest)}&limit=1`)
     ]);
-    var textData = await textRes.json();
-    var content = textData.content || '';
+    const textData = await textRes.json();
+    const content = textData.content || '';
     localStorage.setItem(cacheKey, JSON.stringify({content, time: Date.now()}));
     // 更新卡片内容
-    var textDiv = card.querySelector('.detail-long-text');
+    const textDiv = card.querySelector('.detail-long-text');
     if (textDiv) textDiv.innerHTML = '<p>' + content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
-    var titleDiv = card.querySelector('.detail-section-title');
+    const titleDiv = card.querySelector('.detail-section-title');
     if (titleDiv && titleDiv.textContent.includes('详细介绍')) titleDiv.textContent = '📖 详细介绍 (已更新)';
     // 刷新图片
     try {
-      var imgData = await imgRes.json();
-      var imgEl = card.querySelector('.detail-img');
+      const imgData = await imgRes.json();
+      const imgEl = card.querySelector('.detail-img');
       if (imgData.success && imgData.images && imgData.images.length > 0 && imgEl) {
         imgEl.src = imgData.images[0].url;
         imgEl.onerror = function() { imgFallback(this, type, name); };
@@ -2359,23 +2428,23 @@ function closeDetail() { document.getElementById('detailOverlay').classList.remo
 // 天气逐时卡片（集成中国天气智能体：wttr.in实时数据 + 空气质量 + AI天气助手）
 async function showWeatherHourly(dayIdx) {
   if (!tripData || !tripData.itinerary) return;
-  var day = tripData.itinerary[dayIdx];
+  const day = tripData.itinerary[dayIdx];
   if (!day) return;
-  var dest = tripData.destination;
-  var date = day.date;
+  const dest = tripData.destination;
+  const date = day.date;
   if (!date) return;
 
-  var card = document.getElementById('weatherHourlyCard');
+  const card = document.getElementById('weatherHourlyCard');
   card.innerHTML = '<div style="text-align:center;padding:40px"><span style="font-size:32px">🌤️</span><div style="color:#999;margin-top:8px">中国天气智能体加载中...</div></div>';
   document.getElementById('weatherHourlyOverlay').classList.add('show');
 
   try {
-    var [hourlyRes, aqiRes] = await Promise.all([
-      fetch(API + "/api/weather-hourly?city=" + (encodeURIComponent(dest)) + "&date=" + (encodeURIComponent(date))),
-      fetch(API + "/api/china-weather/air-quality?city=" + (encodeURIComponent(dest)))
+    const [hourlyRes, aqiRes] = await Promise.all([
+      fetch(API + `/api/weather-hourly?city=${encodeURIComponent(dest)}&date=${encodeURIComponent(date)}`),
+      fetch(API + `/api/china-weather/air-quality?city=${encodeURIComponent(dest)}`)
     ]);
-    var data = await hourlyRes.json();
-    var aqiData = await aqiRes.json();
+    const data = await hourlyRes.json();
+    const aqiData = await aqiRes.json();
 
     // 非当天：显示提示信息
     if (!data.is_today) {
@@ -2388,32 +2457,57 @@ async function showWeatherHourly(dayIdx) {
 
     if (!data.success) { card.innerHTML = '<div style="text-align:center;padding:40px;color:#999">天气数据暂不可用</div><button class="wh-close" onclick="closeWeatherHourly()">关闭</button>'; return; }
 
-    var emojiMap = { '晴':'☀️','Sunny':'☀️','Clear':'☀️','多云':'⛅','Partly cloudy':'⛅','Cloudy':'☁️','阴':'☁️','Overcast':'☁️','雨':'🌧️','Rain':'🌧️','Light rain':'🌦️','小雨':'🌦️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','雪':'❄️','Snow':'❄️','雾':'🌫️','Fog':'🌫️','Mist':'🌫️','霾':'🌫️','风':'💨','大风':'💨','雷阵雨':'⛈️','Thunder':'⛈️','Patchy rain':'🌦️','Light drizzle':'🌦️','Moderate rain':'🌧️','Heavy rain':'🌧️' };
-    function getEmoji(w) { for (var k in emojiMap) { if ((w||'').includes(k)) return emojiMap[k]; } return '🌤️'; }
+    const emojiMap = { '晴':'☀️','Sunny':'☀️','Clear':'☀️','多云':'⛅','Partly cloudy':'⛅','Cloudy':'☁️','阴':'☁️','Overcast':'☁️','雨':'🌧️','Rain':'🌧️','Light rain':'🌦️','小雨':'🌦️','中雨':'🌧️','大雨':'🌧️','暴雨':'⛈️','雪':'❄️','Snow':'❄️','雾':'🌫️','Fog':'🌫️','Mist':'🌫️','霾':'🌫️','风':'💨','大风':'💨','雷阵雨':'⛈️','Thunder':'⛈️','Patchy rain':'🌦️','Light drizzle':'🌦️','Moderate rain':'🌧️','Heavy rain':'🌧️' };
+    function getEmoji(w) { for (let k in emojiMap) { if ((w||'').includes(k)) return emojiMap[k]; } return '🌤️'; }
 
-    var now = new Date();
-    var currentHour = now.getHours();
-    var cur = data.current || {};
+    const now = new Date();
+    const currentHour = now.getHours();
+    const cur = data.current || {};
 
-    var html = "<div class=\"wh-header\">\n      <div class=\"wh-date\">" + (date) + " " + (dest) + "</div>\n      <div class=\"wh-summary\">" + (data.source||'中国天气智能体') + "</div>\n    </div>";
+    let html = `<div class="wh-header">
+      <div class="wh-date">${date} ${dest}</div>
+      <div class="wh-summary">${data.source||'中国天气智能体'}</div>
+    </div>`;
 
     // 实时天气概览
     if (cur.temp) {
-      html += "<div class=\"wh-current\">\n        <div class=\"wh-current-main\">\n          <div class=\"wh-current-temp\">" + (cur.temp) + "</div>\n          <div class=\"wh-current-desc\">" + (getEmoji(cur.weather)) + " " + (cur.weather) + "</div>\n        </div>\n        <div class=\"wh-current-detail\">\n          " + (cur.feels_like ? "<div class=\"wh-detail-item\"><span>体感</span><span class=\"wh-detail-val\">" + (cur.feels_like) + "</span></div>" : '') + "\n          " + (cur.humidity ? "<div class=\"wh-detail-item\"><span>湿度</span><span class=\"wh-detail-val\">" + (cur.humidity) + "</span></div>" : '') + "\n          " + (cur.wind ? "<div class=\"wh-detail-item\"><span>风力</span><span class=\"wh-detail-val\">" + (cur.wind.split(' ')[0]||'') + "</span></div>" : '') + "\n          " + (cur.uv ? "<div class=\"wh-detail-item\"><span>紫外线</span><span class=\"wh-detail-val\">" + (cur.uv) + "</span></div>" : '') + "\n          " + (cur.visibility ? "<div class=\"wh-detail-item\"><span>能见度</span><span class=\"wh-detail-val\">" + (cur.visibility) + "</span></div>" : '') + "\n        </div>\n      </div>";
+      html += `<div class="wh-current">
+        <div class="wh-current-main">
+          <div class="wh-current-temp">${cur.temp}</div>
+          <div class="wh-current-desc">${getEmoji(cur.weather)} ${cur.weather}</div>
+        </div>
+        <div class="wh-current-detail">
+          ${cur.feels_like ? `<div class="wh-detail-item"><span>体感</span><span class="wh-detail-val">${cur.feels_like}</span></div>` : ''}
+          ${cur.humidity ? `<div class="wh-detail-item"><span>湿度</span><span class="wh-detail-val">${cur.humidity}</span></div>` : ''}
+          ${cur.wind ? `<div class="wh-detail-item"><span>风力</span><span class="wh-detail-val">${cur.wind.split(' ')[0]||''}</span></div>` : ''}
+          ${cur.uv ? `<div class="wh-detail-item"><span>紫外线</span><span class="wh-detail-val">${cur.uv}</span></div>` : ''}
+          ${cur.visibility ? `<div class="wh-detail-item"><span>能见度</span><span class="wh-detail-val">${cur.visibility}</span></div>` : ''}
+        </div>
+      </div>`;
     }
 
     // 空气质量指数（中国天气智能体）
     if (aqiData.success && aqiData.aqi) {
-      html += "<div class=\"wh-aqi\" style=\"background:" + (aqiData.color) + "15;border:1px solid " + (aqiData.color) + "40\">\n        <div class=\"wh-aqi-value\" style=\"color:" + (aqiData.color) + "\">" + (aqiData.aqi) + "</div>\n        <div class=\"wh-aqi-info\">\n          <div class=\"wh-aqi-level\" style=\"color:" + (aqiData.color) + "\">空气" + (aqiData.level) + "</div>\n          <div class=\"wh-aqi-desc\">" + (aqiData.description) + "</div>\n          <div class=\"wh-aqi-detail\">\n            " + (aqiData.pm25 ? "<span>PM2.5 " + (aqiData.pm25) + "</span>" : '') + "\n            " + (aqiData.pm10 ? "<span>PM10 " + (aqiData.pm10) + "</span>" : '') + "\n          </div>\n        </div>\n      </div>";
+      html += `<div class="wh-aqi" style="background:${aqiData.color}15;border:1px solid ${aqiData.color}40">
+        <div class="wh-aqi-value" style="color:${aqiData.color}">${aqiData.aqi}</div>
+        <div class="wh-aqi-info">
+          <div class="wh-aqi-level" style="color:${aqiData.color}">空气${aqiData.level}</div>
+          <div class="wh-aqi-desc">${aqiData.description}</div>
+          <div class="wh-aqi-detail">
+            ${aqiData.pm25 ? `<span>PM2.5 ${aqiData.pm25}</span>` : ''}
+            ${aqiData.pm10 ? `<span>PM10 ${aqiData.pm10}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
     }
 
     // 极端天气预警
     if (data.extreme_alert && data.extreme_alert.has_alert) {
       html += '<div class="wh-alert-bar">';
-      data.extreme_alert.alerts.forEach(function(a) {
-        var bg = a.level === 'danger' ? '#FFE0E0' : '#FFF3E0';
-        var color = a.level === 'danger' ? '#D32F2F' : '#E67E22';
-        html += "<div style=\"background:" + (bg) + ";color:" + (color) + ";padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px\">⚠️ " + (a.message) + "</div>";
+      data.extreme_alert.alerts.forEach(a => {
+        const bg = a.level === 'danger' ? '#FFE0E0' : '#FFF3E0';
+        const color = a.level === 'danger' ? '#D32F2F' : '#E67E22';
+        html += `<div style="background:${bg};color:${color};padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">⚠️ ${a.message}</div>`;
       });
       html += '</div>';
     }
@@ -2421,42 +2515,48 @@ async function showWeatherHourly(dayIdx) {
     // 官方天气预警
     if (data.alerts && data.alerts.length) {
       html += '<div class="wh-alert-bar">';
-      data.alerts.forEach(function(a) {
-        html += "<div style=\"background:#FFE0E0;color:#D32F2F;padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px\">🚨 " + (a.headline||a.event||'天气预警') + "</div>";
+      data.alerts.forEach(a => {
+        html += `<div style="background:#FFE0E0;color:#D32F2F;padding:6px 12px;border-radius:6px;font-size:14px;margin-bottom:4px">🚨 ${a.headline||a.event||'天气预警'}</div>`;
       });
       html += '</div>';
     }
 
     // 逐时天气网格（3小时间隔）
     html += '<div class="wh-grid">';
-    (data.hours||[]).forEach(function(h) {
-      var hNum = parseInt(h.time);
-      var isNow = hNum === currentHour || hNum === currentHour - 1 || hNum === currentHour - 2;
-      html += "<div class=\"wh-item" + (isNow ? ' now' : '') + "\">\n        <div class=\"wh-time\">" + (h.time) + (isNow ? ' 现在' : '') + "</div>\n        <div class=\"wh-emoji\">" + (getEmoji(h.weather)) + "</div>\n        <div class=\"wh-temp\">" + (h.temp) + "</div>\n        " + (h.rain_chance && parseInt(h.rain_chance) > 30 ? "<div class=\"wh-rain\">🌧️" + (h.rain_chance) + "</div>" : '') + "\n        " + (h.wind ? "<div class=\"wh-wind\">💨" + (h.wind.split(' ')[0]||'') + "</div>" : '') + "\n      </div>";
+    (data.hours||[]).forEach(h => {
+      const hNum = parseInt(h.time);
+      const isNow = hNum === currentHour || hNum === currentHour - 1 || hNum === currentHour - 2;
+      html += `<div class="wh-item${isNow ? ' now' : ''}">
+        <div class="wh-time">${h.time}${isNow ? ' 现在' : ''}</div>
+        <div class="wh-emoji">${getEmoji(h.weather)}</div>
+        <div class="wh-temp">${h.temp}</div>
+        ${h.rain_chance && parseInt(h.rain_chance) > 30 ? `<div class="wh-rain">🌧️${h.rain_chance}</div>` : ''}
+        ${h.wind ? `<div class="wh-wind">💨${h.wind.split(' ')[0]||''}</div>` : ''}
+      </div>`;
     });
     html += '</div>';
 
     // 雨雪到来前1小时提醒
-    var rainAlert = null;
-    for (var i = 0; i < (data.hours||[]).length; i++) {
-      var h = data.hours[i];
-      var w = (h.weather||'').toLowerCase();
+    let rainAlert = null;
+    for (let i = 0; i < (data.hours||[]).length; i++) {
+      const h = data.hours[i];
+      const w = (h.weather||'').toLowerCase();
       if ((w.includes('rain') || w.includes('snow') || w.includes('雨') || w.includes('雪')) && parseInt(h.rain_chance) > 50) {
-        var hNum = parseInt(h.time);
+        const hNum = parseInt(h.time);
         if (hNum - currentHour > 0 && hNum - currentHour <= 2) {
-          rainAlert = "预计" + (h.time) + "左右将有" + (h.weather) + "，请提前做好准备";
+          rainAlert = `预计${h.time}左右将有${h.weather}，请提前做好准备`;
           break;
         }
       }
     }
     if (rainAlert) {
-      html += "<div class=\"wh-rain-alert\">⏰ " + (rainAlert) + "</div>";
+      html += `<div class="wh-rain-alert">⏰ ${rainAlert}</div>`;
     }
 
     // AI天气助手按钮
-    html += "<button class=\"wh-ai-btn\" onclick=\"askWeatherAI('" + (dest.replace(/'/g,"\\'")) + "')\" id=\"whAiBtn\">🤖 问问中国天气智能体</button>";
-    html += "<div class=\"wh-ai-loading\" id=\"whAiLoading\">⏳ AI正在分析天气...</div>";
-    html += "<div class=\"wh-ai-reply\" id=\"whAiReply\"></div>";
+    html += `<button class="wh-ai-btn" onclick="askWeatherAI('${dest.replace(/'/g,"\\'")}')" id="whAiBtn">🤖 问问中国天气智能体</button>`;
+    html += `<div class="wh-ai-loading" id="whAiLoading">⏳ AI正在分析天气...</div>`;
+    html += `<div class="wh-ai-reply" id="whAiReply"></div>`;
 
     html += '<button class="wh-close" onclick="closeWeatherHourly()">关闭</button>';
     card.innerHTML = html;
@@ -2468,17 +2568,17 @@ function closeWeatherHourly() { document.getElementById('weatherHourlyOverlay').
 
 // AI天气助手对话
 async function askWeatherAI(city) {
-  var btn = document.getElementById('whAiBtn');
-  var loading = document.getElementById('whAiLoading');
-  var reply = document.getElementById('whAiReply');
+  const btn = document.getElementById('whAiBtn');
+  const loading = document.getElementById('whAiLoading');
+  const reply = document.getElementById('whAiReply');
   if (!btn || !loading || !reply) return;
   btn.disabled = true;
   btn.textContent = '⏳ 分析中...';
   loading.classList.add('show');
   reply.classList.remove('show');
   try {
-    var res = await fetch(API + "/api/china-weather/chat?city=" + (encodeURIComponent(city)) + "&query=" + (encodeURIComponent('出行建议')));
-    var data = await res.json();
+    const res = await fetch(API + `/api/china-weather/chat?city=${encodeURIComponent(city)}&query=${encodeURIComponent('出行建议')}`);
+    const data = await res.json();
     if (data.reply) {
       reply.textContent = '💡 ' + data.reply;
       reply.classList.add('show');
@@ -2494,16 +2594,16 @@ async function askWeatherAI(city) {
 }
 
 // 极端天气预警检查
-var weatherAlertTimer = null;
+let weatherAlertTimer = null;
 async function checkWeatherAlerts() {
   if (!tripData || !tripData.destination) return;
   try {
-    var res = await fetch(API + '/api/weather-alerts?city=' + encodeURIComponent(tripData.destination));
-    var data = await res.json();
+    const res = await fetch(API + '/api/weather-alerts?city=' + encodeURIComponent(tripData.destination));
+    const data = await res.json();
     if (data.success && data.alerts && data.alerts.length) {
-      var alert = data.alerts[0];
-      var bar = document.getElementById('alertBar');
-      var msg = document.getElementById('alertMsg');
+      const alert = data.alerts[0];
+      const bar = document.getElementById('alertBar');
+      const msg = document.getElementById('alertMsg');
       msg.textContent = '⚠️ ' + alert.message;
       if (alert.type.includes('雪')) bar.className = 'alert-bar snow show';
       else bar.className = 'alert-bar show';
@@ -2520,26 +2620,26 @@ function startWeatherAlerts() {
 // 雨雪来临前1小时提醒（需要逐时数据支持）
 async function checkRainSnowAlert() {
   if (!tripData || !tripData.destination || !tripData.itinerary) return;
-  var today = new Date();
-  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+  const today = new Date();
+  const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
   // 查找今天是否有行程
-  var todayDay = (tripData.itinerary||[]).find(function(d) { return d.date === todayStr; });
+  const todayDay = (tripData.itinerary||[]).find(d => d.date === todayStr);
   if (!todayDay) return;
   try {
-    var res = await fetch(API + "/api/weather-hourly?city=" + (encodeURIComponent(tripData.destination)) + "&date=" + (encodeURIComponent(todayStr)));
-    var data = await res.json();
+    const res = await fetch(API + `/api/weather-hourly?city=${encodeURIComponent(tripData.destination)}&date=${encodeURIComponent(todayStr)}`);
+    const data = await res.json();
     if (!data.success || !data.hours) return;
-    var nowHour = today.getHours();
+    const nowHour = today.getHours();
     // 检查接下来1-2小时是否有雨雪
-    var rainSnow = ['雨','雪','暴雨','大雨','中雨','小雨','雷阵雨','暴雪','大雪','中雪','小雪'];
-    var nextHour = data.hours.find(function(h) {
-      var hh = parseInt(h.time);
-      return hh >= nowHour && hh <= nowHour + 2 && rainSnow.some(function(r) { return h.weather.includes(r; }));
+    const rainSnow = ['雨','雪','暴雨','大雨','中雨','小雨','雷阵雨','暴雪','大雪','中雪','小雪'];
+    const nextHour = data.hours.find(h => {
+      const hh = parseInt(h.time);
+      return hh >= nowHour && hh <= nowHour + 2 && rainSnow.some(r => h.weather.includes(r));
     });
     if (nextHour) {
-      var bar = document.getElementById('alertBar');
-      var msg = document.getElementById('alertMsg');
-      msg.textContent = "🌧️ " + (nextHour.time) + "左右将有" + (nextHour.weather) + "，请提前做好准备！";
+      const bar = document.getElementById('alertBar');
+      const msg = document.getElementById('alertMsg');
+      msg.textContent = `🌧️ ${nextHour.time}左右将有${nextHour.weather}，请提前做好准备！`;
       if (nextHour.weather.includes('雪')) bar.className = 'alert-bar snow show';
       else bar.className = 'alert-bar show';
     }
@@ -2548,7 +2648,7 @@ async function checkRainSnowAlert() {
 
 // 重新生成计划
 async function regeneratePlan() {
-  var newPlan = document.getElementById('newPlanInput').value.trim();
+  const newPlan = document.getElementById('newPlanInput').value.trim();
   if (!newPlan) { alert('请输入新计划需求'); return; }
   if (!tripData) return;
 
@@ -2556,16 +2656,17 @@ async function regeneratePlan() {
   document.getElementById('regenerateLoadingOverlay').classList.add('show');
 
   try {
-    var res = await fetch(API + '/api/regenerate-trip', {
+    const res = await fetch(API + '/api/regenerate-trip', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         user_input: newPlan,
         trip_data: tripData,
         is_self_drive: isSelfDrive,
+        transport_mode: transportMode,
         departure_city: departureCity,
       })
     });
-    var data = await res.json();
+    const data = await res.json();
     if (data.success) {
       tripData = data.data;
       saveToHistory(data.data);
@@ -2588,12 +2689,12 @@ async function regeneratePlan() {
 function updateOverviewMarkers() {
   if (!tripData) return;
   allMarkers = [];
-  var globalOrder = 1;
-  (tripData.itinerary||[]).forEach(function(day) {
-    ['morning','afternoon','evening'].forEach(function(slot) {
-      var s = day[slot];
+  let globalOrder = 1;
+  (tripData.itinerary||[]).forEach(day => {
+    ['morning','afternoon','evening'].forEach(slot => {
+      const s = day[slot];
       if(s && s.spot && s.location){
-        var [lng, lat] = s.location.split(',').map(Number);
+        const [lng, lat] = s.location.split(',').map(Number);
         if (!isNaN(lng) && !isNaN(lat)) {
           allMarkers.push({ name: s.spot, lng, lat, order: globalOrder, day: day.day });
           globalOrder++;
@@ -2601,19 +2702,19 @@ function updateOverviewMarkers() {
       }
     });
   });
-  var bk = tripData.booking_info || {};
-  (bk.hotels || []).forEach(function(h) {
+  const bk = tripData.booking_info || {};
+  (bk.hotels || []).forEach(h => {
     if (h.location) {
-      var [lng, lat] = h.location.split(',').map(Number);
+      const [lng, lat] = h.location.split(',').map(Number);
       if (!isNaN(lng) && !isNaN(lat)) {
         allMarkers.push({ name: h.name, lng, lat, order: globalOrder, day: 0, type: 'hotel' });
         globalOrder++;
       }
     }
   });
-  (bk.tickets || []).forEach(function(t) {
+  (bk.tickets || []).forEach(t => {
     if (t.location && t.need_booking) {
-      var [lng, lat] = t.location.split(',').map(Number);
+      const [lng, lat] = t.location.split(',').map(Number);
       if (!isNaN(lng) && !isNaN(lat)) {
         allMarkers.push({ name: t.spot, lng, lat, order: globalOrder, day: 0, type: 'ticket' });
         globalOrder++;
@@ -2632,7 +2733,7 @@ function toggleMonitor() {
 }
 function startMonitor() {
   if (monitorStopped) return;
-  var btn = document.getElementById('btnMonitor');
+  const btn = document.getElementById('btnMonitor');
   btn.textContent = '监测中...';
   btn.style.background = '#E67E22';
   btn.style.color = '#fff';
@@ -2643,7 +2744,7 @@ function startMonitor() {
 }
 function stopMonitor() {
   if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
-  var btn = document.getElementById('btnMonitor');
+  const btn = document.getElementById('btnMonitor');
   btn.textContent = '开启实时监测';
   btn.style.background = '#fff';
   btn.style.color = '#4A90D9';
@@ -2653,30 +2754,30 @@ function stopMonitor() {
 async function checkTripStatus() {
   if (!tripData || monitorStopped) return;
   try {
-    var currentLocation = {};
+    let currentLocation = {};
     if (navigator.geolocation) {
       try {
-        var pos = await new Promise(function(resolve, reject) {
+        const pos = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, {timeout: 5000, maximumAge: 300000});
         });
         currentLocation = {lng: pos.coords.longitude, lat: pos.coords.latitude};
       } catch (e) {}
     }
-    var res = await fetch(API + '/api/monitor-trip', {
+    const res = await fetch(API + '/api/monitor-trip', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({trip_data: tripData, current_location: currentLocation, rejected: monitorRejected})
     });
-    var data = await res.json();
+    const data = await res.json();
     if (data.success && data.has_alert && data.suggestion) {
       showMonitorNotification(data.alerts, data.suggestion);
     }
   } catch (e) {}
 }
 function showMonitorNotification(alerts, suggestion) {
-  var notif = document.getElementById('monitorNotification');
+  const notif = document.getElementById('monitorNotification');
   document.getElementById('monitorTitle').textContent = '⚠️ 突发情况提醒';
-  var body = '';
-  if (alerts) alerts.forEach(function(a) { body += '<div style="margin-bottom:4px">• ' + a.message + '</div>'; });
+  let body = '';
+  if (alerts) alerts.forEach(a => { body += '<div style="margin-bottom:4px">• ' + a.message + '</div>'; });
   body += '<div style="margin-top:8px;color:#4A90D9;font-weight:500">💡 建议：' + suggestion + '</div>';
   document.getElementById('monitorBody').innerHTML = body;
   notif.classList.add('show');
