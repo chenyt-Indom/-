@@ -428,7 +428,7 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         vf_trains = variflight_data.get("trains", [])
 
     # 构建默认交通模板
-    def _build_transport_template(is_return=False):
+    def _build_transport_template(is_return=False, existing_type_hint=""):
         t = {
             "type": "", "flight_number": "", "departure_time": "", "arrival_time": "",
             "station": "", "duration": "", "cost": "", "cross_day": False,
@@ -490,12 +490,15 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
                 t["_verified"] = True
                 t["_verified_source"] = "预存数据"
             else:
-                # 所有数据源都无数据时，至少设置推荐交通方式
-                t["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
+                # 所有数据源都无数据时，优先使用已有类型提示，否则设置默认交通方式
+                if existing_type_hint:
+                    t["type"] = existing_type_hint
+                else:
+                    t["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
                 t["note"] = "暂无实时班次数据，请自行在携程查询"
         return t
 
-    # 从Variflight数据合并缺失字段到已有transport（不覆盖已有值）
+    # 从Variflight数据合并缺失字段到已有transport（不覆盖已有值，且不改变已有交通类型）
     def _merge_vf_to_transport(transport, vf_item):
         if not transport.get("flight_number"):
             transport["flight_number"] = vf_item["num"]
@@ -509,14 +512,12 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             transport["station"] = vf_item.get("from_airport") or vf_item.get("from_station", "")
         if not transport.get("cost"):
             transport["cost"] = vf_item.get("price", "")
-        # 如果type为空或与Variflight数据不一致，以Variflight为准
-        if vf_item.get("from_airport"):
-            cur_type = str(transport.get("type", ""))
-            if not cur_type or "飞机" not in cur_type:
+        # 只在type为空时根据Variflight数据设置type，已有明确type时不覆盖
+        cur_type = str(transport.get("type", "")).strip()
+        if not cur_type:
+            if vf_item.get("from_airport"):
                 transport["type"] = "飞机"
-        if vf_item.get("from_station"):
-            cur_type = str(transport.get("type", ""))
-            if not cur_type or ("高铁" not in cur_type and "火车" not in cur_type and "动车" not in cur_type):
+            elif vf_item.get("from_station"):
                 transport["type"] = "高铁"
         if not transport.get("_verified"):
             transport["_verified"] = True
@@ -527,8 +528,17 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         print("[TRANSPORT] 去程交通缺失，自动填充默认交通信息")
         trip_data["departure_transport"] = _build_transport_template()
     elif not trip_data["departure_transport"].get("flight_number"):
-        # 有type但缺flight_number，尝试从Variflight数据合并填充
-        if vf_flights or vf_trains:
+        # 有type但缺flight_number，尝试从Variflight数据合并填充，优先匹配type
+        dep_type = str(trip_data["departure_transport"].get("type", "")).strip()
+        if dep_type == "飞机" and vf_flights:
+            chosen = vf_flights[0]
+            print(f"[TRANSPORT] 去程交通(type=飞机)缺flight_number，从飞常准API航班合并: {chosen['num']}")
+            _merge_vf_to_transport(trip_data["departure_transport"], chosen)
+        elif dep_type == "高铁" and vf_trains:
+            chosen = vf_trains[0]
+            print(f"[TRANSPORT] 去程交通(type=高铁)缺flight_number，从飞常准API火车合并: {chosen['num']}")
+            _merge_vf_to_transport(trip_data["departure_transport"], chosen)
+        elif vf_flights or vf_trains:
             chosen = vf_flights[0] if vf_flights else vf_trains[0]
             print(f"[TRANSPORT] 去程交通缺flight_number，从飞常准API合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["departure_transport"], chosen)
@@ -538,14 +548,24 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         else:
             # 有type但无flight_number且无API数据，尝试从静态数据补全
             print("[TRANSPORT] 去程交通有type无班次号，尝试从静态数据补全")
-            trip_data["departure_transport"] = _build_transport_template()
+            trip_data["departure_transport"] = _build_transport_template(
+                existing_type_hint=trip_data["departure_transport"].get("type", ""))
 
     # 确保返程交通
     if not trip_data.get("return_transport") or not isinstance(trip_data.get("return_transport"), dict):
         print("[TRANSPORT] 返程交通缺失，自动填充默认交通信息")
         trip_data["return_transport"] = _build_transport_template(is_return=True)
     elif not trip_data["return_transport"].get("flight_number"):
-        if vf_flights or vf_trains:
+        ret_type = str(trip_data["return_transport"].get("type", "")).strip()
+        if ret_type == "飞机" and vf_flights:
+            chosen = vf_flights[0]
+            print(f"[TRANSPORT] 返程交通(type=飞机)缺flight_number，从飞常准API航班合并: {chosen['num']}")
+            _merge_vf_to_transport(trip_data["return_transport"], chosen)
+        elif ret_type == "高铁" and vf_trains:
+            chosen = vf_trains[0]
+            print(f"[TRANSPORT] 返程交通(type=高铁)缺flight_number，从飞常准API火车合并: {chosen['num']}")
+            _merge_vf_to_transport(trip_data["return_transport"], chosen)
+        elif vf_flights or vf_trains:
             chosen = vf_flights[0] if vf_flights else vf_trains[0]
             print(f"[TRANSPORT] 返程交通缺flight_number，从飞常准API合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["return_transport"], chosen)
@@ -555,7 +575,8 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         else:
             # 有type但无flight_number且无API数据，尝试从静态数据补全
             print("[TRANSPORT] 返程交通有type无班次号，尝试从静态数据补全")
-            trip_data["return_transport"] = _build_transport_template(is_return=True)
+            trip_data["return_transport"] = _build_transport_template(is_return=True,
+                existing_type_hint=trip_data["return_transport"].get("type", ""))
 
     return trip_data
 

@@ -283,8 +283,11 @@ def judge_transport(departure_city: str, dest_city: str) -> dict:
         return {"mode": "高铁/大巴/打车", "reason": f"距离约{dist}km，高铁或长途大巴均可，也可打车（约{dist//80}小时），根据附近车站距离和方案可行度选择时间最短方案", "need_flight": False}
     elif dist <= 800:
         return {"mode": "高铁优先", "reason": f"距离约{dist}km，高铁约{int(dist/300)}-{int(dist/250)}小时，性价比高", "need_flight": False}
-    else:
+    elif dist <= 1000:
         return {"mode": "飞机/高铁", "reason": f"距离约{dist}km，推荐飞机（约{int(dist/800)}-{int(dist/600)}小时）或高铁（约{int(dist/300)}-{int(dist/250)}小时）",
+                "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True}
+    else:
+        return {"mode": "飞机", "reason": f"距离约{dist}km，超过1000公里推荐飞机（约{int(dist/800)}-{int(dist/600)}小时），用户特殊说明除外",
                 "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True}
 
 
