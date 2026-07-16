@@ -678,6 +678,16 @@ if (!Object.keys) {
 }
 // ========== polyfill 结束 ==========
 
+// 全局错误捕获（必须在IIFE之前注册，防止IIFE内部错误导致白屏）
+window.addEventListener('error', function(e) {
+  console.warn('全局JS错误:', e.message, e.filename, e.lineno);
+  var homePage = document.getElementById('homePage');
+  if (homePage) { homePage.style.display = 'block'; }
+});
+window.addEventListener('unhandledrejection', function(e) {
+  console.warn('未处理的Promise拒绝:', e.reason);
+});
+
 (function() {
 var API = window.location.origin;
 let selectedTags = [];
@@ -936,57 +946,70 @@ function loadHistoryTrip(id) {
   if(record && record.data) { tripData = record.data; renderOverview(record.data); }
 }
 
-// 标签点击
-document.querySelectorAll('#tagGroup .tag').forEach(btn => {
-  btn.addEventListener('click', function(){
-    const tag = this.dataset.tag;
-    const idx = selectedTags.indexOf(tag);
-    if(idx > -1){ selectedTags.splice(idx,1); this.classList.remove('active'); }
-    else { selectedTags.push(tag); this.classList.add('active'); }
+// 标签点击（防御性：确保DOM元素存在）
+var tagBtns = document.querySelectorAll('#tagGroup .tag');
+if (tagBtns && tagBtns.length) {
+  tagBtns.forEach(function(btn) {
+    btn.addEventListener('click', function(){
+      const tag = this.dataset.tag;
+      const idx = selectedTags.indexOf(tag);
+      if(idx > -1){ selectedTags.splice(idx,1); this.classList.remove('active'); }
+      else { selectedTags.push(tag); this.classList.add('active'); }
+    });
   });
-});
+}
 
-// 日期选择器联动，限制从今天开始
-const startEl = document.getElementById('startDate');
-const endEl = document.getElementById('endDate');
-// 获取今天日期（YYYY-MM-DD格式），设置min属性禁止选择过去日期
-const today = new Date();
-const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
-startEl.setAttribute('min', todayStr);
-endEl.setAttribute('min', todayStr);
-// 开始日期变更时，结束日期同步min
-startEl.addEventListener('change', function() {
-  endEl.setAttribute('min', this.value);
-  updateDays();
-});
-endEl.addEventListener('change', updateDays);
+// 日期选择器联动，限制从今天开始（防御性：确保DOM元素存在）
+var startEl = document.getElementById('startDate');
+var endEl = document.getElementById('endDate');
+if (startEl && endEl) {
+  // 获取今天日期（YYYY-MM-DD格式），设置min属性禁止选择过去日期
+  var today = new Date();
+  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+  startEl.setAttribute('min', todayStr);
+  endEl.setAttribute('min', todayStr);
+  // 开始日期变更时，结束日期同步min
+  startEl.addEventListener('change', function() {
+    endEl.setAttribute('min', this.value);
+    updateDays();
+  });
+  endEl.addEventListener('change', updateDays);
+}
 function updateDays() {
-  const s = startEl.value, e = endEl.value;
+  if (!startEl || !endEl) return 0;
+  var s = startEl.value, e = endEl.value;
   if (s && e) {
-    const days = Math.max(1, Math.ceil((new Date(e) - new Date(s)) / 86400000) + 1);
-    document.getElementById('daysNum').textContent = days;
-    document.getElementById('daysHint').style.display = 'block';
+    var days = Math.max(1, Math.ceil((new Date(e) - new Date(s)) / 86400000) + 1);
+    var daysNumEl = document.getElementById('daysNum');
+    if (daysNumEl) daysNumEl.textContent = days;
+    var daysHintEl = document.getElementById('daysHint');
+    if (daysHintEl) daysHintEl.style.display = 'block';
     return days;
   }
-  document.getElementById('daysHint').style.display = 'none';
+  var daysHintEl2 = document.getElementById('daysHint');
+  if (daysHintEl2) daysHintEl2.style.display = 'none';
   return 0;
 }
 
 // 禁用/启用所有控件
 function disableControls() {
-  document.querySelector('.form-card').classList.add('disabled');
+  var formCard = document.querySelector('.form-card');
+  if (formCard) formCard.classList.add('disabled');
   var badge = document.getElementById('cityBadge');
   if (badge) badge.classList.add('disabled');
 }
 function enableControls() {
-  document.querySelector('.form-card').classList.remove('disabled');
+  var formCard = document.querySelector('.form-card');
+  if (formCard) formCard.classList.remove('disabled');
   var badge = document.getElementById('cityBadge');
   if (badge) badge.classList.remove('disabled');
 }
 
 // 生成攻略
 let progressTimer = null;
-document.getElementById('btnGenerate').addEventListener('click', async function(){
+var btnGen = document.getElementById('btnGenerate');
+if (btnGen) {
+btnGen.addEventListener('click', async function(){
   const dest = document.getElementById('destination').value.trim();
   const days = updateDays();
   if(!dest){ alert('请输入目的地'); return; }
@@ -1049,6 +1072,7 @@ document.getElementById('btnGenerate').addEventListener('click', async function(
     this.disabled = false;
   }
 });
+}
 
 // 图片预加载：收集所有图片URL并预加载，完成后显示总览页
 async function showLoadingAndPreload(data) {
@@ -2881,19 +2905,6 @@ window.acceptMonitorSuggestion = acceptMonitorSuggestion;
 window.rejectMonitorSuggestion = rejectMonitorSuggestion;
 window.stopMonitor = window._stopMonitorPermanent;
 })();
-
-// 全局错误捕获（防止微信X5浏览器因JS错误导致白屏）
-window.addEventListener('error', function(e) {
-  console.warn('全局JS错误:', e.message, e.filename, e.lineno);
-  // 确保首页至少可见
-  var homePage = document.getElementById('homePage');
-  if (homePage && homePage.style.display === 'none') {
-    homePage.style.display = 'block';
-  }
-});
-window.addEventListener('unhandledrejection', function(e) {
-  console.warn('未处理的Promise拒绝:', e.reason);
-});
 </script>
 <!-- 城市编辑弹窗 -->
 <div class="modal-overlay" id="cityModal">
