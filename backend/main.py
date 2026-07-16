@@ -111,18 +111,7 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
     # 🔴 飞常准API是唯一数据源，不使用预存COMMON_ROUTES回退
     # 如果API无数据，all_vf_items为空，后续验证将标记所有班次为未验证
 
-    all_vf_items = vf_flights + vf_trains
-    all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
-    # 🔴 根据用户交通方式预过滤all_vf_items，确保后续匹配不会把飞机换成高铁（或反之）
-    if user_transport_mode and user_transport_mode in ("飞机", "高铁"):
-        vf_items_by_mode = _filter_by_user_mode(all_vf_items, user_transport_mode)
-        if vf_items_by_mode:
-            all_vf_items = vf_items_by_mode
-            all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
-    # 记录已分配给出发交通的班次，避免返程使用同一班次
-    used_departure_num = None
-
-    # 🔴 辅助函数：根据用户选择的交通方式过滤可用班次
+    # 🔴 辅助函数：根据用户选择的交通方式过滤可用班次（必须在调用前定义）
     def _filter_by_user_mode(items, mode):
         """根据用户选择的交通方式过滤班次列表，确保替换时不会把飞机换成高铁（或反之）
         如果用户指定了交通方式，严格过滤，无匹配时不回退（保持空列表让调用方处理）"""
@@ -135,6 +124,17 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             filtered = [item for item in items if item.get("from_station")]
             return filtered  # 只返回高铁，不回退到全部
         return items
+
+    all_vf_items = vf_flights + vf_trains
+    all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
+    # 🔴 根据用户交通方式预过滤all_vf_items，确保后续匹配不会把飞机换成高铁（或反之）
+    if user_transport_mode and user_transport_mode in ("飞机", "高铁"):
+        vf_items_by_mode = _filter_by_user_mode(all_vf_items, user_transport_mode)
+        if vf_items_by_mode:
+            all_vf_items = vf_items_by_mode
+            all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
+    # 记录已分配给出发交通的班次，避免返程使用同一班次
+    used_departure_num = None
 
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
@@ -1143,7 +1143,7 @@ async def generate_trip(req: TripRequest):
         except Exception as e:
             print(f"[WARN] 交通数据补全失败（不影响主流程）: {e}")
         # 🔴 最终校验：确保交通类型与用户选择一致
-        _check_transport_type_consistency(trip_data, req.transport_mode)
+        _check_transport_type_consistency(trip_data, trip_data.get("departure_transport", {}), trip_data.get("return_transport", {}))
         # 交叉验证：确保行程卡片与交通卡片时间一致性
         try:
             _validate_cross_card_consistency(trip_data)
@@ -1584,7 +1584,7 @@ async def regenerate_trip(request: Request):
         except Exception as e:
             print(f"[WARN] 重新生成交通数据补全失败（不影响主流程）: {e}")
         # 🔴 最终校验：确保交通类型与用户选择一致
-        _check_transport_type_consistency(new_trip, transport_mode)
+        _check_transport_type_consistency(new_trip, new_trip.get("departure_transport", {}), new_trip.get("return_transport", {}))
         # 交叉验证：确保行程卡片与交通卡片时间一致性
         try:
             _validate_cross_card_consistency(new_trip)
