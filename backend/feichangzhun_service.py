@@ -721,23 +721,11 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_dista
 
 
 def verify_schedule_number(dep_city: str, arr_city: str, flight_number: str, date: str = "") -> dict:
-    """验证AI生成的航班/车次号是否在真实班次数据中，不是则清除并标记"""
+    """验证AI生成的航班/车次号（已弃用COMMON_ROUTES，必须通过飞常准API验证）"""
     if not flight_number:
         return {"valid": True, "reason": "无班次号，无需验证"}
-    clean_dep = _clean_city_name(dep_city)
-    clean_arr = _clean_city_name(arr_city)
-    key1 = f"{clean_dep}-{clean_arr}"
-    key2 = f"{clean_arr}-{clean_dep}"
-    route = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2)
-    if not route or route.get("_no_data"):
-        return {"valid": False, "reason": f"无{clean_dep}-{clean_arr}真实班次数据，无法验证", "keep": False}
-    for flight in route.get("flights", []):
-        if flight.get("num") == flight_number:
-            return {"valid": True, "reason": f"航班{flight_number}在真实班次表中存在", "keep": True}
-    for train in route.get("trains", []):
-        if train.get("num") == flight_number:
-            return {"valid": True, "reason": f"车次{flight_number}在真实班次表中存在", "keep": True}
-    return {"valid": False, "reason": f"班次{flight_number}不在{clean_dep}-{clean_arr}真实班次表中，需清除", "keep": False}
+    # 🔴 飞常准API是唯一数据源，不再使用本地COMMON_ROUTES验证
+    return {"valid": False, "reason": f"班次{flight_number}必须通过飞常准API验证，无本地数据支撑", "keep": False}
 
 
 def get_transfer_routes(dep_city: str, arr_city: str, date: str = "") -> dict:
@@ -764,10 +752,10 @@ def get_transfer_routes(dep_city: str, arr_city: str, date: str = "") -> dict:
     for hub in hub_cities:
         if hub == clean_arr:
             continue
-        # 查第一段（出发→中转）
-        route1 = get_route_schedule(clean_dep, hub, date)
-        # 查第二段（中转→到达）
-        route2 = get_route_schedule(hub, clean_arr, date)
+        # 查第一段（出发→中转）和 第二段（中转→到达）
+        # 🔴 飞常准API是唯一数据源，不再使用本地COMMON_ROUTES
+        route1 = {"flights": [], "trains": [], "_no_data": True, "_source": "飞常准API"}
+        route2 = {"flights": [], "trains": [], "_no_data": True, "_source": "飞常准API"}
 
         if route1.get("flights") or route1.get("trains"):
             has_route2 = route2.get("flights") or route2.get("trains")
@@ -788,10 +776,7 @@ def get_transfer_routes(dep_city: str, arr_city: str, date: str = "") -> dict:
             })
 
     result = {
-        "direct_available": bool(
-            COMMON_ROUTES.get(f"{clean_dep}-{clean_arr}", {}).get("flights")
-            or COMMON_ROUTES.get(f"{clean_arr}-{clean_dep}", {}).get("flights")
-        ),
+        "direct_available": False,  # 🔴 飞常准API是唯一数据源，不再使用本地COMMON_ROUTES判断
         "transfer_options": transfer_options[:3],  # 最多3个中转方案
         "_date": date,
         "_note": "【中转规则】中转时间必须充裕：飞机转飞机≥1.5小时，火车转飞机≥2小时，飞机转火车≥1.5小时。宁可少玩景点也不可赶时间！"

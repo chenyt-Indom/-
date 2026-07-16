@@ -14,7 +14,7 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt, build_retry_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid, get_amap_city_distance
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid, get_amap_city_distance
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
 from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
@@ -98,8 +98,8 @@ async def health_check():
 
 
 def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = "", variflight_data: dict = None, route_schedule: dict = None, user_transport_mode: str = ""):
-    """飞常准API验证：所有班次必须经飞常准API或预存数据验证成功后才可安排。
-    原则：飞常准API优先，无数据时回退预存COMMON_ROUTES数据。
+    """飞常准API验证：所有班次必须经飞常准API验证成功后才可安排。
+    飞常准API是唯一数据源，绝不使用本地预存数据。
     返回: {"valid": bool, "issues": list, "fabricated": list}"""
     from feichangzhun_service import (DECOMMISSIONED_AIRPORTS, SHORT_AIRPORT_MAP)
     from datetime import date as date_type, datetime as dt_type
@@ -124,19 +124,15 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             return "高铁"
         return ""
 
-    # 构建飞常准API数据索引（优先variflight_data，回退route_schedule预存数据）
+    # 构建飞常准API数据索引（唯一数据源）
     vf_flights = []
     vf_trains = []
     if variflight_data and variflight_data.get("success"):
         vf_flights = variflight_data.get("flights", [])
         vf_trains = variflight_data.get("trains", [])
 
-    # 飞常准API无数据时，回退预存COMMON_ROUTES数据作为验证基准
-    if not vf_flights and not vf_trains and route_schedule:
-        vf_flights = route_schedule.get("flights", [])
-        vf_trains = route_schedule.get("trains", [])
-        if vf_flights or vf_trains:
-            print(f"[VALIDATE] 飞常准API无数据，使用预存COMMON_ROUTES作为验证基准: {len(vf_flights)}航班, {len(vf_trains)}火车")
+    # 🔴 飞常准API是唯一数据源，不使用预存COMMON_ROUTES回退
+    # 如果API无数据，all_vf_items为空，后续验证将标记所有班次为未验证
 
     all_vf_items = vf_flights + vf_trains
     all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
@@ -639,7 +635,7 @@ def _check_transport_type_consistency(trip_data: dict, dep_trans: dict, ret_tran
 def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str, 
                            variflight_data: dict = None, days: int = 3,
                            route_schedule: dict = None) -> dict:
-    """确保行程数据始终包含往返交通信息，缺失时从飞常准API数据或预存COMMON_ROUTES自动填充"""
+    """确保行程数据始终包含往返交通信息，缺失时从飞常准API数据自动填充，绝不使用本地预存数据"""
     user_transport = trip_data.get("_transport_mode", "")
 
     vf_flights = []
@@ -648,12 +644,7 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         vf_flights = variflight_data.get("flights", [])
         vf_trains = variflight_data.get("trains", [])
 
-    # 飞常准API无数据时，回退预存COMMON_ROUTES数据
-    if not vf_flights and not vf_trains and route_schedule:
-        vf_flights = route_schedule.get("flights", [])
-        vf_trains = route_schedule.get("trains", [])
-        if vf_flights or vf_trains:
-            print(f"[TRANSPORT] 飞常准API无数据，使用预存COMMON_ROUTES补全: {len(vf_flights)}航班, {len(vf_trains)}火车")
+    # 🔴 飞常准API是唯一数据源，不使用预存COMMON_ROUTES回退
 
     # 构建默认交通模板
     def _build_transport_template(is_return=False, existing_type_hint=""):
@@ -709,37 +700,22 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             t["_verified"] = True
             t["_verified_source"] = "飞常准实时API"
         else:
-            from feichangzhun_service import judge_transport, get_route_schedule
+            # 🔴 飞常准API是唯一数据源，无API数据时不从本地预存数据填充
+            from feichangzhun_service import judge_transport
             try:
                 ti = judge_transport(departure_city, dest)
             except Exception as e:
                 print(f"[WARN] 交通判断失败: {e}")
                 ti = None
-            try:
-                schedule = get_route_schedule(departure_city, dest, user_transport_mode=user_transport)
-            except Exception as e:
-                print(f"[WARN] 路线班次查询失败: {e}")
-                schedule = {}
-            if schedule.get("flights") and user_transport != "高铁":
-                f = schedule["flights"][0]
-                t["type"] = "飞机"
-                t["flight_number"] = f["num"]
-                t["departure_time"] = f.get("dep", "")
-                t["arrival_time"] = f.get("arr", "")
-                t["duration"] = f"{f['num']} {f.get('duration', '')}"
-                t["station"] = f.get("from_airport", "")
-                t["_verified"] = True
-                t["_verified_source"] = "预存数据"
-            elif schedule.get("trains") and user_transport != "飞机":
-                tr = schedule["trains"][0]
-                t["type"] = "高铁"
-                t["flight_number"] = tr["num"]
-                t["departure_time"] = tr.get("dep", "")
-                t["arrival_time"] = tr.get("arr", "")
-                t["duration"] = f"{tr['num']} {tr.get('duration', '')}"
-                t["station"] = tr.get("from_station", "")
-                t["_verified"] = True
-                t["_verified_source"] = "预存数据"
+            # 不再回退COMMON_ROUTES，只标记为未验证
+            t["_verified"] = False
+            t["_verified_source"] = "飞常准API无数据，未验证"
+            if user_transport:
+                t["type"] = user_transport
+                t["note"] = f"（⚠️ {user_transport}班次未验证，请自行核实）"
+            elif ti:
+                t["type"] = ti.get("mode", "")
+                t["note"] = "暂无实时班次数据，请自行在携程查询"
             else:
                 # 所有数据源都无数据时，优先使用用户指定类型，其次已有类型提示，最后默认交通方式
                 if user_transport:
@@ -1051,7 +1027,9 @@ async def generate_trip(req: TripRequest):
             amap_dist_km = transport_info.get("amap_distance", {}).get("distance_km", 0) if transport_info.get("amap_distance") else 0
             mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
             user_mode_cn = mode_map.get(req.transport_mode, "") if req.transport_mode else ""
-            schedule = get_route_schedule(req.departure_city, dest, start_date, force_distance_km=amap_dist_km, user_transport_mode=user_mode_cn)
+            # 🔴 飞常准API是唯一数据源，不调用本地预存数据
+            schedule = {"flights": [], "trains": [], "_verified": "", "_source": "等待飞常准API查询",
+                        "_no_data": True, "_no_data_note": "该路线未查询到实时班次，请等待飞常准API结果"}
             transport_info["route_schedule"] = schedule
             # 查询中转方案（当无直飞时）
             transfer_info = get_transfer_routes(req.departure_city, dest, start_date)
@@ -1109,36 +1087,22 @@ async def generate_trip(req: TripRequest):
                 "_no_data_message": vf_result.get("_no_data_message", ""),
                 "source": vf_result.get("_source", "飞常准API"),
             }
-            # 合并飞常准API数据到route_schedule（优先API数据，且必须按用户交通方式过滤）
+            # 🔴 飞常准API是唯一数据源，直接用API数据替换route_schedule
             if vf_result.get("success"):
-                schedule = transport_info.get("route_schedule", {})
-                # 🔴 根据用户交通方式过滤VF数据：用户选飞机时不合并火车，选高铁时不合并航班
                 vf_flights_filtered = vf_result.get("flights", [])
                 vf_trains_filtered = vf_result.get("trains", [])
                 if user_mode_cn == "飞机":
-                    vf_trains_filtered = []  # 用户选飞机，丢弃火车数据
+                    vf_trains_filtered = []
                 elif user_mode_cn == "高铁":
-                    vf_flights_filtered = []  # 用户选高铁，丢弃航班数据
-                if not schedule or schedule.get("_no_data"):
-                    # 无预存数据时，用过滤后的API数据构建schedule
-                    schedule = {
-                        "flights": vf_flights_filtered,
-                        "trains": vf_trains_filtered,
-                        "_verified": f"{start_date}", "_source": "飞常准实时API",
-                    }
-                else:
-                    # 有预存数据时，只合并匹配用户交通方式的数据
-                    if vf_flights_filtered:
-                        existing_nums = {f["num"] for f in schedule.get("flights", [])}
-                        for f in vf_flights_filtered:
-                            if f["num"] not in existing_nums:
-                                schedule.setdefault("flights", []).append(f)
-                    if vf_trains_filtered:
-                        existing_nums = {t["num"] for t in schedule.get("trains", [])}
-                        for t in vf_trains_filtered:
-                            if t["num"] not in existing_nums:
-                                schedule.setdefault("trains", []).append(t)
-                    schedule["_source"] = f"{schedule.get('_source', '')} + 飞常准实时API"
+                    vf_flights_filtered = []
+                schedule = {
+                    "flights": vf_flights_filtered,
+                    "trains": vf_trains_filtered,
+                    "_verified": f"{start_date}",
+                    "_source": "飞常准实时API（唯一数据源）",
+                    "_no_data": not (vf_flights_filtered or vf_trains_filtered),
+                    "_no_data_note": "飞常准API未返回该路线实时班次，请勿编造班次号" if not (vf_flights_filtered or vf_trains_filtered) else "",
+                }
                 transport_info["route_schedule"] = schedule
 
         # 2. 调用 DeepSeek 生成行程
@@ -1211,6 +1175,8 @@ async def generate_trip(req: TripRequest):
                                    transport_info.get("route_schedule"))
         except Exception as e:
             print(f"[WARN] 交通数据补全失败（不影响主流程）: {e}")
+        # 🔴 最终校验：确保交通类型与用户选择一致
+        _check_transport_type_consistency(trip_data, req.transport_mode)
         # 交叉验证：确保行程卡片与交通卡片时间一致性
         try:
             _validate_cross_card_consistency(trip_data)
@@ -1518,7 +1484,9 @@ async def regenerate_trip(request: Request):
                 amap_dist_km_reg = transport_info.get("amap_distance", {}).get("distance_km", 0) if transport_info.get("amap_distance") else 0
                 mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
                 user_mode_cn = mode_map.get(transport_mode, "") if transport_mode else ""
-                schedule_reg = get_route_schedule(departure_city, dest, start_date, force_distance_km=amap_dist_km_reg, user_transport_mode=user_mode_cn)
+                # 🔴 飞常准API是唯一数据源，不调用本地预存数据
+                schedule_reg = {"flights": [], "trains": [], "_verified": "", "_source": "等待飞常准API查询",
+                                "_no_data": True, "_no_data_note": "该路线未查询到实时班次，请等待飞常准API结果"}
                 transport_info["route_schedule"] = schedule_reg
             except Exception:
                 pass
@@ -1557,33 +1525,22 @@ async def regenerate_trip(request: Request):
                     "_no_data_message": vf_result.get("_no_data_message", ""),
                     "source": vf_result.get("_source", "飞常准API"),
                 }
+                # 🔴 飞常准API是唯一数据源，直接用API数据替换route_schedule
                 if vf_result.get("success"):
-                    schedule = transport_info.get("route_schedule", {})
-                    # 🔴 根据用户交通方式过滤VF数据
                     vf_flights_filtered = vf_result.get("flights", [])
                     vf_trains_filtered = vf_result.get("trains", [])
                     if user_mode_cn == "飞机":
                         vf_trains_filtered = []
                     elif user_mode_cn == "高铁":
                         vf_flights_filtered = []
-                    if not schedule or schedule.get("_no_data"):
-                        schedule = {
-                            "flights": vf_flights_filtered,
-                            "trains": vf_trains_filtered,
-                            "_verified": f"{start_date}", "_source": "飞常准实时API",
-                        }
-                    else:
-                        if vf_flights_filtered:
-                            existing_nums = {f["num"] for f in schedule.get("flights", [])}
-                            for f in vf_flights_filtered:
-                                if f["num"] not in existing_nums:
-                                    schedule.setdefault("flights", []).append(f)
-                        if vf_trains_filtered:
-                            existing_nums = {t["num"] for t in schedule.get("trains", [])}
-                            for t in vf_trains_filtered:
-                                if t["num"] not in existing_nums:
-                                    schedule.setdefault("trains", []).append(t)
-                        schedule["_source"] = f"{schedule.get('_source', '')} + 飞常准实时API"
+                    schedule = {
+                        "flights": vf_flights_filtered,
+                        "trains": vf_trains_filtered,
+                        "_verified": f"{start_date}",
+                        "_source": "飞常准实时API（唯一数据源）",
+                        "_no_data": not (vf_flights_filtered or vf_trains_filtered),
+                        "_no_data_note": "飞常准API未返回该路线实时班次，请勿编造班次号" if not (vf_flights_filtered or vf_trains_filtered) else "",
+                    }
                     transport_info["route_schedule"] = schedule
             except Exception:
                 pass
@@ -1659,6 +1616,8 @@ async def regenerate_trip(request: Request):
                                    transport_info.get("route_schedule"))
         except Exception as e:
             print(f"[WARN] 重新生成交通数据补全失败（不影响主流程）: {e}")
+        # 🔴 最终校验：确保交通类型与用户选择一致
+        _check_transport_type_consistency(new_trip, transport_mode)
         # 交叉验证：确保行程卡片与交通卡片时间一致性
         try:
             _validate_cross_card_consistency(new_trip)

@@ -140,9 +140,9 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                     transport_section += "\n  ⑧ 【机场限制-致命警告】只能使用以下真实运营的民用机场，绝对禁止使用南苑、大校场、巫家坝、汕头外砂等已关闭/军用机场！"
                     transport_section += "\n     可用机场白名单：北京首都T2/T3、北京大兴、上海虹桥T1/T2、上海浦东T1/T2、广州白云T1/T2/T3、深圳宝安T3、成都双流T1/T2、成都天府T1/T2、杭州萧山T3/T4、西安咸阳T3、武汉天河T3、昆明长水、三亚凤凰、哈尔滨太平、重庆江北、南京禄口、长沙黄花、郑州新郑、天津滨海、沈阳桃仙、福州长乐、合肥新桥、南宁吴圩、贵阳龙洞堡、海口美兰、拉萨贡嘎、乌鲁木齐地窝堡、兰州中川、呼和浩特白塔、银川河东、西宁曹家堡、南昌昌北、济南遥墙、太原武宿、石家庄正定、长春龙嘉、珠海金湾、桂林两江、青岛胶东、大连周水子、厦门高崎、宁波栎社、温州龙湾"
                     transport_section += "\n     如果你填写的机场名不在上述白名单中，就是错误的！必须使用上述白名单中的机场名！"
-                    # 无预存数据时的致命警告
+                    # 无飞常准API数据时的致命警告
                     if schedule.get("_no_data"):
-                        transport_section += "\n【致命警告-无预存数据】该路线没有预存真实班次数据！"
+                        transport_section += "\n【致命警告-飞常准API无实时数据】该路线飞常准API未返回实时班次！"
                         transport_section += "\n  ① flight_number字段必须留空字符串''，绝对禁止编造任何航班号/车次号！"
                         transport_section += "\n  ② station字段必须留空字符串''，绝对禁止编造任何机场/车站名！"
                         transport_section += "\n  ③ 只填写交通方式类型（如'飞机'或'高铁'）"
@@ -431,11 +431,11 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
                     price_info = f"  ¥{t.get('price','')}" if t.get('price') else ""
                     real_schedule_text += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{station_info}{price_info}"
 
-    # 回退到静态数据
+    # 从route_schedule获取飞常准API班次数据
     if not real_schedule_text:
         schedule = transport_info.get("route_schedule", {})
         if schedule.get("flights") or schedule.get("trains"):
-            real_schedule_text = "\n【🔴 预存真实班次 - 这是唯一可用的数据源！】"
+            real_schedule_text = "\n【🔴 飞常准API实时班次 - 这是唯一可用的数据源！】"
             if schedule.get("flights"):
                 real_schedule_text += "\n真实航班："
                 for f in schedule["flights"]:
@@ -701,9 +701,9 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                 for t in schedule["trains"]:
                     transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
             transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，但如果下面有飞常准API实时数据，必须以飞常准API为准！严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！飞常准API返回的机场/车站名即为有效名，无需参考其他名单！"
-            # 无预存数据时的致命警告
+            # 飞常准API无数据时的致命警告
             if schedule.get("_no_data"):
-                transport_section += "\n【致命警告-无预存数据】该路线没有预存真实班次数据！flight_number留空，只填交通方式类型，禁止编造航班号！"
+                transport_section += "\n【致命警告-飞常准API无数据】该路线飞常准API未返回实时班次！flight_number留空，只填交通方式类型，禁止编造航班号！"
             # 中转方案
             transfer_info = transport_info.get("transfer_info", {})
             if transfer_info.get("transfer_options"):
