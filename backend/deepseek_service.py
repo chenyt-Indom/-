@@ -195,16 +195,14 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 1. 出发时间不固定，需根据当天航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上出发
 2. 如果选择飞机：需先查询当天所有直飞航班，选择最合适的时间段（考虑票价、时长、到达时间）
 3. 如果选择火车：需查询当天高铁/动车班次，优先选择耗时短、到达时间合理的车次
-4. 【低成本交通优先-最高优先级】如果距离≤400km：必须优先使用大巴/自驾/汽车等低成本交通方式，绝对不要使用飞机或高铁！除非用户在需求中明确要求飞机或高铁
-4.5. 【低成本交通优先】如果距离400-800km：优先推荐高铁，但如果飞常准API无高铁数据，则使用大巴/自驾
-5. 如果距离>1000km：默认使用飞机作为交通工具（用户特殊说明除外），优先选择上午出发的航班，确保到达后有充足时间
-6. 到达时间规划：如果下午到达，当天可安排1个晚间景点；如果傍晚/晚上到达，当天仅安排入住酒店
-7. 跨天到达处理：如果航班/火车在次日凌晨到达，需在departure_transport中标注"次日XX:XX到达"，并规划好到达后的交通和住宿
-8. 必须计算从机场/车站到酒店的交通方式、时间和费用（打车/地铁/机场大巴），在departure_transport的note中说明
-9. 预留充足缓冲：飞机起飞前2小时到达机场，火车发车前1小时到达车站，加上从住处到机场/车站的时间
-10. 返程同理：最后一天需根据返程航班/车次时间倒推最晚出发时间，确保不误机/误车
-11. 如果出发当天没有合适的航班/车次，可考虑提前一天出发，并在第一天安排轻松的活动
-12. 【大巴/自驾出行】如果选择大巴或自驾，不需要填写flight_number（留空），只需要填写type、出发时间、预估耗时即可，station填写大巴站或直接留空"""
+4. 根据用户偏好选择合适的交通方式，有飞机/高铁时优先推荐飞机/高铁
+5. 到达时间规划：如果下午到达，当天可安排1个晚间景点；如果傍晚/晚上到达，当天仅安排入住酒店
+6. 跨天到达处理：如果航班/火车在次日凌晨到达，需在departure_transport中标注"次日XX:XX到达"，并规划好到达后的交通和住宿
+7. 必须计算从机场/车站到酒店的交通方式、时间和费用（打车/地铁/机场大巴），在departure_transport的note中说明
+8. 预留充足缓冲：飞机起飞前2小时到达机场，火车发车前1小时到达车站，加上从住处到机场/车站的时间
+9. 返程同理：最后一天需根据返程航班/车次时间倒推最晚出发时间，确保不误机/误车
+10. 如果出发当天没有合适的航班/车次，可考虑提前一天出发，并在第一天安排轻松的活动
+11. 【大巴/自驾出行】如果选择大巴或自驾，不需要填写flight_number（留空），只需要填写type、出发时间、预估耗时即可，station填写大巴站或直接留空"""
             transport_section += "\n【🔴 行程卡片与交通卡片一致性-最高优先级】"
             transport_section += "\n  出发交通卡片和Day1行程卡片必须时间连贯，不可相互独立！"
             transport_section += "\n  ① Day1的第一个景点开始时间必须 ≥ departure_transport.arrival_time + 从机场/车站到酒店的时间（约1小时）"
@@ -341,7 +339,7 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
    c) 第一天itinerary必须包含出发交通的完整描述：什么时间从家出发→前往机场/车站（方式+耗时）→乘坐什么班次（具体航班号/车次号）→到达时间→如何到酒店（方式+耗时）。出发交通占用时间必须从第一天可以游玩的时间中扣除！
    d) 最后一天itinerary必须包含返程交通的完整描述：什么时间从酒店出发→前往机场/车站（方式+耗时）→乘坐什么班次→到达时间。返程交通占用时间必须从最后一天可以游玩的时间中扣除！
    e) 如果交通时间占了半天以上，第一天/最后一天只安排0-1个景点或不安排景点
-   f) 交通耗时估算：高铁约300km/h，飞机飞行时间约800km/h（不含候机2小时+机场到市区1小时），大巴约80km/h，自驾约100km/h。距离>1000km默认飞机，≤800km高铁优先，800-1000km飞机/高铁均可
+   f) 交通耗时估算：高铁约300km/h，飞机飞行时间约800km/h（不含候机2小时+机场到市区1小时），大巴约80km/h，自驾约100km/h。根据用户偏好和飞常准API数据选择合适的交通方式
    g) station字段必须填写真实运营的机场/车站名称，禁止使用已关闭/军用的机场
    h) 【换乘必须全部列出】如果前往目的地需要换乘多种交通工具（如：家→打车到地铁站→地铁→高铁站→高铁→目的地机场→机场大巴→酒店），transfers数组中必须按顺序列出每一段换乘！每段必须填写：step序号、type（交通工具类型）、flight_number（飞机/火车必填班次号，其他留空）、from_station、to_station、departure_time（具体发车时间）、arrival_time、duration、transfer_time（换乘等待时间）。飞机和火车/高铁必须注明班次编号和发车时间，公交/地铁/打车/大巴等只需注明交通方式类型和耗时。
    i) 【游玩必须在到达之后-致命规则】第一天所有景点的time_slot开始时间必须晚于到达酒店的时间（arrival_time + station_to_hotel耗时）！绝对不能出现上午9:00在景点游玩，但航班下午2:00才到达的情况！如果到达时间是下午或晚上，第一天只能安排0-1个晚间景点或不安排景点。最后一天所有景点的time_slot结束时间必须早于出发去机场/车站的时间（departure_time - 前往机场/车站耗时 - 提前1-2小时候机/候车）！
@@ -427,16 +425,6 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
 
     fabricated_text = "、".join(fabricated) if fabricated else "未知"
 
-    # 临近城市强制低成本出行检查
-    low_cost_section = ""
-    schedule = transport_info.get("route_schedule", {})
-    if schedule.get("_low_cost_forced"):
-        low_cost_section = f"""
-【🔴 强制低成本出行 - 最高优先级！】
-{departure_city}到{dest}距离约{schedule.get('_distance_km','')}，属于临近城市！
-必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！
-flight_number必须留空""，type必须填"大巴"或"自驾"或"汽车"！"""
-
     # 🔴 用户指定交通方式：最高优先级，重试时也必须遵守
     user_mode_section = ""
     user_mode_reminder = ""
@@ -459,7 +447,6 @@ type字段必须为"{user_transport_mode}"！"""
 3. station必须是飞常准API返回的机场/车站名，API返回的即为有效名，不需要参考任何其他名单！
 4. departure_time和arrival_time必须与所选真实班次的dep/arr时间完全一致！
 5. duration必须使用"班次号 + 耗时"格式，不可只写耗时！
-{low_cost_section}
 {user_mode_section}
 
 {real_schedule_text}
@@ -598,10 +585,10 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 }}
 
 要求：
-1. 根据距离判断交通工具：≤400km推荐大巴/自驾/汽车（低成本优先），400-800km高铁优先，800km以上推荐飞机
+1. 根据用户偏好和飞常准API数据选择合适的交通工具，有飞机/高铁时优先推荐
 2. flights中机票link使用 https://flights.ctrip.com/booking/{departure_city}-{dest}-day-1.html，火车票link使用 https://www.fliggy.com/train/
 3. 机票/火车票给出真实航线建议和参考价格
-4. transport_mode字段：说明推荐的交通工具及理由，优先推荐低成本方案
+4. transport_mode字段：说明推荐的交通工具及理由
 5. 酒店推荐位置方便、性价比高的，给出具体名称和位置坐标
 6. 门票中 need_booking=true 的景点必须说明提前几天预约
 7. 【景区预约链接-最高优先级】只有 need_booking=true 的景点才需要填官方预约网址（公众号链接、小程序链接或官网链接），link必须是完整可访问的URL（以http://或https://开头），绝对不能填携程(ctrip.com)链接！如故宫填"https://gugong.ktmtech.cn/"，莫高窟填"https://www.mgk.org.cn/"，迪士尼填"https://www.shanghaidisneyresort.com/"等。如不确定官方网址，填平台名称并在note中说明，link留空字符串。need_booking=false的景点link填携程链接"https://piao.ctrip.com/"即可。
@@ -666,31 +653,15 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                     transport_section += f"\n【出发地枢纽】{dep_hub['note']}"
                 if dest_hub.get("has_hub"):
                     transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
-    # 临近城市强制低成本出行检查（用户未指定飞机/高铁时才生效）
-    low_cost_forced = False
-    schedule = transport_info.get("route_schedule", {}) if transport_info else {}
-    if schedule.get("_low_cost_forced") and user_transport_mode not in ("飞机", "高铁"):
-        low_cost_forced = True
-        transport_section += f"\n\n🔴🔴【强制低成本出行-最高优先级】{departure_city}到{dest}距离仅{schedule.get('_distance_km','')}，属于临近城市！"
-        transport_section += "\n必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！"
-        transport_section += "\n① flight_number必须留空字符串'' ② type必须填写'大巴'或'自驾'或'汽车' ③ duration只写估算耗时 ④ 绝对禁止编造任何航班号/车次号！"
     transport_section += f"""
-【交通选择原则】根据距离和性价比选择交通工具，优先考虑低成本方案："""
+【交通选择原则】根据用户偏好和飞常准API数据选择合适的交通工具："""
     if user_transport_mode:
         transport_section += f"\n【用户已指定出行方式为{user_transport_mode}，必须严格遵循！】"
     transport_section += f"""
-  - ≤5km：步行
-  - ≤30km：公交/地铁/打车
-  - ≤100km：大巴/城际/自驾
-  - ≤400km：【低成本优先】大巴/自驾/汽车，用户未明确要求时绝对不使用飞机或高铁
-  - 400-800km：高铁优先，如飞常准无高铁数据则用大巴/自驾
-  - 800-1000km：飞机/高铁
-  - >1000km：默认飞机（用户特殊说明除外）
 第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。
 【出发时间灵活】出发时间不固定，根据航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上。下午到达可安排晚间景点，晚上到达仅入住酒店。跨天到达需标注"次日XX:XX"并规划好到达后交通。需预留充足缓冲时间（飞机提前2小时到机场，火车提前1小时到站）。
 【大巴/自驾出行】如果选择大巴或自驾，flight_number留空，只填type和预估耗时，station留空或填大巴站名。"""
-    if transport_info and not low_cost_forced:
-        # 真实班次数据（临近城市已强制低成本，跳过班次数据展示）
+    if transport_info:
         # 真实班次数据
         schedule = transport_info.get("route_schedule", {})
         if schedule.get("flights") or schedule.get("trains"):
@@ -789,6 +760,6 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 4. 景点名绝对不能重复，同一商区/相邻区域景点安排在同一天，减少交通时间
 5. 【时间安排-最高优先级】每个景点必须填写 time_slot 字段（如"9:00-11:30"），严格遵循：上午8:00-12:00，下午13:00-17:30，晚上18:00-21:30；午餐12:00-13:00和晚餐17:30-18:30不可安排景点；景点间预留至少30-60分钟交通损耗；大景点3-4小时，小景点1.5-2.5小时；节奏慢则游玩时间+30%，节奏快可缩短但≥1小时。上午结束与下午开始间隔≥1小时，下午结束与晚上开始间隔≥1小时
 6. 所有时间使用24小时制，禁止>23:59的时间（如26:00），跨天活动使用"次日XX:XX"格式
-7. 公共交通出行时，根据距离选择合适交通工具：短距离步行/公交，中距离地铁/高铁，长距离飞机
+7. 公共交通出行时，根据实际情况和用户偏好选择合适的交通工具
 8. 出发/返程时间不能太紧凑，必须留足缓冲。飞机需提前2小时到机场，火车需提前1小时到站
 9. 只输出JSON，不要markdown代码块"""

@@ -271,65 +271,37 @@ def sanitize_airport_name(airport_name: str) -> str:
 
 
 def judge_transport(departure_city: str, dest_city: str) -> dict:
-    """根据距离和性价比判断推荐交通工具，覆盖步行→公交→地铁→大巴→高铁→飞机
-    400km以内优先考虑大巴/汽车等低成本交通方式，用户未明确要求时不推荐飞机或高铁"""
-    KNOWN_DIST = {
-        "北京-天津": 120, "广州-深圳": 140, "上海-苏州": 100,
-        "上海-杭州": 170, "成都-重庆": 300, "南京-上海": 300,
-        "广州-珠海": 140, "深圳-香港": 40, "北京-石家庄": 280,
-        "北京-上海": 1200, "北京-西安": 1100, "上海-武汉": 800,
-        "广州-长沙": 700, "北京-杭州": 1200, "上海-青岛": 700,
-        "成都-西安": 700, "深圳-长沙": 800, "北京-南京": 1000,
-        "广州-厦门": 600, "上海-厦门": 1000, "北京-武汉": 1100,
-        "北京-哈尔滨": 1200, "上海-昆明": 2300, "广州-三亚": 800,
-        "北京-乌鲁木齐": 2800, "上海-拉萨": 4000, "成都-拉萨": 2100,
-        "北京-三亚": 2900, "上海-成都": 1900, "广州-昆明": 1300,
-        "南京-苏州": 220, "南京-杭州": 280, "南京-合肥": 180,
-        "武汉-长沙": 350, "武汉-郑州": 520, "武汉-合肥": 380,
-        "西安-郑州": 500, "西安-太原": 620, "西安-兰州": 680,
-        "成都-贵阳": 660, "重庆-贵阳": 380, "重庆-长沙": 800,
-        "广州-南宁": 630, "深圳-厦门": 580, "杭州-南京": 280,
-        "杭州-黄山": 280, "天津-济南": 330, "济南-青岛": 380,
-        "沈阳-大连": 390, "福州-厦门": 260, "郑州-济南": 440,
-        "长沙-南昌": 350, "南昌-武汉": 360, "昆明-贵阳": 520,
-    }
+    """根据城市间交通条件判断推荐交通工具，不再根据距离强制限制用户选择"""
     clean_dep = _clean_city_name(departure_city)
     clean_dest = _clean_city_name(dest_city)
-    key1 = f"{clean_dep}-{clean_dest}"
-    key2 = f"{clean_dest}-{clean_dep}"
-    dist = KNOWN_DIST.get(key1) or KNOWN_DIST.get(key2)
     iata_dep = get_iata(departure_city)
     iata_arr = get_iata(dest_city)
+    station_dep = get_station(departure_city)
+    station_arr = get_station(dest_city)
 
-    if dist is None:
-        if iata_dep and iata_arr and iata_dep != iata_arr:
-            return {"mode": "建议飞机/高铁", "reason": "中长途城市间推荐飞机或高铁",
-                    "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True,
-                    "estimated_distance": ">800km"}
-        if clean_dep == clean_dest:
-            return {"mode": "市内交通", "reason": "同城出行，推荐地铁/公交/打车",
-                    "need_flight": False, "estimated_distance": "同城"}
-        return {"mode": "大巴/自驾/高铁", "reason": "请根据实际距离选择，优先考虑低成本方案",
-                "need_flight": False, "estimated_distance": "未知"}
+    if clean_dep == clean_dest:
+        return {"mode": "市内交通", "reason": "同城出行，推荐地铁/公交/打车",
+                "need_flight": False, "estimated_distance": "同城"}
 
-    if dist <= 5:
-        return {"mode": "步行", "reason": f"距离约{dist}km，步行即可到达", "need_flight": False}
-    elif dist <= 30:
-        return {"mode": "公交/地铁/打车", "reason": f"距离约{dist}km，推荐公交、地铁或打车", "need_flight": False}
-    elif dist <= 100:
-        return {"mode": "大巴/城际/自驾", "reason": f"距离约{dist}km，可乘大巴、城际或自驾，无需高铁或飞机", "need_flight": False}
-    elif dist <= 300:
-        return {"mode": "大巴/自驾/汽车", "reason": f"距离约{dist}km，推荐大巴或自驾（约{dist//80}小时），低成本出行，用户未明确要求时不推荐高铁", "need_flight": False}
-    elif dist <= 400:
-        return {"mode": "大巴/自驾/打车", "reason": f"距离约{dist}km，临近城市优先选择大巴或自驾（约{dist//80}小时），成本远低于高铁/飞机，用户未明确要求时不使用高铁", "need_flight": False}
-    elif dist <= 800:
-        return {"mode": "高铁优先", "reason": f"距离约{dist}km，高铁约{int(dist/300)}-{int(dist/250)}小时，性价比高", "need_flight": False}
-    elif dist <= 1000:
-        return {"mode": "飞机/高铁", "reason": f"距离约{dist}km，推荐飞机（约{int(dist/800)}-{int(dist/600)}小时）或高铁（约{int(dist/300)}-{int(dist/250)}小时）",
-                "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True}
+    # 两城市都有机场 → 可乘飞机
+    has_flight = bool(iata_dep and iata_arr and iata_dep != iata_arr)
+    # 两城市都有高铁站 → 可乘高铁
+    has_train = bool(station_dep and station_arr)
+
+    if has_flight and has_train:
+        return {"mode": "飞机/高铁", "reason": "两城市均有机场和高铁站，可根据用户偏好选择飞机或高铁",
+                "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True,
+                "estimated_distance": "请查询飞常准API获取实时班次"}
+    elif has_flight:
+        return {"mode": "飞机", "reason": "两城市均有机场，推荐飞机出行",
+                "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True,
+                "estimated_distance": "请查询飞常准API获取实时班次"}
+    elif has_train:
+        return {"mode": "高铁", "reason": "两城市均有高铁站，推荐高铁出行",
+                "need_flight": False, "estimated_distance": "请查询飞常准API获取实时班次"}
     else:
-        return {"mode": "飞机", "reason": f"距离约{dist}km，超过1000公里推荐飞机（约{int(dist/800)}-{int(dist/600)}小时），用户特殊说明除外",
-                "dep_iata": iata_dep, "arr_iata": iata_arr, "need_flight": True}
+        return {"mode": "大巴/自驾/高铁", "reason": "请根据实际情况选择交通方式",
+                "need_flight": False, "estimated_distance": "未知"}
 
 
 async def search_flights(dep_city: str, arr_city: str, date: str) -> dict:
@@ -627,50 +599,13 @@ COMMON_ROUTES = {
 def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_distance_km: float = 0, user_transport_mode: str = "") -> dict:
     """获取两个城市间的航班/高铁班次参考数据（优先飞常准API，回退预存数据）
     date参数用于校准：确保AI只使用出行日期的班次，禁止混入过往数据
-    临近城市（≤400km）自动过滤航班/高铁数据，强制低成本出行
-    force_distance_km: 外部传入的高德API精确距离（km），优先于预存数据判断
+    force_distance_km: 外部传入的高德API精确距离（km），仅用于参考
     user_transport_mode: 用户选择的出行方式（飞机/高铁/打车/自驾），为空则自动判断"""
     clean_dep = _clean_city_name(dep_city)
     clean_arr = _clean_city_name(arr_city)
     key1 = f"{clean_dep}-{clean_arr}"
     key2 = f"{clean_arr}-{clean_dep}"
-    
-    # 临近城市检查：≤400km不使用飞机/高铁，强制低成本出行
-    transport_judge = judge_transport(dep_city, arr_city)
-    est_dist = transport_judge.get("estimated_distance", "")
-    need_flight = transport_judge.get("need_flight", True)
-    low_cost_mode = transport_judge.get("mode", "")
-    
-    # 🔴 高德API精确距离优先：如果外部传入了精确距离且≤400km，强制低成本出行
-    effective_distance = force_distance_km if force_distance_km > 0 else 0
-    if effective_distance > 0 and effective_distance <= 400:
-        need_flight = False
-        low_cost_mode = "大巴/自驾/汽车"
-        est_dist = f"{effective_distance}km（高德地图精确测距）"
-        print(f"[ROUTE] 高德API精确距离{effective_distance}km ≤400km，强制低成本出行")
-    
-    # 🔴 用户明确选择飞机/高铁时，跳过强制低成本过滤，保留航班/高铁数据
-    if user_transport_mode in ("飞机", "高铁"):
-        need_flight = True
-        low_cost_mode = user_transport_mode
-        print(f"[ROUTE] {clean_dep}-{clean_arr} {est_dist}，用户指定{user_transport_mode}出行，跳过强制低成本过滤")
-    
-    # 距离≤400km（need_flight=False且非高铁优先）：强制低成本出行，过滤航班/高铁数据
-    if not need_flight and "高铁" not in low_cost_mode:
-        print(f"[ROUTE] {clean_dep}-{clean_arr} {est_dist}，{low_cost_mode}，强制低成本出行，过滤航班/高铁数据")
-        return {
-            "flights": [], "trains": [],
-            "_verified": "无需", "_source": "临近城市（≤400km）",
-            "_no_data": True,
-            "_no_data_note": (
-                f"【强制低成本出行-最高优先级】{clean_dep}到{clean_arr}距离约{est_dist}，属于临近城市！"
-                f"必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！"
-                f"① flight_number必须留空字符串'' ② type必须填写'大巴'或'自驾'或'汽车' ③ duration只写估算耗时 ④ station留空 ⑤ 绝对禁止编造任何航班号/车次号！"
-            ),
-            "_low_cost_forced": True,
-            "_distance_km": est_dist,
-        }
-    
+
     static = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {
         "flights": [], "trains": [],
         "_verified": "无", "_source": "无预存数据",
