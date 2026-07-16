@@ -1390,6 +1390,28 @@ async def resolve_image(name: str, city: str = "", type: str = "spot"):
         return {"success": False, "url": "", "error": str(e)}
 
 
+def _detect_transport_mode_from_text(text: str) -> str:
+    """从用户输入文本中检测交通方式变更意图
+    返回对应的transport_mode值（plane/train/taxi/selfdrive），无检测到返回空字符串
+    注意：检测顺序很重要，先检测更具体的词汇"""
+    if not text:
+        return ""
+    text_lower = text.lower()
+    # 高铁/火车/动车检测（优先级最高，因为"高铁"比"飞机"更具体）
+    if any(kw in text for kw in ["高铁", "火车", "动车", "列车", "车票", "候车", "铁路"]):
+        return "train"
+    # 飞机/航班检测
+    if any(kw in text for kw in ["飞机", "航班", "飞行", "机票", "登机", "候机", "值机", "乘机"]):
+        return "plane"
+    # 打车/出租车检测
+    if any(kw in text for kw in ["打车", "出租车", "的士", "滴滴"]):
+        return "taxi"
+    # 自驾检测
+    if any(kw in text for kw in ["自驾", "开车", "驾车", "驾驶"]):
+        return "selfdrive"
+    return ""
+
+
 @app.post("/api/regenerate-trip")
 async def regenerate_trip(request: Request):
     """根据用户新需求重新生成旅行计划，重点参考用户输入"""
@@ -1400,6 +1422,13 @@ async def regenerate_trip(request: Request):
         is_self_drive = body.get("is_self_drive", False)
         transport_mode = body.get("transport_mode", "")
         departure_city = body.get("departure_city", "")
+
+        # 🔴 从用户输入文本中检测交通方式变更（覆盖首页选择的交通方式）
+        detected_mode = _detect_transport_mode_from_text(user_input)
+        if detected_mode:
+            print(f"[REGENERATE] 从用户输入检测到交通方式变更: '{detected_mode}'，覆盖原transport_mode='{transport_mode}'")
+            transport_mode = detected_mode
+            is_self_drive = (detected_mode == "selfdrive")
 
         if not user_input:
             return {"success": False, "error": "请输入新计划需求"}

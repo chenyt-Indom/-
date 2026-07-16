@@ -64,6 +64,11 @@ async def _call_variflight(endpoint: str, params: dict) -> dict:
                 rpc_error = data.get("error", {})
                 if rpc_error:
                     last_error = f"JSON-RPC错误: {rpc_error.get('message', str(rpc_error))}"
+                # 如果以上都没匹配，记录原始响应以便调试
+                if not last_error:
+                    resp_preview = str(data)[:200]
+                    print(f"[VARIFLIGHT] JSON-RPC响应格式异常: {resp_preview}")
+                    last_error = f"JSON-RPC响应格式异常"
             elif resp.status_code == 401:
                 last_error = "飞常准API Key无效(JSON-RPC)"
             else:
@@ -85,14 +90,25 @@ async def _call_variflight(endpoint: str, params: dict) -> dict:
             data = resp.json()
             if data.get("code") == 200:
                 return {"success": True, "data": data.get("data", data)}
+            # 记录REST兜底响应
+            resp_preview = str(data)[:200]
+            print(f"[VARIFLIGHT] REST兜底响应格式异常: {resp_preview}")
             return {"success": False, "error": f"飞常准API返回错误: {data.get('message', '')} (JSON-RPC also failed: {last_error})", "data": []}
         except Exception as e:
             return {"success": False, "error": f"飞常准API调用失败: {str(e)} (JSON-RPC also failed: {last_error})", "data": []}
 
 
 async def _try_flight_query(dep_iata: str, arr_iata: str, date: str) -> dict:
-    """尝试查询航班（单个机场对），返回航班列表"""
-    result = await _call_variflight("searchFlightsByDepArr", {"dep": dep_iata, "arr": arr_iata, "date": date})
+    """尝试查询航班（单个机场对），返回航班列表
+    优先使用depcity/arrcity（城市代码）进行查询，兼容性更好"""
+    print(f"[VARIFLIGHT] 查询航班: {dep_iata}→{arr_iata}, date={date}")
+    # 策略1：使用depcity/arrcity（城市代码），兼容性更好
+    result = await _call_variflight("searchFlightsByDepArr", {"depcity": dep_iata, "arrcity": arr_iata, "date": date})
+    if not result.get("success") or not result.get("data"):
+        # 策略2：回退到dep/arr（机场代码）
+        print(f"[VARIFLIGHT] 城市代码查询无结果，尝试机场代码查询")
+        result = await _call_variflight("searchFlightsByDepArr", {"dep": dep_iata, "arr": arr_iata, "date": date})
+    print(f"[VARIFLIGHT] 航班查询结果: success={result.get('success')}, data_type={type(result.get('data')).__name__}, data_len={len(result.get('data', [])) if isinstance(result.get('data'), list) else 'N/A'}, error={result.get('error', '')[:100]}")
     flights = []
     if result.get("success"):
         raw_data = result.get("data", [])
@@ -117,16 +133,20 @@ async def _try_flight_query(dep_iata: str, arr_iata: str, date: str) -> dict:
                     "airline": f.get("FlightCompany", f.get("airline", "")),
                     "_source": "飞常准实时API",
                 })
+    elif result.get("error"):
+        print(f"[VARIFLIGHT] 航班查询失败: {result.get('error')[:200]}")
     return {"success": result.get("success"), "flights": flights, "error": result.get("error", "")}
 
 
 async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> dict:
-    """按出发/到达城市查询直飞航班（使用机场IATA代码，而非城市代码）
+    """按出发/到达城市查询直飞航班（优先使用城市代码depcity/arrcity，兼容性更好）
     支持多机场查询和邻近城市校准：如果主机场无数据，尝试查询邻近枢纽城市的机场
     反复校准：主查询失败时自动扩展搜索范围"""
-    from feichangzhun_service import get_primary_airport_iata, get_nearest_hub, _clean_city_name
-    dep_iata = get_primary_airport_iata(dep_city)
-    arr_iata = get_primary_airport_iata(arr_city)
+    from feichangzhun_service import get_primary_airport_iata, get_nearest_hub, get_iata, _clean_city_name
+
+    # 优先使用城市代码（BJS/SHA等），兼容性更好
+    dep_iata = get_iata(dep_city) or get_primary_airport_iata(dep_city)
+    arr_iata = get_iata(arr_city) or get_primary_airport_iata(arr_city)
 
     if not dep_iata or not arr_iata:
         # 尝试获取邻近枢纽的机场代码
@@ -141,7 +161,7 @@ async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> di
         if not dep_iata or not arr_iata:
             return {"success": False, "error": f"无法识别机场代码：{dep_city}或{arr_city}", "flights": []}
 
-    # 主查询：直接机场对
+    # 主查询：使用城市代码（depcity/arrcity），_try_flight_query已内置双策略回退
     result = await _try_flight_query(dep_iata, arr_iata, date)
     flights = result.get("flights", [])
 
