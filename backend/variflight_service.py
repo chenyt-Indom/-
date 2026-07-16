@@ -3,10 +3,10 @@ import httpx
 import asyncio
 from config import VARIFLIGHT_KEY, VARIFLIGHT_URL
 
-# MCP工具名 → REST端点名映射（使用MCP工具名本身作为REST端点名）
+# MCP工具名 → REST端点名映射（飞常准API的MCP工具名与REST端点名不同，需映射）
 MCP_TO_REST_ENDPOINT = {
-    "searchFlightsByDepArr": "searchFlightsByDepArr",
-    "searchFlightsByNumber": "searchFlightsByNumber",
+    "searchFlightsByDepArr": "flights",
+    "searchFlightsByNumber": "flight",
     "getFlightTransferInfo": "getFlightTransferInfo",
     "flightHappinessIndex": "flightHappinessIndex",
     "getRealtimeLocationByAnum": "getRealtimeLocationByAnum",
