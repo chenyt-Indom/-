@@ -51,13 +51,14 @@ async def _call_variflight(endpoint: str, params: dict) -> dict:
 
 
 async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> dict:
-    """按出发/到达城市查询直飞航班（使用城市IATA代码）"""
-    from feichangzhun_service import get_iata
-    dep_iata = get_iata(dep_city)
-    arr_iata = get_iata(arr_city)
+    """按出发/到达城市查询直飞航班（使用机场IATA代码，而非城市代码）"""
+    from feichangzhun_service import get_primary_airport_iata
+    dep_iata = get_primary_airport_iata(dep_city)
+    arr_iata = get_primary_airport_iata(arr_city)
     if not dep_iata or not arr_iata:
-        return {"success": False, "error": f"无法识别城市代码：{dep_city}或{arr_city}", "flights": []}
-    result = await _call_variflight("flights", {"depcity": dep_iata, "arrcity": arr_iata, "date": date})
+        return {"success": False, "error": f"无法识别机场代码：{dep_city}或{arr_city}", "flights": []}
+    # 飞常准MCP searchFlightsByDepArr 要求: dep/arr为机场代码（如PEK），date为日期
+    result = await _call_variflight("searchFlightsByDepArr", {"dep": dep_iata, "arr": arr_iata, "date": date})
     flights = []
     if result.get("success"):
         raw_data = result.get("data", [])
@@ -90,13 +91,15 @@ async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> di
 
 
 async def verify_flight_number(flight_num: str, date: str, dep: str = "", arr: str = "") -> dict:
-    """验证航班号是否真实存在"""
+    """验证航班号是否真实存在（使用机场代码）
+    MCP searchFlightsByNumber 参数: fnum(航班号), date(日期), dep/arr(可选机场代码)"""
+    from feichangzhun_service import get_primary_airport_iata
     params = {"fnum": flight_num, "date": date}
     if dep:
-        params["dep"] = dep
+        params["dep"] = get_primary_airport_iata(dep) or dep
     if arr:
-        params["arr"] = arr
-    result = await _call_variflight("flight", params)
+        params["arr"] = get_primary_airport_iata(arr) or arr
+    result = await _call_variflight("searchFlightsByNumber", params)
     if result.get("success"):
         data = result.get("data", {})
         # API返回航班列表，检查是否有匹配的FlightNo
@@ -145,28 +148,30 @@ async def search_train_tickets(dep_city: str, arr_city: str, date: str) -> dict:
 
 
 async def search_flight_itineraries(dep_city: str, arr_city: str, date: str) -> dict:
-    """查询可购航班行程（含价格）"""
+    """查询可购航班行程（含价格），使用城市代码（depCityCode/arrCityCode为城市代码）
+    MCP searchFlightItineraries 参数: depCityCode(城市代码如BJS), arrCityCode(城市代码如SHA), depDate(日期)"""
     from feichangzhun_service import get_iata
-    dep_iata = get_iata(dep_city)
-    arr_iata = get_iata(arr_city)
-    if not dep_iata or not arr_iata:
+    dep_city_code = get_iata(dep_city)
+    arr_city_code = get_iata(arr_city)
+    if not dep_city_code or not arr_city_code:
         return {"success": False, "error": "无法识别城市代码", "itineraries": []}
     result = await _call_variflight("searchFlightItineraries", {
-        "depCityCode": dep_iata, "arrCityCode": arr_iata, "depDate": date
+        "depCityCode": dep_city_code, "arrCityCode": arr_city_code, "depDate": date
     })
     return {"success": result.get("success"), "error": result.get("error", ""),
             "data": result.get("data", {}), "_source": "飞常准实时API"}
 
 
 async def get_flight_transfer(dep_city: str, arr_city: str, date: str) -> dict:
-    """查询中转航班方案"""
+    """查询中转航班方案，使用城市代码（depcity/arrcity而非机场代码）
+    MCP getFlightTransferInfo 参数: depcity(城市代码), arrcity(城市代码), depdate(日期)"""
     from feichangzhun_service import get_iata
-    dep_iata = get_iata(dep_city)
-    arr_iata = get_iata(arr_city)
-    if not dep_iata or not arr_iata:
+    dep_city_code = get_iata(dep_city)
+    arr_city_code = get_iata(arr_city)
+    if not dep_city_code or not arr_city_code:
         return {"success": False, "error": "无法识别城市代码", "transfers": []}
     result = await _call_variflight("getFlightTransferInfo", {
-        "depcity": dep_iata, "arrcity": arr_iata, "depdate": date
+        "depcity": dep_city_code, "arrcity": arr_city_code, "depdate": date
     })
     return {"success": result.get("success"), "error": result.get("error", ""),
             "data": result.get("data", {}), "_source": "飞常准实时API"}

@@ -28,6 +28,23 @@ CITY_TO_IATA = {
     "张家界": "DYG", "黄山": "TXN", "敦煌": "DNH", "延吉": "YNJ",
 }
 
+# 城市名→主要机场IATA代码（用于飞常准API查询，需要机场代码而非城市代码）
+# 飞常准searchFlightsByDepArr要求dep/arr为机场IATA代码（如PEK而非BJS）
+CITY_TO_PRIMARY_AIRPORT = {
+    "北京": "PEK", "上海": "SHA", "广州": "CAN", "深圳": "SZX",
+    "杭州": "HGH", "成都": "CTU", "重庆": "CKG", "南京": "NKG",
+    "武汉": "WUH", "西安": "XIY", "昆明": "KMG", "长沙": "CSX",
+    "郑州": "CGO", "天津": "TSN", "哈尔滨": "HRB", "沈阳": "SHE",
+    "福州": "FOC", "合肥": "HFE", "南宁": "NNG", "贵阳": "KWE",
+    "海口": "HAK", "拉萨": "LXA", "乌鲁木齐": "URC", "兰州": "LHW",
+    "呼和浩特": "HET", "银川": "INC", "西宁": "XNN", "南昌": "KHN",
+    "济南": "TNA", "太原": "TYN", "石家庄": "SJW", "长春": "CGQ",
+    "珠海": "ZUH", "大连": "DLC", "厦门": "XMN", "三亚": "SYX",
+    "青岛": "TAO", "苏州": "SZV", "桂林": "KWL", "丽江": "LJG",
+    "张家界": "DYG", "黄山": "TXN", "敦煌": "DNH", "延吉": "YNJ",
+    "宁波": "NGB", "温州": "WNZ", "揭阳": "SWA", "烟台": "YNT",
+}
+
 # 主要机场IATA代码（仅包含当前运营的民用机场）
 AIRPORT_TO_IATA = {
     "北京首都": "PEK", "北京大兴": "PKX", "上海浦东": "PVG",
@@ -174,6 +191,19 @@ def get_iata(city: str) -> str:
     hub = CITY_NEARBY_HUB.get(clean, "")
     if hub:
         return CITY_TO_IATA.get(hub, "")
+    return ""
+
+
+def get_primary_airport_iata(city: str) -> str:
+    """将中文城市名转换为主要机场IATA代码（用于飞常准API查询）
+    飞常准searchFlightsByDepArr要求dep/arr为机场代码（如PEK）而非城市代码（如BJS）"""
+    clean = _clean_city_name(city)
+    code = CITY_TO_PRIMARY_AIRPORT.get(clean, "")
+    if code:
+        return code
+    hub = CITY_NEARBY_HUB.get(clean, "")
+    if hub:
+        return CITY_TO_PRIMARY_AIRPORT.get(hub, "")
     return ""
 
 
@@ -594,22 +624,29 @@ COMMON_ROUTES = {
 }
 
 
-def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
+def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_distance_km: float = 0) -> dict:
     """获取两个城市间的航班/高铁班次参考数据（优先飞常准API，回退预存数据）
     date参数用于校准：确保AI只使用出行日期的班次，禁止混入过往数据
     临近城市（≤400km）自动过滤航班/高铁数据，强制低成本出行
-    """
+    force_distance_km: 外部传入的高德API精确距离（km），优先于预存数据判断"""
     clean_dep = _clean_city_name(dep_city)
     clean_arr = _clean_city_name(arr_city)
     key1 = f"{clean_dep}-{clean_arr}"
     key2 = f"{clean_arr}-{clean_dep}"
     
     # 临近城市检查：≤400km不使用飞机/高铁，强制低成本出行
-    # 使用judge_transport中的预存距离数据，避免重复查询高德API
     transport_judge = judge_transport(dep_city, arr_city)
     est_dist = transport_judge.get("estimated_distance", "")
     need_flight = transport_judge.get("need_flight", True)
     low_cost_mode = transport_judge.get("mode", "")
+    
+    # 🔴 高德API精确距离优先：如果外部传入了精确距离且≤400km，强制低成本出行
+    effective_distance = force_distance_km if force_distance_km > 0 else 0
+    if effective_distance > 0 and effective_distance <= 400:
+        need_flight = False
+        low_cost_mode = "大巴/自驾/汽车"
+        est_dist = f"{effective_distance}km（高德地图精确测距）"
+        print(f"[ROUTE] 高德API精确距离{effective_distance}km ≤400km，强制低成本出行")
     
     # 距离≤400km（need_flight=False且非高铁优先）：强制低成本出行，过滤航班/高铁数据
     if not need_flight and "高铁" not in low_cost_mode:
