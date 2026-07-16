@@ -170,6 +170,19 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
         is_low_cost = transport_type in ("大巴", "自驾", "汽车", "打车", "公交", "城际", "步行", "地铁")
         flight_num = transport.get("flight_number", "")
 
+        # 🔴 用户交通方式强制校验：AI输出的type必须与用户选择一致
+        if effective_user_mode and effective_user_mode in ("飞机", "高铁"):
+            if transport_type and transport_type != effective_user_mode and not is_low_cost:
+                issue = f"🔴 {key}交通类型为'{transport_type}'，但用户指定了'{effective_user_mode}'出行，type必须修正为'{effective_user_mode}'！"
+                print(f"[VALIDATE] {issue}")
+                result["issues"].append(issue)
+                result["valid"] = False
+                # 强制修正type，后续retry时AI会重新生成正确的type
+                transport["type"] = effective_user_mode
+                transport_type = effective_user_mode
+                is_train = transport_type in ("高铁", "火车", "动车")
+                is_flight = transport_type in ("飞机", "航班")
+
         # 低成本交通方式（大巴/自驾/汽车/打车等）不需要飞常准验证，跳过
         if is_low_cost:
             print(f"[INFO] {key}交通类型为'{transport_type}'（低成本出行），跳过飞常准验证")

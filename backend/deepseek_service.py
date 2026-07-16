@@ -54,7 +54,7 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     if departure_city:
         if user_transport_mode:
             # 用户指定了具体出行方式：强制使用该方式
-            transport_section = f"\n【🔴 用户指定出行方式 - 最高优先级】{user_transport_mode}"
+            transport_section = f"\n【🔴 用户指定出行方式 - 最高优先级 - 绝对不可更改】{user_transport_mode}"
             if user_transport_mode == "自驾":
                 transport_section += f"\n【出行方式】自驾从{departure_city}出发"
                 if transport_info:
@@ -67,11 +67,15 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                     transport_section += f"\n【出发建议】{sd.get('suggested_departure','')}"
                 transport_section += "\n第一天和最后一天需包含出发/返程自驾规划，计算好驾驶时间，不要安排太紧凑，留足休息时间"
             elif user_transport_mode == "飞机":
-                transport_section += f"\n【出行方式】用户指定飞机出行，必须安排{departure_city}到{dest}的往返航班"
+                transport_section += f"\n【🔴 不可更改的出行方式】用户指定飞机出行，departure_transport和return_transport的type字段必须为'飞机'，绝对禁止填写'高铁'、'火车'、'动车'或其他任何交通方式！"
+                transport_section += f"\n必须安排{departure_city}到{dest}的往返航班"
                 transport_section += "\n必须从飞常准API实时数据中选择真实航班，不可编造航班号"
+                transport_section += "\n即使飞常准API无数据，type也必须填'飞机'，flight_number可留空，duration填估算飞行时间"
             elif user_transport_mode == "高铁":
-                transport_section += f"\n【出行方式】用户指定高铁出行，必须安排{departure_city}到{dest}的往返高铁/动车"
+                transport_section += f"\n【🔴 不可更改的出行方式】用户指定高铁出行，departure_transport和return_transport的type字段必须为'高铁'，绝对禁止填写'飞机'、'航班'或其他任何交通方式！"
+                transport_section += f"\n必须安排{departure_city}到{dest}的往返高铁/动车"
                 transport_section += "\n必须从飞常准API实时数据中选择真实车次，不可编造车次号"
+                transport_section += "\n即使飞常准API无数据，type也必须填'高铁'，flight_number可留空，duration填估算高铁时间"
             elif user_transport_mode == "打车":
                 transport_section += f"\n【出行方式】用户指定打车出行，{departure_city}到{dest}使用打车/出租车"
                 transport_section += "\n无需安排航班或高铁，只标注打车预估费用和耗时即可"
@@ -431,15 +435,17 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
     if user_transport_mode and user_transport_mode in ("飞机", "高铁"):
         user_mode_section = f"""
 【🔴 用户指定交通方式 - 最高优先级！不可违背！】
-用户明确要求使用{user_transport_mode}出行！你必须只从上述真实班次中选择{user_transport_mode}类型的班次！
-如果用户选飞机，绝对不允许使用高铁/火车班次！如果用户选高铁，绝对不允许使用航班班次！
-type字段必须为"{user_transport_mode}"！"""
-        user_mode_reminder = f'\n6. 🔴 用户要求使用{user_transport_mode}出行，type字段必须为"{user_transport_mode}"，只能从{user_transport_mode}类型班次中选择！'
+用户明确要求使用{user_transport_mode}出行！这是用户的选择，你无权更改！
+type字段必须为"{user_transport_mode}"，绝对不允许改成其他任何交通方式！
+如果用户选飞机，departure_transport.type和return_transport.type都必须是"飞机"！
+如果用户选高铁，departure_transport.type和return_transport.type都必须是"高铁"！
+即使飞常准API没有返回{user_transport_mode}类型的班次，type也必须填"{user_transport_mode}"，flight_number可以留空！"""
+        user_mode_reminder = f'\n6. 🔴 用户要求使用{user_transport_mode}出行，type字段必须为"{user_transport_mode}"，禁止改为其他类型！'
 
-    retry_header = f"""🔴🔴🔴 上次生成的行程被拒绝！原因：你编造了不存在的班次号！
+    retry_header = f"""🔴🔴🔴 上次生成的行程被拒绝！请修正以下问题后重新生成：
+{chr(10).join(['  ❌ ' + i for i in issues]) if issues else ''}
 
-【编造的班次号】{fabricated_text}
-【拒绝原因】以下班次号在飞常准API中查不到，是凭空编造的！{chr(10).join(['  - ' + i for i in issues]) if issues else ''}
+【编造的班次号（如有）】{fabricated_text}
 
 【致命规则 - 违反将导致行程无效！】
 1. 航班号/车次号必须且只能从飞常准API提供的真实班次中选择，绝对禁止编造！
@@ -631,13 +637,15 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
     if departure_city:
         if user_transport_mode:
             # 用户指定了具体出行方式：强制使用该方式
-            transport_section = f"\n【🔴 用户指定出行方式 - 最高优先级，不可更改！】{user_transport_mode}"
+            transport_section = f"\n【🔴 用户指定出行方式 - 最高优先级，绝对不可更改！】{user_transport_mode}"
             if user_transport_mode == "自驾":
                 transport_section += f"\n【出行方式】自驾从{departure_city}出发，需计算驾驶时间，长途需安排过夜停留"
             elif user_transport_mode == "飞机":
-                transport_section += f"\n【出行方式】用户指定飞机出行，必须安排{departure_city}到{dest}的往返航班"
+                transport_section += f"\n【🔴 不可更改】用户指定飞机出行，departure_transport和return_transport的type字段必须为'飞机'，绝对禁止填写'高铁'或任何其他交通方式！"
+                transport_section += f"\n必须安排{departure_city}到{dest}的往返航班，即使飞常准API无航班数据，type也必须填'飞机'"
             elif user_transport_mode == "高铁":
-                transport_section += f"\n【出行方式】用户指定高铁出行，必须安排{departure_city}到{dest}的往返高铁/动车"
+                transport_section += f"\n【🔴 不可更改】用户指定高铁出行，departure_transport和return_transport的type字段必须为'高铁'，绝对禁止填写'飞机'或任何其他交通方式！"
+                transport_section += f"\n必须安排{departure_city}到{dest}的往返高铁/动车，即使飞常准API无高铁数据，type也必须填'高铁'"
             elif user_transport_mode == "打车":
                 transport_section += f"\n【出行方式】用户指定打车出行，{departure_city}到{dest}使用打车/出租车"
         elif is_self_drive:
