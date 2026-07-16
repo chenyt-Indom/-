@@ -1,29 +1,51 @@
 """DeepSeek AI 服务：API调用和提示词构建"""
+import asyncio
 import httpx
 from config import DEEPSEEK_KEY, DEEPSEEK_URL
 
 
 async def call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 4000) -> str:
-    """调用 DeepSeek API，返回生成的文本内容（超时10分钟）"""
-    async with httpx.AsyncClient(timeout=600.0) as client:
-        resp = await client.post(
-            DEEPSEEK_URL,
-            headers={
-                "Authorization": f"Bearer {DEEPSEEK_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "deepseek-chat",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": 0.7, "max_tokens": max_tokens,
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    """调用 DeepSeek API，返回生成的文本内容（超时10分钟，自动重试3次）"""
+    last_error = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                resp = await client.post(
+                    DEEPSEEK_URL,
+                    headers={
+                        "Authorization": f"Bearer {DEEPSEEK_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.7, "max_tokens": max_tokens,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            return data["choices"][0]["message"]["content"]
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as e:
+            # 网络超时或连接错误：重试
+            last_error = e
+            if attempt < 2:
+                wait_s = (attempt + 1) * 3  # 3s, 6s 递增等待
+                print(f"[DEEPSEEK] 第{attempt+1}次调用失败({type(e).__name__})，{wait_s}秒后重试...")
+                await asyncio.sleep(wait_s)
+        except httpx.HTTPStatusError as e:
+            # HTTP错误：4xx不重试，5xx重试
+            if e.response.status_code >= 500 and attempt < 2:
+                last_error = e
+                wait_s = (attempt + 1) * 3
+                print(f"[DEEPSEEK] 第{attempt+1}次调用失败(HTTP {e.response.status_code})，{wait_s}秒后重试...")
+                await asyncio.sleep(wait_s)
+            else:
+                raise  # 4xx错误直接抛出
+    # 3次重试全部失败
+    raise last_error
 
 
 def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
