@@ -71,6 +71,14 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                 transport_section += f"\n必须安排{departure_city}到{dest}的往返航班"
                 transport_section += "\n必须从飞常准API实时数据中选择真实航班，不可编造航班号"
                 transport_section += "\n即使飞常准API无数据，type也必须填'飞机'，flight_number可留空，duration填估算飞行时间"
+                # 如果出发城市没有机场，提示可以从邻近城市出发
+                if transport_info:
+                    dep_hub = transport_info.get("dep_hub", {})
+                    if dep_hub.get("has_hub"):
+                        transport_section += f"\n【⚠️ 出发城市无机场】{departure_city}本地无大型机场，但可以从邻近城市{dep_hub['hub_city']}的{dep_hub.get('hub_airport', '机场')}出发"
+                    dest_hub = transport_info.get("dest_hub", {})
+                    if dest_hub.get("has_hub"):
+                        transport_section += f"\n【⚠️ 目的地无机场】{dest}本地无大型机场，航班将降落在邻近城市{dest_hub['hub_city']}的{dest_hub.get('hub_airport', '机场')}"
             elif user_transport_mode == "高铁":
                 transport_section += f"\n【🔴 不可更改的出行方式】用户指定高铁出行，departure_transport和return_transport的type字段必须为'高铁'，绝对禁止填写'飞机'、'航班'或其他任何交通方式！"
                 transport_section += f"\n必须安排{departure_city}到{dest}的往返高铁/动车"

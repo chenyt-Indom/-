@@ -140,20 +140,27 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
     all_vf_items = vf_flights + vf_trains
     all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
+    # 🔴 根据用户交通方式预过滤all_vf_items，确保后续匹配不会把飞机换成高铁（或反之）
+    if user_transport_mode and user_transport_mode in ("飞机", "高铁"):
+        vf_items_by_mode = _filter_by_user_mode(all_vf_items, user_transport_mode)
+        if vf_items_by_mode:
+            all_vf_items = vf_items_by_mode
+            all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
     # 记录已分配给出发交通的班次，避免返程使用同一班次
     used_departure_num = None
 
     # 🔴 辅助函数：根据用户选择的交通方式过滤可用班次
     def _filter_by_user_mode(items, mode):
-        """根据用户选择的交通方式过滤班次列表，确保替换时不会把飞机换成高铁（或反之）"""
+        """根据用户选择的交通方式过滤班次列表，确保替换时不会把飞机换成高铁（或反之）
+        如果用户指定了交通方式，严格过滤，无匹配时不回退（保持空列表让调用方处理）"""
         if not mode or mode not in ("飞机", "高铁"):
             return items  # 用户未明确选择，不过滤
         if mode == "飞机":
             filtered = [item for item in items if item.get("from_airport")]
-            return filtered if filtered else items  # 无匹配航班时回退全部
+            return filtered  # 只返回航班，不回退到全部
         if mode == "高铁":
             filtered = [item for item in items if item.get("from_station")]
-            return filtered if filtered else items  # 无匹配高铁时回退全部
+            return filtered  # 只返回高铁，不回退到全部
         return items
 
     for key in ("departure_transport", "return_transport"):
@@ -259,6 +266,19 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 mode_filtered = _filter_by_user_mode(available_items, effective_user_mode)
                 if mode_filtered:
                     available_items = mode_filtered
+                elif effective_user_mode:
+                    # 🔴 用户指定了交通方式但VF数据中没有匹配的班次，不替换，保留原type
+                    issue = f"{key}班次{flight_num}不在飞常准API数据中，且无{effective_user_mode}类型班次可替换，保留原type={effective_user_mode}"
+                    print(f"[WARN] {issue}")
+                    result["issues"].append(issue)
+                    result["fabricated"].append(flight_num)
+                    result["valid"] = False
+                    transport["flight_number"] = ""  # 清空编造的班次号
+                    transport["type"] = effective_user_mode  # 保持用户选择的交通方式
+                    transport["_verified"] = False
+                    transport["_verified_source"] = f"未验证（飞常准API无{effective_user_mode}数据）"
+                    transport["note"] = (transport.get("note", "") + f"（⚠️ {effective_user_mode}班次未验证，请自行核实）").strip()
+                    continue  # 跳过后续替换逻辑
                 chosen = available_items[0]
                 issue = f"{key}班次{flight_num}不在飞常准API数据中，已替换为{chosen['num']}"
                 if key == "return_transport" and used_departure_num and chosen["num"] == used_departure_num:
@@ -297,6 +317,13 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 mode_filtered = _filter_by_user_mode(available_items, effective_user_mode)
                 if mode_filtered:
                     available_items = mode_filtered
+                elif effective_user_mode:
+                    # 🔴 用户指定了交通方式但VF数据中没有匹配的班次，不自动填充
+                    print(f"[WARN] {key}飞常准API有数据但无{effective_user_mode}类型班次，保留type={effective_user_mode}，不自动填充")
+                    transport["type"] = effective_user_mode
+                    transport["_verified"] = False
+                    transport["_verified_source"] = f"未验证（飞常准API无{effective_user_mode}数据）"
+                    continue  # 跳过自动填充
                 chosen = available_items[0]
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", "")
@@ -684,7 +711,7 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
                 print(f"[WARN] 交通判断失败: {e}")
                 ti = None
             try:
-                schedule = get_route_schedule(departure_city, dest)
+                schedule = get_route_schedule(departure_city, dest, user_transport_mode=user_transport)
             except Exception as e:
                 print(f"[WARN] 路线班次查询失败: {e}")
                 schedule = {}
@@ -733,13 +760,19 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             transport["station"] = vf_item.get("from_airport") or vf_item.get("from_station", "")
         if not transport.get("cost"):
             transport["cost"] = vf_item.get("price", "")
-        # 只在type为空时根据Variflight数据设置type，已有明确type时不覆盖
+        # 🔴 只在type为空时根据Variflight数据设置type，且必须尊重用户交通方式选择
         cur_type = str(transport.get("type", "")).strip()
         if not cur_type:
             if vf_item.get("from_airport"):
                 transport["type"] = "飞机"
             elif vf_item.get("from_station"):
                 transport["type"] = "高铁"
+        elif user_transport and user_transport in ("飞机", "高铁"):
+            # 🔴 用户已指定交通方式，VF数据不能覆盖type
+            vf_type = "飞机" if vf_item.get("from_airport") else ("高铁" if vf_item.get("from_station") else "")
+            if vf_type and vf_type != user_transport:
+                print(f"[TRANSPORT] VF数据type={vf_type}与用户选择{user_transport}不一致，保持用户选择")
+                # 不覆盖type，但可以合并其他字段
         if not transport.get("_verified"):
             transport["_verified"] = True
             transport["_verified_source"] = "飞常准实时API（合并填充）"
@@ -777,9 +810,13 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             from feichangzhun_service import judge_transport
             try:
                 ti = judge_transport(departure_city, dest)
-                trip_data["departure_transport"]["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
+                # 🔴 用户指定了交通方式，优先使用
+                if user_transport:
+                    trip_data["departure_transport"]["type"] = user_transport
+                else:
+                    trip_data["departure_transport"]["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
             except Exception:
-                trip_data["departure_transport"]["type"] = "高铁"
+                trip_data["departure_transport"]["type"] = user_transport or "高铁"
             trip_data["departure_transport"]["note"] = (trip_data["departure_transport"].get("note", "") + " 暂无实时班次数据，请自行在携程查询").strip()
         else:
             # 有type但无flight_number且无API数据，保留AI全部数据，仅添加提示
@@ -817,9 +854,13 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             from feichangzhun_service import judge_transport
             try:
                 ti = judge_transport(dest, departure_city)
-                trip_data["return_transport"]["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
+                # 🔴 用户指定了交通方式，优先使用
+                if user_transport:
+                    trip_data["return_transport"]["type"] = user_transport
+                else:
+                    trip_data["return_transport"]["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
             except Exception:
-                trip_data["return_transport"]["type"] = "高铁"
+                trip_data["return_transport"]["type"] = user_transport or "高铁"
             trip_data["return_transport"]["note"] = (trip_data["return_transport"].get("note", "") + " 暂无实时班次数据，请自行在携程查询").strip()
         else:
             # 有type但无flight_number且无API数据，保留AI全部数据，仅添加提示
@@ -1031,7 +1072,7 @@ async def generate_trip(req: TripRequest):
                 transport_info["flight_query"] = flight_result.get("query", {})
             # 并行查询：飞常准API火车票 + 完整路线数据
             from variflight_service import get_full_route_data
-            vf_result = await get_full_route_data(req.departure_city, dest, start_date)
+            vf_result = await get_full_route_data(req.departure_city, dest, start_date, user_transport_mode=user_mode_cn)
             transport_info["variflight_data"] = {
                 "flights": vf_result.get("flights", []),
                 "trains": vf_result.get("trains", []),
@@ -1474,7 +1515,7 @@ async def regenerate_trip(request: Request):
                     pass
             try:
                 from variflight_service import get_full_route_data
-                vf_result = await get_full_route_data(departure_city, dest, start_date)
+                vf_result = await get_full_route_data(departure_city, dest, start_date, user_transport_mode=user_mode_cn)
                 transport_info["variflight_data"] = {
                     "flights": vf_result.get("flights", []),
                     "trains": vf_result.get("trains", []),

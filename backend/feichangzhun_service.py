@@ -686,6 +686,15 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_dista
         "_no_data_note": "【致命警告-最高优先级】该路线没有预存真实班次数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ station字段留空 ⑤ 在note中建议用户自行在携程查询实时航班号 ⑥ 绝对禁止编造任何航班号/车次号/机场名！"
     }
     result = dict(static)  # 复制静态数据
+    # 🔴 根据用户交通方式过滤：用户选飞机时只返回航班，选高铁时只返回火车
+    if user_transport_mode == "飞机":
+        if result.get("trains"):
+            print(f"[SCHEDULE] 用户指定飞机出行，过滤掉{len(result.get('trains', []))}条火车数据")
+            result["trains"] = []
+    elif user_transport_mode == "高铁":
+        if result.get("flights"):
+            print(f"[SCHEDULE] 用户指定高铁出行，过滤掉{len(result.get('flights', []))}条航班数据")
+            result["flights"] = []
     if date:
         from datetime import date as date_type
         try:
