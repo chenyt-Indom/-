@@ -171,6 +171,11 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                 if vf_data.get("success"):
                     vf_flights = vf_data.get("flights", [])
                     vf_trains = vf_data.get("trains", [])
+                    # 🔴 根据用户交通方式过滤：用户选飞机时不显示火车，选高铁时不显示航班
+                    if user_transport_mode == "飞机":
+                        vf_trains = []
+                    elif user_transport_mode == "高铁":
+                        vf_flights = []
                     if vf_flights or vf_trains:
                         transport_section += "\n\n【🔴 飞常准API实时数据 - 唯一权威数据源 - 必须100%严格使用！】"
                         transport_section += "\n以下班次为飞常准API实时查询结果，是当前日期唯一真实可购的班次。之前的静态数据全部作废，只使用以下数据！"
@@ -402,6 +407,11 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
     if vf_data.get("success"):
         vf_flights = vf_data.get("flights", [])
         vf_trains = vf_data.get("trains", [])
+        # 🔴 根据用户交通方式过滤
+        if user_transport_mode == "飞机":
+            vf_trains = []
+        elif user_transport_mode == "高铁":
+            vf_flights = []
         if vf_flights or vf_trains:
             real_schedule_text = "\n【🔴 飞常准API唯一真实班次 - 这是唯一可用的数据源！】"
             if vf_flights:
@@ -705,6 +715,13 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             if vf_data.get("success"):
                 vf_flights = vf_data.get("flights", [])
                 vf_trains = vf_data.get("trains", [])
+                # 🔴 根据用户交通方式过滤
+                transport_mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+                user_transport = transport_mode_map.get(transport_mode, "")
+                if user_transport == "飞机":
+                    vf_trains = []
+                elif user_transport == "高铁":
+                    vf_flights = []
                 if vf_flights or vf_trains:
                     transport_section += "\n\n【🔴 飞常准API实时数据 - 唯一权威数据源 - 必须100%严格使用！】"
                     transport_section += "\n以下班次为飞常准API实时查询结果，静态数据全部作废，只使用以下数据！"

@@ -1082,28 +1082,33 @@ async def generate_trip(req: TripRequest):
                 "_no_data_message": vf_result.get("_no_data_message", ""),
                 "source": vf_result.get("_source", "飞常准API"),
             }
-            # 合并飞常准API数据到route_schedule（优先API数据）
+            # 合并飞常准API数据到route_schedule（优先API数据，且必须按用户交通方式过滤）
             if vf_result.get("success"):
                 schedule = transport_info.get("route_schedule", {})
+                # 🔴 根据用户交通方式过滤VF数据：用户选飞机时不合并火车，选高铁时不合并航班
+                vf_flights_filtered = vf_result.get("flights", [])
+                vf_trains_filtered = vf_result.get("trains", [])
+                if user_mode_cn == "飞机":
+                    vf_trains_filtered = []  # 用户选飞机，丢弃火车数据
+                elif user_mode_cn == "高铁":
+                    vf_flights_filtered = []  # 用户选高铁，丢弃航班数据
                 if not schedule or schedule.get("_no_data"):
-                    # 无预存数据时，直接用API数据构建schedule
+                    # 无预存数据时，用过滤后的API数据构建schedule
                     schedule = {
-                        "flights": vf_result.get("flights", []),
-                        "trains": vf_result.get("trains", []),
+                        "flights": vf_flights_filtered,
+                        "trains": vf_trains_filtered,
                         "_verified": f"{start_date}", "_source": "飞常准实时API",
                     }
                 else:
-                    # 有预存数据时，API数据作为补充
-                    api_flights = vf_result.get("flights", [])
-                    if api_flights:
+                    # 有预存数据时，只合并匹配用户交通方式的数据
+                    if vf_flights_filtered:
                         existing_nums = {f["num"] for f in schedule.get("flights", [])}
-                        for f in api_flights:
+                        for f in vf_flights_filtered:
                             if f["num"] not in existing_nums:
                                 schedule.setdefault("flights", []).append(f)
-                    api_trains = vf_result.get("trains", [])
-                    if api_trains:
+                    if vf_trains_filtered:
                         existing_nums = {t["num"] for t in schedule.get("trains", [])}
-                        for t in api_trains:
+                        for t in vf_trains_filtered:
                             if t["num"] not in existing_nums:
                                 schedule.setdefault("trains", []).append(t)
                     schedule["_source"] = f"{schedule.get('_source', '')} + 飞常准实时API"
@@ -1527,23 +1532,28 @@ async def regenerate_trip(request: Request):
                 }
                 if vf_result.get("success"):
                     schedule = transport_info.get("route_schedule", {})
+                    # 🔴 根据用户交通方式过滤VF数据
+                    vf_flights_filtered = vf_result.get("flights", [])
+                    vf_trains_filtered = vf_result.get("trains", [])
+                    if user_mode_cn == "飞机":
+                        vf_trains_filtered = []
+                    elif user_mode_cn == "高铁":
+                        vf_flights_filtered = []
                     if not schedule or schedule.get("_no_data"):
                         schedule = {
-                            "flights": vf_result.get("flights", []),
-                            "trains": vf_result.get("trains", []),
+                            "flights": vf_flights_filtered,
+                            "trains": vf_trains_filtered,
                             "_verified": f"{start_date}", "_source": "飞常准实时API",
                         }
                     else:
-                        api_flights = vf_result.get("flights", [])
-                        if api_flights:
+                        if vf_flights_filtered:
                             existing_nums = {f["num"] for f in schedule.get("flights", [])}
-                            for f in api_flights:
+                            for f in vf_flights_filtered:
                                 if f["num"] not in existing_nums:
                                     schedule.setdefault("flights", []).append(f)
-                        api_trains = vf_result.get("trains", [])
-                        if api_trains:
+                        if vf_trains_filtered:
                             existing_nums = {t["num"] for t in schedule.get("trains", [])}
-                            for t in api_trains:
+                            for t in vf_trains_filtered:
                                 if t["num"] not in existing_nums:
                                     schedule.setdefault("trains", []).append(t)
                         schedule["_source"] = f"{schedule.get('_source', '')} + 飞常准实时API"
