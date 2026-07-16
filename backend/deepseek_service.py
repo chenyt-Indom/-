@@ -143,7 +143,10 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                         transport_section += "\n【致命警告-飞常准API无实时数据】该路线飞常准API未返回实时班次！"
                         transport_section += "\n  ① flight_number字段必须留空字符串''，绝对禁止编造任何航班号/车次号！"
                         transport_section += "\n  ② station字段必须留空字符串''，绝对禁止编造任何机场/车站名！"
-                        transport_section += "\n  ③ 只填写交通方式类型（如'飞机'或'高铁'）"
+                        if user_transport_mode:
+                            transport_section += f"\n  ③ 交通方式type必须填写'{user_transport_mode}'（用户已指定），绝对禁止改为其他交通方式！"
+                        else:
+                            transport_section += "\n  ③ 只填写交通方式类型（如'飞机'或'高铁'）"
                         transport_section += "\n  ④ duration只写估算耗时（如'约3小时'）"
                         transport_section += "\n  ⑤ 在note中建议用户自行在携程查询实时航班号"
                 # 中转方案
@@ -701,7 +704,10 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，但如果下面有飞常准API实时数据，必须以飞常准API为准！严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！飞常准API返回的机场/车站名即为有效名，无需参考其他名单！"
             # 飞常准API无数据时的致命警告
             if schedule.get("_no_data"):
-                transport_section += "\n【致命警告-飞常准API无数据】该路线飞常准API未返回实时班次！flight_number留空，只填交通方式类型，禁止编造航班号！"
+                if user_transport_mode:
+                    transport_section += f"\n【致命警告-飞常准API无数据】该路线飞常准API未返回实时班次！flight_number必须留空，type必须填'{user_transport_mode}'（用户已指定），绝对禁止改为其他交通方式，禁止编造航班号！"
+                else:
+                    transport_section += "\n【致命警告-飞常准API无数据】该路线飞常准API未返回实时班次！flight_number留空，只填交通方式类型，禁止编造航班号！"
             # 中转方案
             transfer_info = transport_info.get("transfer_info", {})
             if transfer_info.get("transfer_options"):
