@@ -184,8 +184,13 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 print(f"[VALIDATE] {issue}")
                 result["issues"].append(issue)
                 result["valid"] = False
-                # 强制修正type，后续retry时AI会重新生成正确的type
+                # 强制修正type，并清除所有错误交通方式的字段，避免高铁数据残留在飞机卡片中
                 transport["type"] = effective_user_mode
+                transport["flight_number"] = ""   # 清除错误类型的班次号
+                transport["departure_time"] = ""  # 清除错误类型的出发时间
+                transport["arrival_time"] = ""    # 清除错误类型的到达时间
+                transport["duration"] = ""        # 清除错误类型的耗时
+                transport["station"] = ""         # 清除错误类型的机场/车站
                 transport_type = effective_user_mode
                 is_train = transport_type in ("高铁", "火车", "动车")
                 is_flight = transport_type in ("飞机", "航班")
@@ -801,9 +806,20 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             print(f"[TRANSPORT] 去程交通(type=高铁)缺flight_number，从飞常准API火车合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["departure_transport"], chosen)
         elif vf_flights or vf_trains:
-            chosen = vf_flights[0] if vf_flights else vf_trains[0]
-            print(f"[TRANSPORT] 去程交通缺flight_number，从飞常准API合并: {chosen['num']}")
-            _merge_vf_to_transport(trip_data["departure_transport"], chosen)
+            # 🔴 必须尊重用户交通方式选择：用户选飞机时只用航班，选高铁时只用火车
+            chosen = None
+            if user_transport == "飞机" and vf_flights:
+                chosen = vf_flights[0]
+            elif user_transport == "高铁" and vf_trains:
+                chosen = vf_trains[0]
+            elif not user_transport:
+                # 用户未指定交通方式，优先航班，其次火车
+                chosen = vf_flights[0] if vf_flights else vf_trains[0]
+            if chosen:
+                print(f"[TRANSPORT] 去程交通缺flight_number，从飞常准API合并: {chosen['num']}")
+                _merge_vf_to_transport(trip_data["departure_transport"], chosen)
+            else:
+                print(f"[TRANSPORT] 去程交通缺flight_number，但飞常准API无{user_transport}类型数据，保留type={user_transport}")
         elif not trip_data["departure_transport"].get("type"):
             # AI生成了transport但缺type和flight_number，从静态数据补全type
             print("[TRANSPORT] 去程交通信息不完整且无API数据，补全type")
@@ -845,9 +861,20 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             print(f"[TRANSPORT] 返程交通(type=高铁)缺flight_number，从飞常准API火车合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["return_transport"], chosen)
         elif vf_flights or vf_trains:
-            chosen = vf_flights[0] if vf_flights else vf_trains[0]
-            print(f"[TRANSPORT] 返程交通缺flight_number，从飞常准API合并: {chosen['num']}")
-            _merge_vf_to_transport(trip_data["return_transport"], chosen)
+            # 🔴 必须尊重用户交通方式选择：用户选飞机时只用航班，选高铁时只用火车
+            chosen = None
+            if user_transport == "飞机" and vf_flights:
+                chosen = vf_flights[0]
+            elif user_transport == "高铁" and vf_trains:
+                chosen = vf_trains[0]
+            elif not user_transport:
+                # 用户未指定交通方式，优先航班，其次火车
+                chosen = vf_flights[0] if vf_flights else vf_trains[0]
+            if chosen:
+                print(f"[TRANSPORT] 返程交通缺flight_number，从飞常准API合并: {chosen['num']}")
+                _merge_vf_to_transport(trip_data["return_transport"], chosen)
+            else:
+                print(f"[TRANSPORT] 返程交通缺flight_number，但飞常准API无{user_transport}类型数据，保留type={user_transport}")
         elif not trip_data["return_transport"].get("type"):
             # AI生成了transport但缺type和flight_number，从静态数据补全type
             print("[TRANSPORT] 返程交通信息不完整且无API数据，补全type")
@@ -1159,8 +1186,8 @@ async def generate_trip(req: TripRequest):
             if validation_result.get("valid") and not validation_result.get("fabricated"):
                 break  # 验证通过
 
-            if retry_attempt < max_retries and validation_result.get("fabricated"):
-                print(f"[RETRY] 第{retry_attempt+1}/{max_retries}次重生成：AI编造了班次 {validation_result['fabricated']}")
+            if retry_attempt < max_retries and (validation_result.get("fabricated") or not validation_result.get("valid")):
+                print(f"[RETRY] 第{retry_attempt+1}/{max_retries}次重生成：验证不通过 - 编造班次={validation_result.get('fabricated', [])} 问题={validation_result.get('issues', [])}")
                 retry_prompt = build_retry_prompt(
                     prompt, validation_result, transport_info,
                     req.departure_city, dest, req.start_date,
@@ -1607,8 +1634,8 @@ async def regenerate_trip(request: Request):
             if validation_result.get("valid") and not validation_result.get("fabricated"):
                 break
 
-            if retry_attempt < max_retries and validation_result.get("fabricated"):
-                print(f"[RETRY] 重新生成第{retry_attempt+1}/{max_retries}次重试：AI编造了班次 {validation_result['fabricated']}")
+            if retry_attempt < max_retries and (validation_result.get("fabricated") or not validation_result.get("valid")):
+                print(f"[RETRY] 重新生成第{retry_attempt+1}/{max_retries}次重试：验证不通过 - 编造班次={validation_result.get('fabricated', [])} 问题={validation_result.get('issues', [])}")
                 retry_prompt = build_retry_prompt(
                     prompt, validation_result, transport_info,
                     departure_city, dest, start_date,
