@@ -97,7 +97,7 @@ async def health_check():
     return {"status": "ok", "amap_key": bool(AMAP_KEY), "deepseek_key": bool(DEEPSEEK_KEY), "variflight_key": bool(VARIFLIGHT_KEY)}
 
 
-def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = "", variflight_data: dict = None, route_schedule: dict = None):
+def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest: str = "", travel_date: str = "", variflight_data: dict = None, route_schedule: dict = None, user_transport_mode: str = ""):
     """飞常准API验证：所有班次必须经飞常准API或预存数据验证成功后才可安排。
     原则：飞常准API优先，无数据时回退预存COMMON_ROUTES数据。
     返回: {"valid": bool, "issues": list, "fabricated": list}"""
@@ -145,6 +145,19 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
     # 临近城市强制低成本出行检查：强制拒绝飞机/高铁
     low_cost_forced = route_schedule.get("_low_cost_forced", False) if route_schedule else False
 
+    # 🔴 辅助函数：根据用户选择的交通方式过滤可用班次
+    def _filter_by_user_mode(items, mode):
+        """根据用户选择的交通方式过滤班次列表，确保替换时不会把飞机换成高铁（或反之）"""
+        if not mode or mode not in ("飞机", "高铁"):
+            return items  # 用户未明确选择，不过滤
+        if mode == "飞机":
+            filtered = [item for item in items if item.get("from_airport")]
+            return filtered if filtered else items  # 无匹配航班时回退全部
+        if mode == "高铁":
+            filtered = [item for item in items if item.get("from_station")]
+            return filtered if filtered else items  # 无匹配高铁时回退全部
+        return items
+
     for key in ("departure_transport", "return_transport"):
         transport = trip_data.get(key, {})
         if not transport:
@@ -152,8 +165,8 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
         transport_type = str(transport.get("type", "")).strip()
         # 🔴 临近城市强制低成本出行：拒绝飞机/高铁（除非用户明确指定了飞机或高铁）
-        user_transport_mode = trip_data.get("_transport_mode", "")
-        if low_cost_forced and transport_type in ("飞机", "高铁", "动车", "火车") and user_transport_mode not in ("飞机", "高铁"):
+        effective_user_mode = user_transport_mode or trip_data.get("_transport_mode", "")
+        if low_cost_forced and transport_type in ("飞机", "高铁", "动车", "火车") and effective_user_mode not in ("飞机", "高铁"):
             issue = f"{key}使用了{transport_type}（临近城市禁止），已强制改为大巴"
             print(f"[LOW_COST_REJECT] {issue}")
             result["issues"].append(issue)
@@ -242,10 +255,14 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
             elif flight_num and all_vf_items and not vf_matched:
                 # ❌ 飞常准API有数据但AI选的班次不在其中 → 必须替换
-                # 🔴 返程不能使用出发的同一班次
+                # 🔴 返程不能使用出发的同一班次，且必须尊重用户交通方式选择
                 available_items = all_vf_items
                 if key == "return_transport" and used_departure_num and len(all_vf_items) > 1:
                     available_items = [item for item in all_vf_items if item.get("num") != used_departure_num]
+                # 🔴 根据用户交通方式过滤：用户选飞机则只替换为航班，选高铁则只替换为高铁
+                mode_filtered = _filter_by_user_mode(available_items, effective_user_mode)
+                if mode_filtered:
+                    available_items = mode_filtered
                 chosen = available_items[0]
                 issue = f"{key}班次{flight_num}不在飞常准API数据中，已替换为{chosen['num']}"
                 if key == "return_transport" and used_departure_num and chosen["num"] == used_departure_num:
@@ -276,10 +293,14 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
             elif not flight_num and all_vf_items:
                 # AI没填班次号但飞常准API有数据，自动填充
-                # 🔴 返程不能使用出发的同一班次
+                # 🔴 返程不能使用出发的同一班次，且必须尊重用户交通方式选择
                 available_items = all_vf_items
                 if key == "return_transport" and used_departure_num and len(all_vf_items) > 1:
                     available_items = [item for item in all_vf_items if item.get("num") != used_departure_num]
+                # 🔴 根据用户交通方式过滤
+                mode_filtered = _filter_by_user_mode(available_items, effective_user_mode)
+                if mode_filtered:
+                    available_items = mode_filtered
                 chosen = available_items[0]
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", "")
@@ -648,7 +669,8 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             "station_to_hotel": "", "note": "", "transfers": [],
             "_verified": False, "_verified_source": "自动填充"
         }
-        if vf_flights:
+        # 🔴 根据用户交通方式选择优先匹配：用户选飞机时只用航班，选高铁时只用火车
+        if user_transport == "飞机" and vf_flights:
             f = vf_flights[0]
             t["type"] = "飞机"
             t["flight_number"] = f["num"]
@@ -659,7 +681,29 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             t["cost"] = f.get("price", "")
             t["_verified"] = True
             t["_verified_source"] = "飞常准实时API"
-        elif vf_trains:
+        elif user_transport == "高铁" and vf_trains:
+            tr = vf_trains[0]
+            t["type"] = "高铁"
+            t["flight_number"] = tr["num"]
+            t["departure_time"] = tr.get("dep", "")
+            t["arrival_time"] = tr.get("arr", "")
+            t["duration"] = f"{tr['num']} {tr.get('duration', '')}"
+            t["station"] = tr.get("from_station", "")
+            t["cost"] = tr.get("price", "")
+            t["_verified"] = True
+            t["_verified_source"] = "飞常准实时API"
+        elif vf_flights and user_transport != "高铁":
+            f = vf_flights[0]
+            t["type"] = "飞机"
+            t["flight_number"] = f["num"]
+            t["departure_time"] = f.get("dep", "")
+            t["arrival_time"] = f.get("arr", "")
+            t["duration"] = f"{f['num']} {f.get('duration', '')}"
+            t["station"] = f.get("from_airport", "")
+            t["cost"] = f.get("price", "")
+            t["_verified"] = True
+            t["_verified_source"] = "飞常准实时API"
+        elif vf_trains and user_transport != "飞机":
             tr = vf_trains[0]
             t["type"] = "高铁"
             t["flight_number"] = tr["num"]
@@ -682,7 +726,7 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             except Exception as e:
                 print(f"[WARN] 路线班次查询失败: {e}")
                 schedule = {}
-            if schedule.get("flights"):
+            if schedule.get("flights") and user_transport != "高铁":
                 f = schedule["flights"][0]
                 t["type"] = "飞机"
                 t["flight_number"] = f["num"]
@@ -692,7 +736,7 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
                 t["station"] = f.get("from_airport", "")
                 t["_verified"] = True
                 t["_verified_source"] = "预存数据"
-            elif schedule.get("trains"):
+            elif schedule.get("trains") and user_transport != "飞机":
                 tr = schedule["trains"][0]
                 t["type"] = "高铁"
                 t["flight_number"] = tr["num"]
@@ -703,8 +747,10 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
                 t["_verified"] = True
                 t["_verified_source"] = "预存数据"
             else:
-                # 所有数据源都无数据时，优先使用已有类型提示，否则设置默认交通方式
-                if existing_type_hint:
+                # 所有数据源都无数据时，优先使用用户指定类型，其次已有类型提示，最后默认交通方式
+                if user_transport:
+                    t["type"] = user_transport
+                elif existing_type_hint:
                     t["type"] = existing_type_hint
                 else:
                     t["type"] = ti.get("mode", "高铁").split("/")[0] if ti else "高铁"
@@ -1123,7 +1169,8 @@ async def generate_trip(req: TripRequest):
                 validation_result = _validate_transport_airports(
                     trip_data, req.departure_city, dest, req.start_date,
                     transport_info.get("variflight_data"),
-                    transport_info.get("route_schedule"))
+                    transport_info.get("route_schedule"),
+                    user_transport_mode=trip_data.get("_transport_mode", ""))
             except Exception as e:
                 print(f"[WARN] 交通验证异常（不影响主流程）: {e}")
                 validation_result = {"valid": True, "issues": [], "fabricated": []}
@@ -1135,7 +1182,8 @@ async def generate_trip(req: TripRequest):
                 print(f"[RETRY] 第{retry_attempt+1}/{max_retries}次重生成：AI编造了班次 {validation_result['fabricated']}")
                 retry_prompt = build_retry_prompt(
                     prompt, validation_result, transport_info,
-                    req.departure_city, dest, req.start_date)
+                    req.departure_city, dest, req.start_date,
+                    user_transport_mode=trip_data.get("_transport_mode", ""))
                 try:
                     retry_raw = await call_deepseek(
                         "你是一个专业的旅行规划师，只输出JSON格式数据。必须严格使用飞常准API提供的真实班次！",
@@ -1590,7 +1638,8 @@ async def regenerate_trip(request: Request):
                 validation_result = _validate_transport_airports(
                     new_trip, departure_city, dest, start_date,
                     transport_info.get("variflight_data"),
-                    transport_info.get("route_schedule"))
+                    transport_info.get("route_schedule"),
+                    user_transport_mode=new_trip.get("_transport_mode", ""))
             except Exception as e:
                 print(f"[WARN] 重新生成交通验证异常（不影响主流程）: {e}")
                 validation_result = {"valid": True, "issues": [], "fabricated": []}
@@ -1602,7 +1651,8 @@ async def regenerate_trip(request: Request):
                 print(f"[RETRY] 重新生成第{retry_attempt+1}/{max_retries}次重试：AI编造了班次 {validation_result['fabricated']}")
                 retry_prompt = build_retry_prompt(
                     prompt, validation_result, transport_info,
-                    departure_city, dest, start_date)
+                    departure_city, dest, start_date,
+                    user_transport_mode=new_trip.get("_transport_mode", ""))
                 try:
                     retry_raw = await call_deepseek(
                         "你是一个专业的旅行规划师，只输出JSON格式数据。必须严格使用飞常准API提供的真实班次！",

@@ -381,7 +381,7 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
 
 
 def build_retry_prompt(original_prompt: str, validation_result: dict, transport_info: dict,
-                       departure_city: str, dest: str, start_date: str) -> str:
+                       departure_city: str, dest: str, start_date: str, user_transport_mode: str = "") -> str:
     """构建重试提示词：当AI编造了不存在的班次号时，用严格提示词强制重生成"""
     issues = validation_result.get("issues", [])
     fabricated = validation_result.get("fabricated", [])
@@ -437,6 +437,17 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
 必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！
 flight_number必须留空""，type必须填"大巴"或"自驾"或"汽车"！"""
 
+    # 🔴 用户指定交通方式：最高优先级，重试时也必须遵守
+    user_mode_section = ""
+    user_mode_reminder = ""
+    if user_transport_mode and user_transport_mode in ("飞机", "高铁"):
+        user_mode_section = f"""
+【🔴 用户指定交通方式 - 最高优先级！不可违背！】
+用户明确要求使用{user_transport_mode}出行！你必须只从上述真实班次中选择{user_transport_mode}类型的班次！
+如果用户选飞机，绝对不允许使用高铁/火车班次！如果用户选高铁，绝对不允许使用航班班次！
+type字段必须为"{user_transport_mode}"！"""
+        user_mode_reminder = f'\n6. 🔴 用户要求使用{user_transport_mode}出行，type字段必须为"{user_transport_mode}"，只能从{user_transport_mode}类型班次中选择！'
+
     retry_header = f"""🔴🔴🔴 上次生成的行程被拒绝！原因：你编造了不存在的班次号！
 
 【编造的班次号】{fabricated_text}
@@ -449,6 +460,7 @@ flight_number必须留空""，type必须填"大巴"或"自驾"或"汽车"！"""
 4. departure_time和arrival_time必须与所选真实班次的dep/arr时间完全一致！
 5. duration必须使用"班次号 + 耗时"格式，不可只写耗时！
 {low_cost_section}
+{user_mode_section}
 
 {real_schedule_text}
 
@@ -458,6 +470,7 @@ flight_number必须留空""，type必须填"大巴"或"自驾"或"汽车"！"""
 3. 出发/到达时间必须与上表所选班次完全一致，一字不差
 4. 出发日期为{start_date}，确保所选班次在该日期有效
 5. 行程时间安排必须与交通班次时间协调一致
+{user_mode_reminder}
 
 请严格按照原始JSON格式重新生成完整行程。记住：宁可flight_number留空，也绝不能编造！"""
 
