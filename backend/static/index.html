@@ -1754,6 +1754,74 @@ function renderTrip(data){
   });
   document.getElementById('dayCards').innerHTML = dHtml;
 
+  // 前端交通方式一致性强制校验：确保行程卡片与交通卡片显示统一
+  (function enforceTransportConsistency() {
+    var depTrans = data.departure_transport || {};
+    var retTrans = data.return_transport || {};
+    var depType = depTrans.type || '';
+    var retType = retTrans.type || '';
+    var itinerary = data.itinerary || [];
+    if (!depType && !retType) return;
+    // 冲突关键词映射（其他交通方式关键词 → 期望类型）
+    var conflictMap = {
+      '飞机': ['高铁','火车','动车','列车','大巴','长途汽车','自驾','开车','驾车','公交','地铁'],
+      '高铁': ['飞机','航班','登机','候机','值机','大巴','长途汽车','自驾','开车','驾车','公交','地铁'],
+      '大巴': ['飞机','航班','高铁','火车','动车','列车','自驾','开车','驾车','公交','地铁'],
+      '自驾': ['飞机','航班','高铁','火车','动车','列车','大巴','长途汽车','公交','地铁'],
+      '公交': ['飞机','航班','高铁','火车','动车','列车','大巴','长途汽车','自驾','开车','驾车']
+    };
+    function fixTransportText(el, expectedType) {
+      if (!el || !expectedType) return;
+      var conflicts = conflictMap[expectedType] || [];
+      // 遍历元素内所有文本节点
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+      var textNodes = [];
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+      textNodes.forEach(function(node) {
+        var txt = node.textContent || '';
+        var changed = false;
+        conflicts.forEach(function(kw) {
+          if (txt.indexOf(kw) >= 0) {
+            txt = txt.split(kw).join(expectedType);
+            changed = true;
+          }
+        });
+        if (changed) {
+          node.textContent = txt;
+          console.log('[前端一致性] 修正交通方式文本: ' + expectedType);
+        }
+      });
+    }
+    // 对Day1和最后一天的卡片进行修正
+    var dayCards = document.querySelectorAll('.day-card');
+    dayCards.forEach(function(card, idx) {
+      var isFirst = (idx === 0);
+      var isLast = (idx === dayCards.length - 1);
+      if (isFirst && depType) {
+        fixTransportText(card, depType);
+        // 强制修正day footer中的transport字段
+        var footerRows = card.querySelectorAll('.footer-row');
+        footerRows.forEach(function(row) {
+          var label = row.querySelector('.footer-label');
+          var text = row.querySelector('.footer-text');
+          if (label && text && label.textContent.indexOf('交通') >= 0) {
+            var t = text.textContent || '';
+            var conflicts = conflictMap[depType] || [];
+            conflicts.forEach(function(kw) {
+              if (t.indexOf(kw) >= 0) {
+                text.textContent = depType;
+                console.log('[前端一致性] 强制修正Day1交通字段: ' + kw + ' → ' + depType);
+              }
+            });
+          }
+        });
+      }
+      if (isLast && retType && !isFirst) {
+        fixTransportText(card, retType);
+      }
+    });
+  })();
+
   // 预算
   let bd = data.budget_breakdown||{};
   let bHtml = '<div class="bottom-card"><div class="bottom-title">预算明细</div><div class="budget-grid">';
