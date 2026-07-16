@@ -3,8 +3,28 @@ import httpx
 from config import VARIFLIGHT_KEY, VARIFLIGHT_URL
 
 
+def _fmt_duration(raw: str) -> str:
+    """将分钟数或秒数转换为 'XhYmin' 格式"""
+    if not raw:
+        return ""
+    try:
+        minutes = int(raw)
+        if minutes > 1000:  # 秒数
+            minutes = minutes // 60
+        hours = minutes // 60
+        mins = minutes % 60
+        if hours > 0 and mins > 0:
+            return f"{hours}h{mins}min"
+        elif hours > 0:
+            return f"{hours}h"
+        else:
+            return f"{mins}min"
+    except (ValueError, TypeError):
+        return str(raw)
+
+
 async def _call_variflight(endpoint: str, params: dict) -> dict:
-    """调用飞常准API通用方法"""
+    """调用飞常准API通用方法，参数必须嵌套在params键下"""
     if not VARIFLIGHT_KEY:
         return {"success": False, "error": "VARIFLIGHT_API_KEY未配置", "data": []}
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -15,13 +35,16 @@ async def _call_variflight(endpoint: str, params: dict) -> dict:
                     "X-VARIFLIGHT-KEY": VARIFLIGHT_KEY,
                     "Content-Type": "application/json",
                 },
-                json={"endpoint": endpoint, **params},
+                json={"endpoint": endpoint, "params": params},
             )
             if resp.status_code == 401:
                 return {"success": False, "error": "飞常准API Key无效", "data": []}
             if resp.status_code != 200:
                 return {"success": False, "error": f"飞常准API错误: {resp.status_code}", "data": []}
             data = resp.json()
+            # API返回格式: {"code": 200, "data": [...]}，200才算成功
+            if data.get("code") != 200:
+                return {"success": False, "error": f"飞常准API返回错误: {data.get('message', '')}", "data": []}
             return {"success": True, "data": data.get("data", data)}
         except Exception as e:
             return {"success": False, "error": f"飞常准API调用失败: {str(e)}", "data": []}
@@ -40,15 +63,26 @@ async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> di
         raw_data = result.get("data", [])
         if isinstance(raw_data, list):
             for f in raw_data:
+                # 飞常准API返回PascalCase字段名，需映射为统一格式
+                dep_time = f.get("FlightDeptimePlanDate", f.get("dep", ""))
+                arr_time = f.get("FlightArrtimePlanDate", f.get("arr", ""))
+                # 提取时间部分（去掉日期前缀）
+                if " " in str(dep_time):
+                    dep_time = dep_time.split(" ")[-1][:5]
+                if " " in str(arr_time):
+                    arr_time = arr_time.split(" ")[-1][:5]
+                # 时长转换：分钟数 → "XhYmin"格式
+                raw_dur = f.get("FlightDuration", f.get("duration", ""))
+                duration = _fmt_duration(raw_dur)
                 flights.append({
-                    "num": f.get("flightNumber", f.get("fnum", "")),
-                    "dep": f.get("departureTime", f.get("dep", "")),
-                    "arr": f.get("arrivalTime", f.get("arr", "")),
-                    "duration": f.get("duration", ""),
-                    "from_airport": f.get("departureAirport", ""),
-                    "to_airport": f.get("arrivalAirport", ""),
+                    "num": f.get("FlightNo", f.get("flightNumber", f.get("fnum", ""))),
+                    "dep": dep_time,
+                    "arr": arr_time,
+                    "duration": duration,
+                    "from_airport": f.get("FlightDepAirport", f.get("departureAirport", "")),
+                    "to_airport": f.get("FlightArrAirport", f.get("arrivalAirport", "")),
                     "price": f.get("price", ""),
-                    "airline": f.get("airline", ""),
+                    "airline": f.get("FlightCompany", f.get("airline", "")),
                     "_source": "飞常准实时API",
                 })
     return {"success": result.get("success"), "error": result.get("error", ""),
@@ -65,10 +99,13 @@ async def verify_flight_number(flight_num: str, date: str, dep: str = "", arr: s
     result = await _call_variflight("flight", params)
     if result.get("success"):
         data = result.get("data", {})
-        if isinstance(data, dict) and (data.get("flightNumber") or data.get("fnum")):
-            return {"valid": True, "data": data, "_source": "飞常准实时验证"}
+        # API返回航班列表，检查是否有匹配的FlightNo
         if isinstance(data, list) and len(data) > 0:
-            return {"valid": True, "data": data[0], "_source": "飞常准实时验证"}
+            for f in data:
+                if f.get("FlightNo", f.get("flightNumber", f.get("fnum", "")) == flight_num:
+                    return {"valid": True, "data": f, "_source": "飞常准实时验证"}
+        if isinstance(data, dict) and (data.get("FlightNo") or data.get("flightNumber") or data.get("fnum")):
+            return {"valid": True, "data": data, "_source": "飞常准实时验证"}
     return {"valid": False, "error": result.get("error", "航班不存在"), "_source": "飞常准实时验证"}
 
 
@@ -80,17 +117,27 @@ async def search_train_tickets(dep_city: str, arr_city: str, date: str) -> dict:
     trains = []
     if result.get("success"):
         raw_data = result.get("data", [])
+        # 火车票API返回嵌套结构: {"code": 0, "data": [...]}
+        if isinstance(raw_data, dict):
+            raw_data = raw_data.get("data", raw_data)
         if isinstance(raw_data, list):
             for t in raw_data:
+                # 取最低票价作为参考价格
+                seat_lists = t.get("seatLists", [])
+                price = ""
+                if seat_lists:
+                    prices = [s.get("seatPrice", 0) for s in seat_lists if s.get("seatPrice")]
+                    if prices:
+                        price = str(min(prices))
                 trains.append({
                     "num": t.get("trainNumber", t.get("num", "")),
-                    "dep": t.get("departureTime", t.get("dep", "")),
-                    "arr": t.get("arrivalTime", t.get("arr", "")),
-                    "duration": t.get("duration", ""),
-                    "from_station": t.get("departureStation", ""),
-                    "to_station": t.get("arrivalStation", ""),
+                    "dep": t.get("fromTime", t.get("departureTime", t.get("dep", ""))),
+                    "arr": t.get("toTime", t.get("arrivalTime", t.get("arr", ""))),
+                    "duration": _fmt_duration(t.get("useTime", t.get("duration", ""))),
+                    "from_station": t.get("fromStation", t.get("departureStation", "")),
+                    "to_station": t.get("toStation", t.get("arrivalStation", "")),
                     "type": t.get("trainType", ""),
-                    "price": t.get("price", ""),
+                    "price": price,
                     "_source": "飞常准实时API",
                 })
     return {"success": result.get("success"), "error": result.get("error", ""),
