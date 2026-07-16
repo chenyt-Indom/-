@@ -102,19 +102,23 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             continue
 
         station = transport.get("station", "")
-        # 检查黑名单
-        for banned in DECOMMISSIONED_AIRPORTS:
-            if banned in station:
-                issue = f"{key}使用了停用机场: {station}"
-                print(f"[WARN] {issue}")
-                result["issues"].append(issue)
-                result["valid"] = False
-                transport["station"] = ""
-                transport["note"] = (transport.get("note", "") + "（原机场已停用，请自行查询当前运营机场）").strip()
-                break
+        transport_type = str(transport.get("type", "")).strip()
+        is_train = transport_type in ("高铁", "火车", "动车")
 
-        # 如果station不为空但不在白名单中，尝试用SHORT_AIRPORT_MAP解析
-        if transport.get("station") and not is_airport_valid(transport.get("station", "")):
+        # 检查黑名单（仅对飞机类型检查机场黑名单）
+        if not is_train:
+            for banned in DECOMMISSIONED_AIRPORTS:
+                if banned in station:
+                    issue = f"{key}使用了停用机场: {station}"
+                    print(f"[WARN] {issue}")
+                    result["issues"].append(issue)
+                    result["valid"] = False
+                    transport["station"] = ""
+                    transport["note"] = (transport.get("note", "") + "（原机场已停用，请自行查询当前运营机场）").strip()
+                    break
+
+        # 仅对飞机类型校验机场白名单；火车/高铁站点不做机场校验
+        if not is_train and transport.get("station") and not is_airport_valid(transport.get("station", "")):
             sanitized = sanitize_airport_name(transport.get("station", ""))
             if sanitized:
                 transport["station"] = sanitized
@@ -126,20 +130,21 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["station"] = ""
                 transport["note"] = (transport.get("note", "") + "（机场信息未验证，请核实）").strip()
 
-        # 检查transfers中的机场名
+        # 检查transfers中的站点名（仅对飞机类型校验机场白名单）
         for transfer in transport.get("transfers", []):
             for tk in ("from_station", "to_station"):
                 ts = transfer.get(tk, "")
-                for banned in DECOMMISSIONED_AIRPORTS:
-                    if banned in ts:
-                        transfer[tk] = ""
-                        break
-                if transfer.get(tk) and not is_airport_valid(transfer.get(tk, "")):
-                    sanitized = sanitize_airport_name(transfer.get(tk, ""))
-                    if sanitized:
-                        transfer[tk] = sanitized
-                    else:
-                        transfer[tk] = ""
+                if not is_train:
+                    for banned in DECOMMISSIONED_AIRPORTS:
+                        if banned in ts:
+                            transfer[tk] = ""
+                            break
+                    if transfer.get(tk) and not is_airport_valid(transfer.get(tk, "")):
+                        sanitized = sanitize_airport_name(transfer.get(tk, ""))
+                        if sanitized:
+                            transfer[tk] = sanitized
+                        else:
+                            transfer[tk] = ""
 
         # 如果flight_number非空但station为空（说明AI编造了），清空flight_number
         if transport.get("flight_number") and not transport.get("station"):
