@@ -92,55 +92,8 @@ CITY_TO_PRIMARY_AIRPORT = {
     "武夷山": "WUS", "张家口": "ZQZ", "承德": "CDE",
 }
 
-# 主要机场IATA代码（仅包含当前运营的民用机场）
-AIRPORT_TO_IATA = {
-    "北京首都": "PEK", "北京大兴": "PKX", "上海浦东": "PVG",
-    "上海虹桥": "SHA", "广州白云": "CAN", "深圳宝安": "SZX",
-    "杭州萧山": "HGH", "成都双流": "CTU", "成都天府": "TFU",
-    "重庆江北": "CKG", "南京禄口": "NKG", "武汉天河": "WUH",
-    "西安咸阳": "XIY", "昆明长水": "KMG", "长沙黄花": "CSX",
-    "揭阳潮汕": "SWA", "汕头潮汕": "SWA",
-}
-
-# 已知停用/军用/已关闭机场黑名单（AI绝对禁止使用）
-DECOMMISSIONED_AIRPORTS = [
-    "南苑", "北京南苑", "NAY",   # 北京南苑机场（2019年关闭，军用）
-    "大校场", "南京大校场",       # 南京大校场机场（已关闭，军用）
-    "外砂", "汕头外砂",           # 汕头外砂机场（军用机场）
-    "巫家坝", "昆明巫家坝",       # 昆明巫家坝机场（2012年关闭）
-    "湛江", "湛江西厅",           # 旧湛江机场（已关闭）
-    "九江", "九江庐山",           # 九江庐山机场（长期停航）
-    "安庆", "安庆天柱山",         # 安庆机场（停航时间较长）
-    "长海", "大连长海",           # 长海机场（极小机场，常停航）
-    "朝阳", "朝阳机场",           # 朝阳机场（停航）
-    "鞍山", "鞍山腾鳌",           # 鞍山机场（停航）
-]
-
-# 当前运营的民用机场白名单（AI只能使用这些）
-VALID_AIRPORTS = [
-    "北京首都国际机场", "北京大兴国际机场",
-    "上海浦东国际机场", "上海虹桥国际机场",
-    "广州白云国际机场", "深圳宝安国际机场",
-    "杭州萧山国际机场", "成都双流国际机场", "成都天府国际机场",
-    "重庆江北国际机场", "南京禄口国际机场",
-    "武汉天河国际机场", "西安咸阳国际机场",
-    "昆明长水国际机场", "长沙黄花国际机场",
-    "郑州新郑国际机场", "天津滨海国际机场",
-    "哈尔滨太平国际机场", "沈阳桃仙国际机场",
-    "福州长乐国际机场", "合肥新桥国际机场",
-    "南宁吴圩国际机场", "贵阳龙洞堡国际机场",
-    "海口美兰国际机场", "拉萨贡嘎国际机场",
-    "乌鲁木齐地窝堡国际机场", "兰州中川国际机场",
-    "呼和浩特白塔国际机场", "银川河东国际机场",
-    "西宁曹家堡国际机场", "南昌昌北国际机场",
-    "济南遥墙国际机场", "太原武宿国际机场",
-    "石家庄正定国际机场", "长春龙嘉国际机场",
-    "珠海金湾机场", "桂林两江国际机场",
-    "三亚凤凰国际机场", "青岛胶东国际机场",
-    "大连周水子国际机场", "厦门高崎国际机场",
-    "宁波栎社国际机场", "温州龙湾国际机场",
-    "揭阳潮汕国际机场", "烟台蓬莱国际机场",
-]
+# 🔴 飞常准API是唯一数据源，已删除本地AIRPORT_TO_IATA机场名单，机场名以API返回为准
+# 保留SHORT_AIRPORT_MAP仅用于标准化AI输出的简化机场名
 
 # 简化机场名映射（短名→全名，用于AI prompt中的机场名标准化）
 SHORT_AIRPORT_MAP = {
@@ -293,54 +246,27 @@ def get_station(city: str) -> str:
 
 
 def get_airport(city: str) -> str:
-    """获取城市主要机场名，严格过滤已停用/军用机场，无机场时不编造"""
-    clean = _clean_city_name(city)
-    for banned in DECOMMISSIONED_AIRPORTS:
-        if clean == banned or (len(clean) >= 3 and clean in banned and len(banned) - len(clean) <= 2):
-            return ""
-    for key, code in AIRPORT_TO_IATA.items():
-        if clean in key:
-            return key
-    hub = CITY_NEARBY_HUB.get(clean, "")
-    if hub:
-        for banned in DECOMMISSIONED_AIRPORTS:
-            if hub == banned or (len(hub) >= 3 and hub in banned and len(banned) - len(hub) <= 2):
-                return ""
-        for key, code in AIRPORT_TO_IATA.items():
-            if hub in key:
-                return key
-        return ""
-    return ""
+    """获取城市主要机场名（飞常准API是唯一数据源，本地不再维护机场名单）
+    返回空字符串，机场名以飞常准API返回为准"""
+    return ""  # 🔴 飞常准API是唯一数据源，不再从本地名单获取机场名
 
 
 def is_airport_valid(airport_name: str) -> bool:
-    """校验机场名是否在白名单中（黑名单中的返回False）"""
+    """校验机场名：飞常准API是唯一数据源，本地不做白名单校验，所有机场名以API返回为准"""
     if not airport_name:
         return False
-    for banned in DECOMMISSIONED_AIRPORTS:
-        if banned in airport_name:
-            return False
-    for valid in VALID_AIRPORTS:
-        if valid in airport_name or airport_name in valid:
-            return True
-    if airport_name in SHORT_AIRPORT_MAP:
-        return True
-    return False
+    # 🔴 飞常准API是唯一数据源，不再使用本地黑白名单
+    return True
 
 
 def sanitize_airport_name(airport_name: str) -> str:
-    """净化机场名：简化名→全名，非法名→空字符串"""
+    """净化机场名：简化名→全名，机场名以飞常准API返回为准"""
     if not airport_name:
         return ""
-    for banned in DECOMMISSIONED_AIRPORTS:
-        if banned in airport_name:
-            return ""
     if airport_name in SHORT_AIRPORT_MAP:
         return SHORT_AIRPORT_MAP[airport_name]
-    for valid in VALID_AIRPORTS:
-        if valid in airport_name or airport_name in valid:
-            return airport_name
-    return ""
+    # 🔴 飞常准API是唯一数据源，直接返回API提供的机场名
+    return airport_name
 
 
 def judge_transport(departure_city: str, dest_city: str) -> dict:
@@ -474,227 +400,20 @@ def build_flight_query_text(dep_city: str, arr_city: str, date: str) -> str:
   9. 返程票同样需要查询，根据最后一天游玩安排倒推合理的返程时间"""
 
 
-# 中国主要城市间真实航班/高铁参考数据（基于携程实时数据验证，2026年7月更新）
-# 仅包含民用机场班次，已剔除军用/停运机场数据
-COMMON_ROUTES = {
-    "北京-上海": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "MU5102", "dep": "08:00", "arr": "10:05", "duration": "2h5min", "from_airport": "首都T2", "to_airport": "虹桥T2"},
-            {"num": "MU5168", "dep": "08:15", "arr": "10:15", "duration": "2h", "from_airport": "大兴", "to_airport": "虹桥T2"},
-            {"num": "CZ8887", "dep": "08:00", "arr": "10:10", "duration": "2h10min", "from_airport": "大兴", "to_airport": "虹桥T2"},
-            {"num": "CA1519", "dep": "09:30", "arr": "11:55", "duration": "2h25min", "from_airport": "首都T3", "to_airport": "虹桥T2"},
-            {"num": "HO5345", "dep": "11:00", "arr": "13:25", "duration": "2h25min", "from_airport": "首都T2", "to_airport": "虹桥T2"},
-            {"num": "CA1533", "dep": "12:30", "arr": "14:45", "duration": "2h15min", "from_airport": "首都T3", "to_airport": "虹桥T2"},
-            {"num": "CA1515", "dep": "16:00", "arr": "18:10", "duration": "2h10min", "from_airport": "首都T3", "to_airport": "虹桥T2"},
-            {"num": "MU5160", "dep": "17:30", "arr": "19:45", "duration": "2h15min", "from_airport": "首都T2", "to_airport": "虹桥T2"},
-            {"num": "MU5124", "dep": "19:00", "arr": "21:20", "duration": "2h20min", "from_airport": "首都T2", "to_airport": "虹桥T2"},
-            {"num": "CA8686", "dep": "20:35", "arr": "22:35", "duration": "2h", "from_airport": "大兴", "to_airport": "浦东T2"},
-        ],
-        "trains": [
-            {"num": "G1", "dep": "07:00", "arr": "11:29", "duration": "4h29min"},
-            {"num": "G3", "dep": "09:00", "arr": "13:28", "duration": "4h28min"},
-            {"num": "G7", "dep": "14:00", "arr": "18:28", "duration": "4h28min"},
-            {"num": "G11", "dep": "17:00", "arr": "21:28", "duration": "4h28min"},
-        ]
-    },
-    "北京-广州": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "MU6301", "dep": "07:15", "arr": "10:35", "duration": "3h20min", "from_airport": "大兴", "to_airport": "白云T3"},
-            {"num": "CA1317", "dep": "09:55", "arr": "13:20", "duration": "3h25min", "from_airport": "首都T3", "to_airport": "白云T3"},
-            {"num": "CZ3112", "dep": "11:30", "arr": "14:40", "duration": "3h10min", "from_airport": "大兴", "to_airport": "白云T2"},
-            {"num": "MF1086", "dep": "14:00", "arr": "17:15", "duration": "3h15min", "from_airport": "大兴", "to_airport": "白云T2"},
-            {"num": "3U1016", "dep": "15:30", "arr": "18:40", "duration": "3h10min", "from_airport": "大兴", "to_airport": "白云T2"},
-            {"num": "HU7811", "dep": "16:30", "arr": "19:55", "duration": "3h25min", "from_airport": "首都T2", "to_airport": "白云T3"},
-        ],
-        "trains": [
-            {"num": "G65", "dep": "07:30", "arr": "15:30", "duration": "8h"},
-            {"num": "G67", "dep": "10:00", "arr": "18:00", "duration": "8h"},
-            {"num": "G69", "dep": "13:00", "arr": "21:00", "duration": "8h"},
-        ]
-    },
-    "北京-成都": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "CA4101", "dep": "07:00", "arr": "10:00", "duration": "3h", "from_airport": "首都T3", "to_airport": "双流T2"},
-            {"num": "3U8882", "dep": "11:00", "arr": "14:00", "duration": "3h", "from_airport": "首都T2", "to_airport": "双流T2"},
-            {"num": "CA4115", "dep": "15:00", "arr": "18:00", "duration": "3h", "from_airport": "首都T3", "to_airport": "双流T2"},
-            {"num": "3U8888", "dep": "19:00", "arr": "22:00", "duration": "3h", "from_airport": "首都T2", "to_airport": "双流T2"},
-        ],
-        "trains": [
-            {"num": "G87", "dep": "07:00", "arr": "14:30", "duration": "7h30min"},
-            {"num": "G89", "dep": "10:00", "arr": "17:30", "duration": "7h30min"},
-            {"num": "G307", "dep": "13:00", "arr": "20:30", "duration": "7h30min"},
-        ]
-    },
-    "北京-西安": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "CA1201", "dep": "08:00", "arr": "10:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "咸阳T3"},
-            {"num": "MU2102", "dep": "12:00", "arr": "14:00", "duration": "2h", "from_airport": "大兴", "to_airport": "咸阳T3"},
-            {"num": "CA1215", "dep": "16:00", "arr": "18:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "咸阳T3"},
-        ],
-        "trains": [
-            {"num": "G651", "dep": "07:00", "arr": "11:30", "duration": "4h30min"},
-            {"num": "G653", "dep": "10:00", "arr": "14:30", "duration": "4h30min"},
-            {"num": "G655", "dep": "14:00", "arr": "18:30", "duration": "4h30min"},
-            {"num": "G657", "dep": "17:00", "arr": "21:30", "duration": "4h30min"},
-        ]
-    },
-    "北京-杭州": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "CA1701", "dep": "07:30", "arr": "09:40", "duration": "2h10min", "from_airport": "首都T3", "to_airport": "萧山T4"},
-            {"num": "MU5132", "dep": "11:00", "arr": "13:10", "duration": "2h10min", "from_airport": "大兴", "to_airport": "萧山T3"},
-            {"num": "CA1715", "dep": "15:00", "arr": "17:10", "duration": "2h10min", "from_airport": "首都T3", "to_airport": "萧山T4"},
-        ],
-        "trains": [
-            {"num": "G31", "dep": "07:00", "arr": "11:30", "duration": "4h30min"},
-            {"num": "G33", "dep": "10:00", "arr": "14:30", "duration": "4h30min"},
-            {"num": "G35", "dep": "14:00", "arr": "18:30", "duration": "4h30min"},
-            {"num": "G37", "dep": "17:00", "arr": "21:30", "duration": "4h30min"},
-        ]
-    },
-    "北京-武汉": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "CA8201", "dep": "08:00", "arr": "10:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "天河T3"},
-            {"num": "CZ3118", "dep": "13:00", "arr": "15:00", "duration": "2h", "from_airport": "大兴", "to_airport": "天河T3"},
-        ],
-        "trains": [
-            {"num": "G501", "dep": "07:00", "arr": "11:00", "duration": "4h"},
-            {"num": "G503", "dep": "10:00", "arr": "14:00", "duration": "4h"},
-            {"num": "G505", "dep": "14:00", "arr": "18:00", "duration": "4h"},
-            {"num": "G507", "dep": "17:00", "arr": "21:00", "duration": "4h"},
-        ]
-    },
-    "北京-哈尔滨": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "CA1601", "dep": "07:00", "arr": "09:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "太平"},
-            {"num": "CZ6202", "dep": "11:00", "arr": "13:00", "duration": "2h", "from_airport": "大兴", "to_airport": "太平"},
-            {"num": "CA1615", "dep": "15:00", "arr": "17:00", "duration": "2h", "from_airport": "首都T3", "to_airport": "太平"},
-        ],
-        "trains": [
-            {"num": "G901", "dep": "07:00", "arr": "12:00", "duration": "5h"},
-            {"num": "G903", "dep": "10:00", "arr": "15:00", "duration": "5h"},
-            {"num": "G905", "dep": "14:00", "arr": "19:00", "duration": "5h"},
-        ]
-    },
-    "北京-三亚": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "CA1345", "dep": "07:00", "arr": "11:00", "duration": "4h", "from_airport": "首都T3", "to_airport": "凤凰"},
-            {"num": "CZ6712", "dep": "11:00", "arr": "15:00", "duration": "4h", "from_airport": "大兴", "to_airport": "凤凰"},
-            {"num": "CA1355", "dep": "15:00", "arr": "19:00", "duration": "4h", "from_airport": "首都T3", "to_airport": "凤凰"},
-        ], "trains": []
-    },
-    "上海-广州": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "MU5301", "dep": "08:00", "arr": "10:15", "duration": "2h15min", "from_airport": "虹桥T2", "to_airport": "白云T3"},
-            {"num": "CZ3502", "dep": "12:00", "arr": "14:15", "duration": "2h15min", "from_airport": "虹桥T2", "to_airport": "白云T2"},
-            {"num": "MU5315", "dep": "16:00", "arr": "18:15", "duration": "2h15min", "from_airport": "虹桥T2", "to_airport": "白云T3"},
-        ],
-        "trains": [
-            {"num": "G85", "dep": "08:00", "arr": "14:30", "duration": "6h30min"},
-            {"num": "G1301", "dep": "11:00", "arr": "17:30", "duration": "6h30min"},
-        ]
-    },
-    "上海-成都": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "MU5401", "dep": "07:00", "arr": "10:00", "duration": "3h", "from_airport": "虹桥T2", "to_airport": "双流T2"},
-            {"num": "3U8962", "dep": "11:00", "arr": "14:00", "duration": "3h", "from_airport": "浦东T2", "to_airport": "双流T2"},
-            {"num": "MU5415", "dep": "15:00", "arr": "18:00", "duration": "3h", "from_airport": "虹桥T2", "to_airport": "双流T2"},
-        ],
-        "trains": [
-            {"num": "G1970", "dep": "07:00", "arr": "18:00", "duration": "11h"},
-            {"num": "D952", "dep": "09:00", "arr": "20:00", "duration": "11h"},
-        ]
-    },
-    "广州-深圳": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [],
-        "trains": [
-            {"num": "G6201", "dep": "07:00", "arr": "07:36", "duration": "36min"},
-            {"num": "G6203", "dep": "08:00", "arr": "08:36", "duration": "36min"},
-            {"num": "G6205", "dep": "09:00", "arr": "09:36", "duration": "36min"},
-            {"num": "G6207", "dep": "12:00", "arr": "12:36", "duration": "36min"},
-            {"num": "G6209", "dep": "15:00", "arr": "15:36", "duration": "36min"},
-            {"num": "G6211", "dep": "18:00", "arr": "18:36", "duration": "36min"},
-        ]
-    },
-    "成都-重庆": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [],
-        "trains": [
-            {"num": "G8501", "dep": "07:00", "arr": "08:30", "duration": "1h30min"},
-            {"num": "G8503", "dep": "09:00", "arr": "10:30", "duration": "1h30min"},
-            {"num": "G8505", "dep": "12:00", "arr": "13:30", "duration": "1h30min"},
-            {"num": "G8507", "dep": "15:00", "arr": "16:30", "duration": "1h30min"},
-            {"num": "G8509", "dep": "18:00", "arr": "19:30", "duration": "1h30min"},
-        ]
-    },
-    "上海-南京": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [],
-        "trains": [
-            {"num": "G7001", "dep": "07:00", "arr": "08:30", "duration": "1h30min"},
-            {"num": "G7003", "dep": "09:00", "arr": "10:30", "duration": "1h30min"},
-            {"num": "G7005", "dep": "12:00", "arr": "13:30", "duration": "1h30min"},
-            {"num": "G7007", "dep": "15:00", "arr": "16:30", "duration": "1h30min"},
-            {"num": "G7009", "dep": "18:00", "arr": "19:30", "duration": "1h30min"},
-        ]
-    },
-    "上海-昆明": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "MU5801", "dep": "08:00", "arr": "11:00", "duration": "3h", "from_airport": "虹桥T2", "to_airport": "长水"},
-            {"num": "CZ3672", "dep": "13:00", "arr": "16:00", "duration": "3h", "from_airport": "浦东T2", "to_airport": "长水"},
-        ],
-        "trains": [
-            {"num": "G1371", "dep": "07:00", "arr": "18:00", "duration": "11h"},
-        ]
-    },
-    "广州-三亚": {
-        "_verified": "2026-07-16", "_source": "携程实时班期表",
-        "flights": [
-            {"num": "CZ6732", "dep": "08:00", "arr": "09:30", "duration": "1h30min", "from_airport": "白云T2", "to_airport": "凤凰"},
-            {"num": "HU7302", "dep": "12:00", "arr": "13:30", "duration": "1h30min", "from_airport": "白云T1", "to_airport": "凤凰"},
-            {"num": "CZ6748", "dep": "16:00", "arr": "17:30", "duration": "1h30min", "from_airport": "白云T2", "to_airport": "凤凰"},
-        ], "trains": []
-    },
-}
-
+# 🔴 已删除COMMON_ROUTES本地预存班次数据，飞常准API是唯一数据源
 
 def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_distance_km: float = 0, user_transport_mode: str = "") -> dict:
-    """获取两个城市间的航班/高铁班次参考数据（优先飞常准API，回退预存数据）
+    """获取两个城市间的航班/高铁班次数据（飞常准API是唯一数据源，不使用本地预存数据）
     date参数用于校准：确保AI只使用出行日期的班次，禁止混入过往数据
     force_distance_km: 外部传入的高德API精确距离（km），仅用于参考
     user_transport_mode: 用户选择的出行方式（飞机/高铁/打车/自驾），为空则自动判断"""
-    clean_dep = _clean_city_name(dep_city)
-    clean_arr = _clean_city_name(arr_city)
-    key1 = f"{clean_dep}-{clean_arr}"
-    key2 = f"{clean_arr}-{clean_dep}"
-
-    static = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {
+    # 🔴 飞常准API是唯一数据源，不返回任何本地预存数据
+    result = {
         "flights": [], "trains": [],
-        "_verified": "无", "_source": "无预存数据",
+        "_verified": "无", "_source": "飞常准API（唯一数据源）",
         "_no_data": True,
-        "_no_data_note": "【致命警告-最高优先级】该路线没有预存真实班次数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ station字段留空 ⑤ 在note中建议用户自行在携程查询实时航班号 ⑥ 绝对禁止编造任何航班号/车次号/机场名！"
+        "_no_data_note": "【致命警告-最高优先级】飞常准API是唯一数据源，无本地预存数据！你必须：① flight_number字段留空字符串'' ② 只填写交通方式类型（如'飞机'或'高铁'）③ duration只写估算耗时（如'约3小时'）④ station字段留空 ⑤ 在note中建议用户自行在携程查询实时航班号 ⑥ 绝对禁止编造任何航班号/车次号/机场名！"
     }
-    result = dict(static)  # 复制静态数据
-    # 🔴 根据用户交通方式过滤：用户选飞机时只返回航班，选高铁时只返回火车
-    if user_transport_mode == "飞机":
-        if result.get("trains"):
-            print(f"[SCHEDULE] 用户指定飞机出行，过滤掉{len(result.get('trains', []))}条火车数据")
-            result["trains"] = []
-    elif user_transport_mode == "高铁":
-        if result.get("flights"):
-            print(f"[SCHEDULE] 用户指定高铁出行，过滤掉{len(result.get('flights', []))}条航班数据")
-            result["flights"] = []
     if date:
         from datetime import date as date_type
         try:
@@ -708,14 +427,13 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_dista
             pass
         result["_date"] = date
         result["_date_note"] = (
-            f"【严格日期校验-最高优先级】以上班次为飞常准实时API+预存数据（验证日期：{result.get('_verified', '2026-07')}），"
+            f"【严格日期校验-最高优先级】飞常准API是唯一数据源，"
             f"必须确保所选班次在 {date} 当天有实际运营。\n"
-            f"  ① 只能选择以上列出的航班号/车次号，这些是经过验证的真实运营班次\n"
-            f"  ② 绝对禁止编造不存在的航班号（如CA1501等已停运/不存在的班次）\n"
-            f"  ③ 绝对禁止使用军用机场（汕头外砂、南苑、大校场等已关闭的机场）\n"
-            f"  ④ 如果该日期无此班次，则只填写交通方式类型（如'飞机'或'高铁'），不填具体航班号，station留空\n"
-            f"  ⑤ 出发/到达机场必须使用以上列出的真实民用机场名称（如'北京首都T3'、'上海虹桥T2'等白名单中的机场）\n"
-            f"  ⑥ 出行日期年份必须与班次数据年份一致！2026年数据仅适用于2026年出行！如果出行日期不是2026年，flight_number和station都必须留空！\n"
+            f"  ① 只能从飞常准API实时数据中选择航班号/车次号\n"
+            f"  ② 绝对禁止编造不存在的航班号\n"
+            f"  ③ 机场名以飞常准API返回的为准\n"
+            f"  ④ 如果飞常准API无数据，则只填写交通方式类型（如'飞机'或'高铁'），不填具体航班号，station留空\n"
+            f"  ⑤ 出行日期年份必须与班次数据年份一致！如果出行日期不是2026年，flight_number和station都必须留空！\n"
         )
     return result
 
@@ -729,13 +447,13 @@ def verify_schedule_number(dep_city: str, arr_city: str, flight_number: str, dat
 
 
 def get_transfer_routes(dep_city: str, arr_city: str, date: str = "") -> dict:
-    """获取两城市间的中转/换乘方案（无直飞航班时需要中转）
+    """获取两城市间的中转/换乘方案（飞常准API是唯一数据源，不依赖本地预存数据）
     返回可能的中转城市和换乘建议
     """
     clean_dep = _clean_city_name(dep_city)
     clean_arr = _clean_city_name(arr_city)
 
-    # 中转枢纽城市映射
+    # 中转枢纽城市映射（仅用于建议中转城市，具体班次由飞常准API查询）
     TRANSFER_HUBS = {
         "北京": ["上海", "广州", "成都", "西安", "武汉"],
         "上海": ["北京", "广州", "成都", "西安"],
@@ -752,33 +470,19 @@ def get_transfer_routes(dep_city: str, arr_city: str, date: str = "") -> dict:
     for hub in hub_cities:
         if hub == clean_arr:
             continue
-        # 查第一段（出发→中转）和 第二段（中转→到达）
-        # 🔴 飞常准API是唯一数据源，不再使用本地COMMON_ROUTES
-        route1 = {"flights": [], "trains": [], "_no_data": True, "_source": "飞常准API"}
-        route2 = {"flights": [], "trains": [], "_no_data": True, "_source": "飞常准API"}
-
-        if route1.get("flights") or route1.get("trains"):
-            has_route2 = route2.get("flights") or route2.get("trains")
-            transfer_options.append({
-                "transfer_city": hub,
-                "leg1": {
-                    "from": clean_dep, "to": hub,
-                    "flights": route1.get("flights", [])[:3],
-                    "trains": route1.get("trains", [])[:3],
-                },
-                "leg2": {
-                    "from": hub, "to": clean_arr,
-                    "flights": route2.get("flights", [])[:3],
-                    "trains": route2.get("trains", [])[:3],
-                },
-                "has_full_route": has_route2,
-                "note": f"经{hub}中转，需预留至少1.5小时中转时间（飞机转飞机）或2小时（火车转飞机）",
-            })
+        # 🔴 飞常准API是唯一数据源，不查询本地预存数据，具体班次由飞常准API实时查询
+        transfer_options.append({
+            "transfer_city": hub,
+            "leg1": {"from": clean_dep, "to": hub, "flights": [], "trains": []},
+            "leg2": {"from": hub, "to": clean_arr, "flights": [], "trains": []},
+            "has_full_route": False,
+            "note": f"经{hub}中转，具体班次请通过飞常准API实时查询。中转规则：飞机转飞机≥1.5小时，火车转飞机≥2小时，飞机转火车≥1.5小时",
+        })
 
     result = {
-        "direct_available": False,  # 🔴 飞常准API是唯一数据源，不再使用本地COMMON_ROUTES判断
-        "transfer_options": transfer_options[:3],  # 最多3个中转方案
+        "direct_available": False,  # 🔴 飞常准API是唯一数据源，无法从本地判断直飞可用性
+        "transfer_options": transfer_options[:3],
         "_date": date,
-        "_note": "【中转规则】中转时间必须充裕：飞机转飞机≥1.5小时，火车转飞机≥2小时，飞机转火车≥1.5小时。宁可少玩景点也不可赶时间！"
+        "_note": "【中转规则】飞常准API是唯一数据源，具体班次需实时查询。中转时间必须充裕：飞机转飞机≥1.5小时，火车转飞机≥2小时，飞机转火车≥1.5小时。宁可少玩景点也不可赶时间！"
     }
     return result

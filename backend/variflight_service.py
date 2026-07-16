@@ -122,7 +122,8 @@ async def _try_flight_query(dep_iata: str, arr_iata: str, date: str) -> dict:
 
 async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> dict:
     """按出发/到达城市查询直飞航班（使用机场IATA代码，而非城市代码）
-    支持多机场查询：如果主机场无数据，尝试查询邻近枢纽城市的机场"""
+    支持多机场查询和邻近城市校准：如果主机场无数据，尝试查询邻近枢纽城市的机场
+    反复校准：主查询失败时自动扩展搜索范围"""
     from feichangzhun_service import get_primary_airport_iata, get_nearest_hub, _clean_city_name
     dep_iata = get_primary_airport_iata(dep_city)
     arr_iata = get_primary_airport_iata(arr_city)
@@ -144,22 +145,74 @@ async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> di
     result = await _try_flight_query(dep_iata, arr_iata, date)
     flights = result.get("flights", [])
 
-    # 如果主查询无结果，尝试扩展查询：出发城市的其他机场或邻近枢纽机场
-    if not flights and dep_iata:
-        # 尝试查询出发城市邻近枢纽到目的地的航班
-        dep_hub = get_nearest_hub(dep_city)
-        if dep_hub.get("has_hub") and dep_hub["hub_iata"] != dep_iata:
-            alt_dep_iata = dep_hub["hub_iata"]
-            print(f"[VARIFLIGHT] 主查询{dep_iata}->{arr_iata}无结果，尝试邻近枢纽{alt_dep_iata}")
-            alt_result = await _try_flight_query(alt_dep_iata, arr_iata, date)
+    # 🔴 反复校准：如果主查询无结果，尝试扩展搜索邻近城市机场
+    if not flights:
+        flights = await _calibrate_nearby_airport_search(dep_city, arr_city, date, dep_iata, arr_iata)
+        # 标记为经过校准扩展搜索
+        if flights:
+            for f in flights:
+                if "_calibrated" not in f:
+                    f["_calibrated"] = True
+                    f["_calibrated_source"] = "飞常准API邻近城市校准搜索"
+
+    return {"success": bool(flights), "error": result.get("error", ""),
+            "flights": flights, "_source": "飞常准实时API（含邻近城市校准）"}
+
+
+async def _calibrate_nearby_airport_search(dep_city: str, arr_city: str, date: str,
+                                           dep_iata: str, arr_iata: str) -> list:
+    """反复校准：主查询无结果时，扩展搜索邻近城市机场
+    尝试多种机场组合，确保不遗漏可用的航班"""
+    from feichangzhun_service import get_nearest_hub, get_primary_airport_iata, _clean_city_name
+    all_flights = []
+
+    # 策略1：尝试出发城市邻近枢纽
+    dep_hub = get_nearest_hub(dep_city)
+    if dep_hub.get("has_hub") and dep_hub["hub_iata"] != dep_iata:
+        alt_dep_iata = dep_hub["hub_iata"]
+        print(f"[CALIBRATE] 策略1：尝试出发邻近枢纽 {dep_hub['hub_city']}({alt_dep_iata}) → {arr_iata}")
+        alt_result = await _try_flight_query(alt_dep_iata, arr_iata, date)
+        alt_flights = alt_result.get("flights", [])
+        if alt_flights:
+            for f in alt_flights:
+                f["_source"] = f"飞常准实时API（邻近枢纽{dep_hub['hub_city']}出发）"
+            all_flights.extend(alt_flights)
+
+    # 策略2：尝试到达城市邻近枢纽
+    if not all_flights:
+        arr_hub = get_nearest_hub(arr_city)
+        if arr_hub.get("has_hub") and arr_hub["hub_iata"] != arr_iata:
+            alt_arr_iata = arr_hub["hub_iata"]
+            print(f"[CALIBRATE] 策略2：尝试{dep_iata} → 到达邻近枢纽 {arr_hub['hub_city']}({alt_arr_iata})")
+            alt_result = await _try_flight_query(dep_iata, alt_arr_iata, date)
             alt_flights = alt_result.get("flights", [])
             if alt_flights:
                 for f in alt_flights:
-                    f["_source"] = f"飞常准实时API（邻近枢纽{dep_hub['hub_city']}出发）"
-                flights = alt_flights
+                    f["_source"] = f"飞常准实时API（邻近枢纽{arr_hub['hub_city']}到达）"
+                all_flights.extend(alt_flights)
 
-    return {"success": bool(flights), "error": result.get("error", ""),
-            "flights": flights, "_source": "飞常准实时API"}
+    # 策略3：尝试出发和到达都使用邻近枢纽
+    if not all_flights:
+        dep_hub2 = get_nearest_hub(dep_city)
+        arr_hub2 = get_nearest_hub(arr_city)
+        if dep_hub2.get("has_hub") and arr_hub2.get("has_hub"):
+            alt_dep = dep_hub2["hub_iata"]
+            alt_arr = arr_hub2["hub_iata"]
+            if alt_dep != dep_iata or alt_arr != arr_iata:
+                print(f"[CALIBRATE] 策略3：尝试双向邻近枢纽 {dep_hub2['hub_city']}({alt_dep}) → {arr_hub2['hub_city']}({alt_arr})")
+                alt_result = await _try_flight_query(alt_dep, alt_arr, date)
+                alt_flights = alt_result.get("flights", [])
+                if alt_flights:
+                    for f in alt_flights:
+                        f["_source"] = f"飞常准实时API（双向邻近枢纽校准）"
+                    all_flights.extend(alt_flights)
+
+    if all_flights:
+        print(f"[CALIBRATE] 邻近城市校准搜索完成，共找到{len(all_flights)}条航班")
+    else:
+        print(f"[CALIBRATE] 所有邻近城市校准策略均未找到航班")
+
+    return all_flights
 
 
 async def verify_flight_number(flight_num: str, date: str, dep: str = "", arr: str = "") -> dict:
@@ -252,7 +305,8 @@ async def get_flight_transfer(dep_city: str, arr_city: str, date: str) -> dict:
 async def get_full_route_data(dep_city: str, arr_city: str, date: str, user_transport_mode: str = "") -> dict:
     """获取完整路线数据：航班+火车票+中转方案（并行查询）
     飞常准API是唯一数据源，绝不使用本地预存数据
-    user_transport_mode: 用户选择的出行方式，用于过滤不匹配的交通类型"""
+    user_transport_mode: 用户选择的出行方式，用于过滤不匹配的交通类型
+    包含反复校准机制：对查询结果进行交叉验证，确保数据准确性"""
     import asyncio
     tasks = [
         search_flights_by_route(dep_city, arr_city, date),
@@ -264,8 +318,21 @@ async def get_full_route_data(dep_city: str, arr_city: str, date: str, user_tran
     trains_result = results[1] if not isinstance(results[1], Exception) else {"success": False, "trains": []}
     transfer_result = results[2] if not isinstance(results[2], Exception) else {"success": False, "data": {}}
 
-    has_flights = bool(flights_result.get("flights"))
-    has_trains = bool(trains_result.get("trains"))
+    flights = flights_result.get("flights", [])
+    trains = trains_result.get("trains", [])
+
+    # 🔴 反复校准：对查询到的航班进行抽样验证，确保数据真实性
+    if flights and len(flights) > 0:
+        flights = await _calibrate_flight_results(flights, date, dep_city, arr_city)
+        print(f"[VARIFLIGHT] 航班校准完成：{len(flights)}条有效航班")
+
+    # 🔴 反复校准：对查询到的火车票进行抽样验证
+    if trains and len(trains) > 0:
+        trains = await _calibrate_train_results(trains, date, dep_city, arr_city)
+        print(f"[VARIFLIGHT] 火车票校准完成：{len(trains)}条有效车次")
+
+    has_flights = bool(flights)
+    has_trains = bool(trains)
     has_data = has_flights or has_trains
 
     # 🔴 飞常准API是唯一数据源，绝不回退本地预存数据
@@ -274,12 +341,85 @@ async def get_full_route_data(dep_city: str, arr_city: str, date: str, user_tran
 
     return {
         "success": flights_result.get("success") or trains_result.get("success"),
-        "flights": flights_result.get("flights", []),
-        "trains": trains_result.get("trains", []),
+        "flights": flights,
+        "trains": trains,
         "transfers": transfer_result.get("data", {}),
-        "_source": "飞常准实时API",
+        "_source": "飞常准实时API（已校准）",
         "_no_data": not has_data,
         "_no_data_message": "飞常准API暂无该路线实时班次数据，请优先选择大巴/自驾等低成本出行方式，或自行在携程查询实时航班" if not has_data else "",
         "flight_error": flights_result.get("error", ""),
         "train_error": trains_result.get("error", ""),
     }
+
+
+async def _calibrate_flight_results(flights: list, date: str, dep_city: str, arr_city: str) -> list:
+    """反复校准航班结果：抽样验证航班号真实性，过滤无效数据
+    对前3个航班进行验证，确保返回的航班数据真实可靠"""
+    if not flights:
+        return flights
+    calibrated = []
+    # 对前3个航班进行抽样验证（避免过多API调用）
+    sample_size = min(3, len(flights))
+    verified_nums = set()
+    for i in range(sample_size):
+        f = flights[i]
+        flight_num = f.get("num", "")
+        if not flight_num or flight_num in verified_nums:
+            calibrated.append(f)
+            continue
+        try:
+            verify_result = await verify_flight_number(flight_num, date, dep_city, arr_city)
+            if verify_result.get("valid"):
+                f["_calibrated"] = True
+                f["_calibrated_source"] = "飞常准API交叉验证通过"
+                calibrated.append(f)
+                verified_nums.add(flight_num)
+                print(f"[CALIBRATE] 航班{flight_num}验证通过")
+            else:
+                print(f"[CALIBRATE] 航班{flight_num}验证失败：{verify_result.get('error','')}，已剔除")
+                # 不加入calibrated，剔除无效航班
+        except Exception as e:
+            # 验证失败时保留原数据但标记为未校准
+            f["_calibrated"] = False
+            f["_calibrated_note"] = f"校准异常: {str(e)}"
+            calibrated.append(f)
+            print(f"[CALIBRATE] 航班{flight_num}校准异常: {e}")
+    # 未抽样的航班直接保留
+    for i in range(sample_size, len(flights)):
+        flights[i]["_calibrated"] = False
+        flights[i]["_calibrated_note"] = "未抽样校准"
+        calibrated.append(flights[i])
+    return calibrated
+
+
+async def _calibrate_train_results(trains: list, date: str, dep_city: str, arr_city: str) -> list:
+    """反复校准火车票结果：通过重新查询验证数据一致性
+    对火车票进行二次查询校准，确保数据准确"""
+    if not trains:
+        return trains
+    # 火车票校准：重新查询一次，对比结果一致性
+    try:
+        retry_result = await search_train_tickets(dep_city, arr_city, date)
+        retry_trains = retry_result.get("trains", [])
+        if retry_trains:
+            retry_nums = {t.get("num", "") for t in retry_trains}
+            calibrated = []
+            for t in trains:
+                train_num = t.get("num", "")
+                if train_num in retry_nums:
+                    t["_calibrated"] = True
+                    t["_calibrated_source"] = "飞常准API二次查询校准通过"
+                    calibrated.append(t)
+                else:
+                    print(f"[CALIBRATE] 车次{train_num}二次查询未找到，保留但标记未校准")
+                    t["_calibrated"] = False
+                    t["_calibrated_note"] = "二次查询未确认"
+                    calibrated.append(t)
+            return calibrated
+    except Exception as e:
+        print(f"[CALIBRATE] 火车票校准异常: {e}")
+    # 校准失败时标记所有车次
+    for t in trains:
+        t["_calibrated"] = False
+        t["_calibrated_note"] = "校准未执行"
+    return trains

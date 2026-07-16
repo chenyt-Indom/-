@@ -5,7 +5,6 @@ import httpx
 import asyncio
 import datetime
 from fastapi import FastAPI, Request
-from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from models import TripRequest
@@ -14,34 +13,12 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt, build_retry_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid, get_amap_city_distance
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_nearest_hub, get_transfer_routes, get_amap_city_distance
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
 from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
 
-# 每日机场信息刷新任务
-async def _daily_airport_refresh():
-    """每天0时刷新全国在运营机场信息，确保机场数据无误"""
-    while True:
-        now = datetime.datetime.now()
-        next_midnight = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        sleep_seconds = max(1, (next_midnight - now).total_seconds())
-        await asyncio.sleep(sleep_seconds)
-        try:
-            from feichangzhun_service import VALID_AIRPORTS, DECOMMISSIONED_AIRPORTS, is_airport_valid
-            print(f"[机场刷新] {datetime.datetime.now().isoformat()} - 开始每日机场信息校验")
-            valid_count = sum(1 for a in VALID_AIRPORTS if is_airport_valid(a))
-            print(f"[机场刷新] 白名单机场 {len(VALID_AIRPORTS)} 个，校验通过 {valid_count} 个，黑名单 {len(DECOMMISSIONED_AIRPORTS)} 个")
-        except Exception as e:
-            print(f"[机场刷新] 校验失败: {e}")
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_daily_airport_refresh())
-    yield
-    task.cancel()
-
-app = FastAPI(title="行旅白 AI 旅行规划", lifespan=lifespan)
+app = FastAPI(title="行旅白 AI 旅行规划")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
@@ -101,7 +78,7 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
     """飞常准API验证：所有班次必须经飞常准API验证成功后才可安排。
     飞常准API是唯一数据源，绝不使用本地预存数据。
     返回: {"valid": bool, "issues": list, "fabricated": list}"""
-    from feichangzhun_service import (DECOMMISSIONED_AIRPORTS, SHORT_AIRPORT_MAP)
+    from feichangzhun_service import SHORT_AIRPORT_MAP
     from datetime import date as date_type, datetime as dt_type
 
     result = {"valid": True, "issues": [], "fabricated": []}
@@ -200,17 +177,7 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["note"] = f"{transport_type}出行，建议通过高德地图查询实时路况"
             continue
 
-        # 检查停用机场黑名单（仅对飞机类型）
-        if not is_train and station:
-            for banned in DECOMMISSIONED_AIRPORTS:
-                if banned in station:
-                    issue = f"{key}使用了停用机场: {station}"
-                    print(f"[WARN] {issue}")
-                    result["issues"].append(issue)
-                    result["valid"] = False
-                    transport["station"] = ""
-                    transport["note"] = (transport.get("note", "") + "（原机场已停用）").strip()
-                    break
+        # 🔴 飞常准API是唯一数据源，机场有效性由API返回数据验证，不做本地黑白名单检查
 
         # 🔴 核心：飞常准API验证（唯一数据源，所有班次必须经此验证）
         if departure_city and dest:
