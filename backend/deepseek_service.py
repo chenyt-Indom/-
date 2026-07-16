@@ -398,6 +398,16 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
 
     fabricated_text = "、".join(fabricated) if fabricated else "未知"
 
+    # 临近城市强制低成本出行检查
+    low_cost_section = ""
+    schedule = transport_info.get("route_schedule", {})
+    if schedule.get("_low_cost_forced"):
+        low_cost_section = f"""
+【🔴 强制低成本出行 - 最高优先级！】
+{departure_city}到{dest}距离约{schedule.get('_distance_km','')}，属于临近城市！
+必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！
+flight_number必须留空""，type必须填"大巴"或"自驾"或"汽车"！"""
+
     retry_header = f"""🔴🔴🔴 上次生成的行程被拒绝！原因：你编造了不存在的班次号！
 
 【编造的班次号】{fabricated_text}
@@ -409,6 +419,7 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
 3. station必须是飞常准API返回的机场/车站名，API返回的即为有效名，不需要参考任何其他名单！
 4. departure_time和arrival_time必须与所选真实班次的dep/arr时间完全一致！
 5. duration必须使用"班次号 + 耗时"格式，不可只写耗时！
+{low_cost_section}
 
 {real_schedule_text}
 
@@ -589,13 +600,20 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             if transport_info:
                 ti = transport_info.get("transport", {})
                 transport_section += f"\n【交通建议】{ti.get('mode','')} - {ti.get('reason','')}"
-                # 邻近枢纽提示
                 dep_hub = transport_info.get("dep_hub", {})
                 dest_hub = transport_info.get("dest_hub", {})
                 if dep_hub.get("has_hub"):
                     transport_section += f"\n【出发地枢纽】{dep_hub['note']}"
                 if dest_hub.get("has_hub"):
                     transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
+    # 临近城市强制低成本出行检查
+    low_cost_forced = False
+    schedule = transport_info.get("route_schedule", {}) if transport_info else {}
+    if schedule.get("_low_cost_forced"):
+        low_cost_forced = True
+        transport_section += f"\n\n🔴🔴【强制低成本出行-最高优先级】{departure_city}到{dest}距离仅{schedule.get('_distance_km','')}，属于临近城市！"
+        transport_section += "\n必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！"
+        transport_section += "\n① flight_number必须留空字符串'' ② type必须填写'大巴'或'自驾'或'汽车' ③ duration只写估算耗时 ④ 绝对禁止编造任何航班号/车次号！"
     transport_section += f"""
 【交通选择原则】根据距离和性价比选择交通工具，优先考虑低成本方案：
   - ≤5km：步行
@@ -608,7 +626,8 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。
 【出发时间灵活】出发时间不固定，根据航班/车次时刻表决定，可以是上午、下午、傍晚甚至晚上。下午到达可安排晚间景点，晚上到达仅入住酒店。跨天到达需标注"次日XX:XX"并规划好到达后交通。需预留充足缓冲时间（飞机提前2小时到机场，火车提前1小时到站）。
 【大巴/自驾出行】如果选择大巴或自驾，flight_number留空，只填type和预估耗时，station留空或填大巴站名。"""
-    if transport_info:
+    if transport_info and not low_cost_forced:
+        # 真实班次数据（临近城市已强制低成本，跳过班次数据展示）
         # 真实班次数据
         schedule = transport_info.get("route_schedule", {})
         if schedule.get("flights") or schedule.get("trains"):
@@ -657,15 +676,15 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 
+【用户的新需求】（最高优先级！必须优先满足！整个计划的核心就是满足以下需求！）
+{user_input}
+
 【目的地】{dest}
 【天数】{days}天
 【出行日期】{start_date} 至 {end_date}
 【出行方式】{transport_mode}{transport_section}
 
-【用户的新需求】（这是最重要的参考，必须优先满足！）
-{user_input}
-
-【原行程概览】
+【原行程概览（仅供参考，新需求优先）】
 {old_summary}
 
 【天气预报】
@@ -694,12 +713,12 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 }}
 
 要求：
-1. 【最高优先级-用户需求】必须重点参考用户的新需求，在实际可行的情况下务必满足用户的想法。如果用户要求调整出行方式、游览顺序、增减景点、换酒店等，必须严格遵循
-2. 结合天气预报合理安排室内外活动，雨天优先安排室内景点
-3. 景点名绝对不能重复，同一商区/相邻区域景点安排在同一天，减少交通时间
-4. 出发/返程时间不能太紧凑，必须留足缓冲。飞机需提前2小时到机场，火车需提前1小时到站
+1. 【最高优先级-用户需求】必须严格遵循用户的新需求！如果用户要求改用大巴/自驾，则绝对不使用飞机/高铁；如果用户要求换班次，必须从可选班次中改选；如果用户要求增删景点，必须执行。整个计划的核心就是满足用户需求！
+2. 如果用户要求的具体交通方式与可选班次表冲突，优先满足用户需求（如用户要求大巴，即使有航班可选也改用大巴，flight_number留空）
+3. 结合天气预报合理安排室内外活动，雨天优先安排室内景点
+4. 景点名绝对不能重复，同一商区/相邻区域景点安排在同一天，减少交通时间
 5. 【时间安排-最高优先级】每个景点必须填写 time_slot 字段（如"9:00-11:30"），严格遵循：上午8:00-12:00，下午13:00-17:30，晚上18:00-21:30；午餐12:00-13:00和晚餐17:30-18:30不可安排景点；景点间预留至少30-60分钟交通损耗；大景点3-4小时，小景点1.5-2.5小时；节奏慢则游玩时间+30%，节奏快可缩短但≥1小时。上午结束与下午开始间隔≥1小时，下午结束与晚上开始间隔≥1小时
 6. 所有时间使用24小时制，禁止>23:59的时间（如26:00），跨天活动使用"次日XX:XX"格式
 7. 公共交通出行时，根据距离选择合适交通工具：短距离步行/公交，中距离地铁/高铁，长距离飞机
-8. 【中转/换乘】如果无直飞航班需中转，填写transfers数组，中转等待时间必须充裕（飞机≥1.5小时，火车≥30分钟，跨类型≥2小时），列明班次编号变化，宁可少玩景点也不赶时间
+8. 出发/返程时间不能太紧凑，必须留足缓冲。飞机需提前2小时到机场，火车需提前1小时到站
 9. 只输出JSON，不要markdown代码块"""

@@ -1383,7 +1383,14 @@ async def regenerate_trip(request: Request):
                 transport_info["dest_hub"] = dest_hub
             except Exception:
                 pass
-            # 飞常准API实时查询航班和火车票
+            # 飞常准API实时查询航班和火车票（多渠道验证，与generate_trip一致）
+            if ti.get("need_flight") and not transport_info.get("route_schedule", {}).get("_low_cost_forced"):
+                try:
+                    flight_result = await search_flights(departure_city, dest, start_date)
+                    transport_info["flight_data"] = flight_result.get("flights", [])
+                    transport_info["flight_query"] = flight_result.get("query", {})
+                except Exception:
+                    pass
             try:
                 from variflight_service import get_full_route_data
                 vf_result = await get_full_route_data(departure_city, dest, start_date)
