@@ -393,29 +393,98 @@ def _validate_cross_card_consistency(trip_data: dict):
 
 
 def _check_transport_type_consistency(trip_data: dict, dep_trans: dict, ret_trans: dict):
-    """校验行程卡片中的交通描述与交通卡片的type是否一致"""
+    """校验行程卡片中的交通描述与交通卡片的type是否一致，确保交通卡片和行程卡片内容统一"""
     dep_type = str(dep_trans.get("type", "")).strip()
     ret_type = str(ret_trans.get("type", "")).strip()
 
-    # 检查行程卡片中是否有交通方式描述不一致
-    if dep_type and trip_data.get("note"):
-        note = trip_data.get("note", "")
-        # 如果note说"飞机"但dep_trans是"高铁"，标记不一致
-        if "飞机" in note and dep_type in ("高铁", "火车", "动车"):
-            print(f"[CONSISTENCY] 行程备注提到飞机，但出发交通type为{dep_type}，以type为准")
-            trip_data["note"] = note.replace("飞机", dep_type)
-
-    # 确保departure_transport和return_transport的type字段不为空
+    # 确保departure_transport和return_transport的type字段不为空（从flight_number推断）
     if not dep_type and dep_trans.get("flight_number"):
-        if dep_trans.get("flight_number", "").startswith(("CA", "MU", "CZ", "HU", "3U", "MF", "ZH", "SC", "FM", "HO")):
-            dep_trans["type"] = "飞机"
-        elif dep_trans.get("flight_number", "").startswith(("G", "D", "C", "K", "T", "Z")):
-            dep_trans["type"] = "高铁"
+        fn = dep_trans.get("flight_number", "").upper()
+        if any(fn.startswith(p) for p in ("CA", "MU", "CZ", "HU", "3U", "MF", "ZH", "SC", "FM", "HO")):
+            dep_type = "飞机"; dep_trans["type"] = "飞机"
+        elif any(fn.startswith(p) for p in ("G", "D", "C", "K", "T", "Z")):
+            dep_type = "高铁"; dep_trans["type"] = "高铁"
     if not ret_type and ret_trans.get("flight_number"):
-        if ret_trans.get("flight_number", "").startswith(("CA", "MU", "CZ", "HU", "3U", "MF", "ZH", "SC", "FM", "HO")):
-            ret_trans["type"] = "飞机"
-        elif ret_trans.get("flight_number", "").startswith(("G", "D", "C", "K", "T", "Z")):
-            ret_trans["type"] = "高铁"
+        fn = ret_trans.get("flight_number", "").upper()
+        if any(fn.startswith(p) for p in ("CA", "MU", "CZ", "HU", "3U", "MF", "ZH", "SC", "FM", "HO")):
+            ret_type = "飞机"; ret_trans["type"] = "飞机"
+        elif any(fn.startswith(p) for p in ("G", "D", "C", "K", "T", "Z")):
+            ret_type = "高铁"; ret_trans["type"] = "高铁"
+
+    # 交通方式关键词映射：用于检测和替换行程卡片中的不一致描述
+    dep_keywords = {"飞机": ["飞机", "航班", "登机", "候机", "值机", "机票"],
+                    "高铁": ["高铁", "火车", "动车", "列车", "车票", "候车"],
+                    "大巴": ["大巴", "长途汽车", "客运"],
+                    "自驾": ["自驾", "开车", "驾车"]}
+    ret_keywords = dep_keywords  # 返程同理
+
+    def _get_opposite_types(transport_type):
+        """获取与给定交通方式冲突的其他交通方式关键词列表"""
+        all_types = list(dep_keywords.keys())
+        if transport_type in all_types:
+            all_types.remove(transport_type)
+        return all_types
+
+    def _fix_text_inconsistency(text, expected_type, field_name, day_info):
+        """检查文本中是否有与期望交通方式冲突的表述，有则替换"""
+        if not text or not expected_type:
+            return text
+        opposite = _get_opposite_types(expected_type)
+        for opp_type in opposite:
+            for kw in dep_keywords.get(opp_type, []):
+                if kw in text:
+                    # 找到冲突关键词，替换为期望类型的对应关键词
+                    expected_kw = dep_keywords.get(expected_type, [expected_type])[0]
+                    print(f"[CONSISTENCY] {day_info}的{field_name}中包含'{kw}'（暗示{opp_type}），但交通卡片为{expected_type}，已替换为'{expected_kw}'")
+                    text = text.replace(kw, expected_kw)
+        return text
+
+    # 检查行程备注
+    if dep_type and trip_data.get("note"):
+        trip_data["note"] = _fix_text_inconsistency(trip_data["note"], dep_type, "note", "行程备注")
+
+    # 检查每个行程日卡片中的交通描述
+    itinerary = trip_data.get("itinerary", [])
+    if not itinerary:
+        return
+
+    for day_data in itinerary:
+        day_num = day_data.get("day", 0)
+        # 确定当前日对应的期望交通方式
+        is_first_day = (day_num == 1)
+        is_last_day = (day_num == len(itinerary))
+        expected_transport = None
+        if is_first_day and dep_type:
+            expected_transport = dep_type
+        elif is_last_day and ret_type:
+            expected_transport = ret_type
+
+        if not expected_transport:
+            continue
+
+        day_info = f"Day{day_num}"
+
+        # 检查每个时段景点中的reason和note字段
+        for slot_key in ["morning", "afternoon", "evening"]:
+            slot = day_data.get(slot_key, {})
+            if not slot or not isinstance(slot, dict):
+                continue
+            if slot.get("reason"):
+                slot["reason"] = _fix_text_inconsistency(slot["reason"], expected_transport, f"{slot_key}.reason", day_info)
+            if slot.get("note"):
+                slot["note"] = _fix_text_inconsistency(slot["note"], expected_transport, f"{slot_key}.note", day_info)
+            if slot.get("route_detail"):
+                slot["route_detail"] = _fix_text_inconsistency(slot["route_detail"], expected_transport, f"{slot_key}.route_detail", day_info)
+
+        # 检查日的交通建议字段
+        if day_data.get("transport"):
+            day_data["transport"] = _fix_text_inconsistency(day_data["transport"], expected_transport, "transport", day_info)
+
+        # 检查午餐/晚餐推荐中是否包含交通方式描述
+        if day_data.get("lunch"):
+            day_data["lunch"] = _fix_text_inconsistency(day_data["lunch"], expected_transport, "lunch", day_info)
+        if day_data.get("dinner"):
+            day_data["dinner"] = _fix_text_inconsistency(day_data["dinner"], expected_transport, "dinner", day_info)
 
 
 def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str, 
