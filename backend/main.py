@@ -14,7 +14,7 @@ from amap_service import amap_poi_search, amap_weather, amap_geocode, fill_coord
 from deepseek_service import call_deepseek, build_trip_prompt, build_booking_prompt, build_regenerate_prompt, build_retry_prompt
 from image_service import fill_images, fill_booking_images, resolve_spot_image, resolve_hotel_image
 from image_search_service import search_images
-from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid
+from feichangzhun_service import judge_transport, search_flights, build_flight_query_text, get_route_schedule, get_nearest_hub, get_transfer_routes, sanitize_airport_name, is_airport_valid, get_amap_city_distance
 from weather_detail_service import get_hourly_weather, check_weather_alerts, get_realtime_weather
 from china_weather_service import get_observation, get_air_quality, get_weather_chat
 from route_service import get_route_plan, calculate_self_drive_plan, calculate_transit_to_station, get_route_time, calculate_station_to_hotel
@@ -142,7 +142,18 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
         station = transport.get("station", "")
         transport_type = str(transport.get("type", "")).strip()
         is_train = transport_type in ("高铁", "火车", "动车")
+        is_flight = transport_type in ("飞机", "航班")
+        is_low_cost = transport_type in ("大巴", "自驾", "汽车", "打车", "公交", "城际", "步行", "地铁")
         flight_num = transport.get("flight_number", "")
+
+        # 低成本交通方式（大巴/自驾/汽车/打车等）不需要飞常准验证，跳过
+        if is_low_cost:
+            print(f"[INFO] {key}交通类型为'{transport_type}'（低成本出行），跳过飞常准验证")
+            transport["_verified"] = True
+            transport["_verified_source"] = f"低成本出行({transport_type})，无需航班验证"
+            if not transport.get("note"):
+                transport["note"] = f"{transport_type}出行，建议通过高德地图查询实时路况"
+            continue
 
         # 检查停用机场黑名单（仅对飞机类型）
         if not is_train and station:
@@ -636,9 +647,17 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         print("[TRANSPORT] 去程交通缺失，自动填充默认交通信息")
         trip_data["departure_transport"] = _build_transport_template()
     elif not trip_data["departure_transport"].get("flight_number"):
-        # 有type但缺flight_number，尝试从Variflight数据合并填充，优先匹配type
+        # 有type但缺flight_number，先检查是否为低成本交通方式
         dep_type = str(trip_data["departure_transport"].get("type", "")).strip()
-        if dep_type == "飞机" and vf_flights:
+        is_low_cost = dep_type in ("大巴", "自驾", "汽车", "打车", "公交", "城际", "步行", "地铁")
+        if is_low_cost:
+            # 低成本交通方式不需要flight_number，直接标记为已验证
+            print(f"[TRANSPORT] 去程交通为低成本出行({dep_type})，跳过航班验证")
+            trip_data["departure_transport"]["_verified"] = True
+            trip_data["departure_transport"]["_verified_source"] = f"低成本出行({dep_type})"
+            if not trip_data["departure_transport"].get("note"):
+                trip_data["departure_transport"]["note"] = f"{dep_type}出行，建议通过高德地图查询实时路况"
+        elif dep_type == "飞机" and vf_flights:
             chosen = vf_flights[0]
             print(f"[TRANSPORT] 去程交通(type=飞机)缺flight_number，从飞常准API航班合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["departure_transport"], chosen)
@@ -671,7 +690,14 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
         trip_data["return_transport"] = _build_transport_template(is_return=True)
     elif not trip_data["return_transport"].get("flight_number"):
         ret_type = str(trip_data["return_transport"].get("type", "")).strip()
-        if ret_type == "飞机" and vf_flights:
+        is_low_cost = ret_type in ("大巴", "自驾", "汽车", "打车", "公交", "城际", "步行", "地铁")
+        if is_low_cost:
+            print(f"[TRANSPORT] 返程交通为低成本出行({ret_type})，跳过航班验证")
+            trip_data["return_transport"]["_verified"] = True
+            trip_data["return_transport"]["_verified_source"] = f"低成本出行({ret_type})"
+            if not trip_data["return_transport"].get("note"):
+                trip_data["return_transport"]["note"] = f"{ret_type}出行，建议通过高德地图查询实时路况"
+        elif ret_type == "飞机" and vf_flights:
             chosen = vf_flights[0]
             print(f"[TRANSPORT] 返程交通(type=飞机)缺flight_number，从飞常准API航班合并: {chosen['num']}")
             _merge_vf_to_transport(trip_data["return_transport"], chosen)
@@ -838,9 +864,35 @@ async def generate_trip(req: TripRequest):
         # 1.5 出发/返程交通规划（自驾/公共交通）
         transport_info = {}
         if req.departure_city:
-            # 判断交通工具
+            # 判断交通工具（优先使用高德API距离，回退预存数据）
             ti = judge_transport(req.departure_city, dest)
-            transport_info["transport"] = ti
+            # 高德API补充精确距离数据
+            try:
+                amap_dist = await get_amap_city_distance(req.departure_city, dest)
+                if amap_dist.get("success") and amap_dist.get("distance_km", 0) > 0:
+                    transport_info["amap_distance"] = amap_dist
+                    dist_km = amap_dist["distance_km"]
+                    # 用高德API精准距离重新判断交通方式（覆盖预存数据）
+                    if dist_km <= 400:
+                        ti["mode"] = "大巴/自驾/汽车"
+                        ti["reason"] = f"高德地图距离约{dist_km}km（驾车约{amap_dist.get('duration_min',0)}分钟），临近城市优先选择大巴或自驾，成本更低"
+                        ti["need_flight"] = False
+                        ti["estimated_distance"] = f"{dist_km}km"
+                        print(f"[AMAP] 精准距离{dist_km}km，推荐低成本交通：大巴/自驾")
+                    elif dist_km <= 800:
+                        ti["mode"] = "高铁优先"
+                        ti["reason"] = f"高德地图距离约{dist_km}km，高铁约{int(dist_km/300)}-{int(dist_km/250)}小时，性价比高"
+                        ti["need_flight"] = False
+                        ti["estimated_distance"] = f"{dist_km}km"
+                    elif dist_km > 1000:
+                        ti["mode"] = "飞机"
+                        ti["reason"] = f"高德地图距离约{dist_km}km，超过1000公里推荐飞机"
+                        ti["need_flight"] = True
+                        ti["estimated_distance"] = f"{dist_km}km"
+                    transport_info["transport"] = ti
+            except Exception as e:
+                print(f"[AMAP] 距离查询失败，使用预存数据: {e}")
+                transport_info["transport"] = ti
             # 查询真实航班/火车班次数据（传入日期校准）
             schedule = get_route_schedule(req.departure_city, dest, start_date)
             transport_info["route_schedule"] = schedule
@@ -887,8 +939,17 @@ async def generate_trip(req: TripRequest):
                 "trains": vf_result.get("trains", []),
                 "transfers": vf_result.get("transfers", {}),
                 "success": vf_result.get("success"),
+                "_no_data": vf_result.get("_no_data", False),
+                "_no_data_message": vf_result.get("_no_data_message", ""),
                 "source": vf_result.get("_source", "飞常准API"),
             }
+            # 飞常准API无数据时，对≤800km的路线强制推荐低成本交通
+            if vf_result.get("_no_data") and not ti.get("need_flight"):
+                print(f"[INFO] 飞常准API无{departure_city}-{dest}数据，且距离≤800km，推荐低成本出行")
+                ti["mode"] = "大巴/自驾/汽车"
+                ti["reason"] = f"飞常准API暂无该路线实时班次数据，临近城市优先选择大巴或自驾等低成本出行方式"
+                ti["need_flight"] = False
+                transport_info["transport"] = ti
             # 合并飞常准API数据到route_schedule（优先API数据）
             if vf_result.get("success"):
                 schedule = transport_info.get("route_schedule", {})
@@ -1259,6 +1320,30 @@ async def regenerate_trip(request: Request):
             try:
                 ti = judge_transport(departure_city, dest)
                 transport_info["transport"] = ti
+                # 高德API补充精确距离数据
+                try:
+                    amap_dist = await get_amap_city_distance(departure_city, dest)
+                    if amap_dist.get("success") and amap_dist.get("distance_km", 0) > 0:
+                        transport_info["amap_distance"] = amap_dist
+                        dist_km = amap_dist["distance_km"]
+                        if dist_km <= 400:
+                            ti["mode"] = "大巴/自驾/汽车"
+                            ti["reason"] = f"高德地图距离约{dist_km}km，临近城市优先选择大巴或自驾，成本更低"
+                            ti["need_flight"] = False
+                            ti["estimated_distance"] = f"{dist_km}km"
+                        elif dist_km <= 800:
+                            ti["mode"] = "高铁优先"
+                            ti["reason"] = f"高德地图距离约{dist_km}km，高铁性价比高"
+                            ti["need_flight"] = False
+                            ti["estimated_distance"] = f"{dist_km}km"
+                        elif dist_km > 1000:
+                            ti["mode"] = "飞机"
+                            ti["reason"] = f"高德地图距离约{dist_km}km，推荐飞机"
+                            ti["need_flight"] = True
+                            ti["estimated_distance"] = f"{dist_km}km"
+                        transport_info["transport"] = ti
+                except Exception as e:
+                    print(f"[AMAP] 重新生成时距离查询失败: {e}")
             except Exception:
                 pass
             try:
@@ -1290,8 +1375,17 @@ async def regenerate_trip(request: Request):
                     "trains": vf_result.get("trains", []),
                     "transfers": vf_result.get("transfers", {}),
                     "success": vf_result.get("success"),
+                    "_no_data": vf_result.get("_no_data", False),
+                    "_no_data_message": vf_result.get("_no_data_message", ""),
                     "source": vf_result.get("_source", "飞常准API"),
                 }
+                # 飞常准API无数据时，对≤800km的路线强制推荐低成本交通
+                if vf_result.get("_no_data") and not ti.get("need_flight"):
+                    print(f"[INFO] 重新生成：飞常准API无{departure_city}-{dest}数据，推荐低成本出行")
+                    ti["mode"] = "大巴/自驾/汽车"
+                    ti["reason"] = "飞常准API暂无该路线实时班次数据，优先大巴或自驾等低成本出行方式"
+                    ti["need_flight"] = False
+                    transport_info["transport"] = ti
                 if vf_result.get("success"):
                     schedule = transport_info.get("route_schedule", {})
                     if not schedule or schedule.get("_no_data"):

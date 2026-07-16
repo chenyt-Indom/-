@@ -173,7 +173,8 @@ async def get_flight_transfer(dep_city: str, arr_city: str, date: str) -> dict:
 
 
 async def get_full_route_data(dep_city: str, arr_city: str, date: str) -> dict:
-    """获取完整路线数据：航班+火车票+中转方案（并行查询）"""
+    """获取完整路线数据：航班+火车票+中转方案（并行查询）
+    当飞常准API无数据时，返回明确的_no_data标记和用户友好的提示"""
     import asyncio
     tasks = [
         search_flights_by_route(dep_city, arr_city, date),
@@ -185,12 +186,18 @@ async def get_full_route_data(dep_city: str, arr_city: str, date: str) -> dict:
     trains_result = results[1] if not isinstance(results[1], Exception) else {"success": False, "trains": []}
     transfer_result = results[2] if not isinstance(results[2], Exception) else {"success": False, "data": {}}
 
+    has_flights = bool(flights_result.get("flights"))
+    has_trains = bool(trains_result.get("trains"))
+    has_data = has_flights or has_trains
+
     return {
         "success": flights_result.get("success") or trains_result.get("success"),
         "flights": flights_result.get("flights", []),
         "trains": trains_result.get("trains", []),
         "transfers": transfer_result.get("data", {}),
         "_source": "飞常准实时API",
+        "_no_data": not has_data,
+        "_no_data_message": "飞常准API暂无该路线实时班次数据，请优先选择大巴/自驾等低成本出行方式，或自行在携程查询实时航班" if not has_data else "",
         "flight_error": flights_result.get("error", ""),
         "train_error": trains_result.get("error", ""),
     }

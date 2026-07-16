@@ -242,7 +242,7 @@ def sanitize_airport_name(airport_name: str) -> str:
 
 def judge_transport(departure_city: str, dest_city: str) -> dict:
     """根据距离和性价比判断推荐交通工具，覆盖步行→公交→地铁→大巴→高铁→飞机
-    400km以内优先考虑大巴/打车，时间最短方案优先"""
+    400km以内优先考虑大巴/汽车等低成本交通方式，用户未明确要求时不推荐飞机或高铁"""
     KNOWN_DIST = {
         "北京-天津": 120, "广州-深圳": 140, "上海-苏州": 100,
         "上海-杭州": 170, "成都-重庆": 300, "南京-上海": 300,
@@ -254,6 +254,14 @@ def judge_transport(departure_city: str, dest_city: str) -> dict:
         "北京-哈尔滨": 1200, "上海-昆明": 2300, "广州-三亚": 800,
         "北京-乌鲁木齐": 2800, "上海-拉萨": 4000, "成都-拉萨": 2100,
         "北京-三亚": 2900, "上海-成都": 1900, "广州-昆明": 1300,
+        "南京-苏州": 220, "南京-杭州": 280, "南京-合肥": 180,
+        "武汉-长沙": 350, "武汉-郑州": 520, "武汉-合肥": 380,
+        "西安-郑州": 500, "西安-太原": 620, "西安-兰州": 680,
+        "成都-贵阳": 660, "重庆-贵阳": 380, "重庆-长沙": 800,
+        "广州-南宁": 630, "深圳-厦门": 580, "杭州-南京": 280,
+        "杭州-黄山": 280, "天津-济南": 330, "济南-青岛": 380,
+        "沈阳-大连": 390, "福州-厦门": 260, "郑州-济南": 440,
+        "长沙-南昌": 350, "南昌-武汉": 360, "昆明-贵阳": 520,
     }
     clean_dep = _clean_city_name(departure_city)
     clean_dest = _clean_city_name(dest_city)
@@ -271,7 +279,7 @@ def judge_transport(departure_city: str, dest_city: str) -> dict:
         if clean_dep == clean_dest:
             return {"mode": "市内交通", "reason": "同城出行，推荐地铁/公交/打车",
                     "need_flight": False, "estimated_distance": "同城"}
-        return {"mode": "建议高铁/自驾/大巴", "reason": "请根据实际距离选择，优先考虑时间最短方案",
+        return {"mode": "大巴/自驾/高铁", "reason": "请根据实际距离选择，优先考虑低成本方案",
                 "need_flight": False, "estimated_distance": "未知"}
 
     if dist <= 5:
@@ -279,11 +287,11 @@ def judge_transport(departure_city: str, dest_city: str) -> dict:
     elif dist <= 30:
         return {"mode": "公交/地铁/打车", "reason": f"距离约{dist}km，推荐公交、地铁或打车", "need_flight": False}
     elif dist <= 100:
-        return {"mode": "大巴/城际/自驾", "reason": f"距离约{dist}km，可乘大巴、城际或自驾，时间最短方案优先", "need_flight": False}
+        return {"mode": "大巴/城际/自驾", "reason": f"距离约{dist}km，可乘大巴、城际或自驾，无需高铁或飞机", "need_flight": False}
     elif dist <= 300:
-        return {"mode": "高铁/动车/大巴", "reason": f"距离约{dist}km，推荐高铁或大巴，时间最短方案优先", "need_flight": False}
+        return {"mode": "大巴/自驾/汽车", "reason": f"距离约{dist}km，推荐大巴或自驾（约{dist//80}小时），低成本出行，用户未明确要求时不推荐高铁", "need_flight": False}
     elif dist <= 400:
-        return {"mode": "高铁/大巴/打车", "reason": f"距离约{dist}km，高铁或长途大巴均可，也可打车（约{dist//80}小时），根据附近车站距离和方案可行度选择时间最短方案", "need_flight": False}
+        return {"mode": "大巴/自驾/打车", "reason": f"距离约{dist}km，临近城市优先选择大巴或自驾（约{dist//80}小时），成本远低于高铁/飞机，用户未明确要求时不使用高铁", "need_flight": False}
     elif dist <= 800:
         return {"mode": "高铁优先", "reason": f"距离约{dist}km，高铁约{int(dist/300)}-{int(dist/250)}小时，性价比高", "need_flight": False}
     elif dist <= 1000:
@@ -299,6 +307,56 @@ async def search_flights(dep_city: str, arr_city: str, date: str) -> dict:
     from variflight_service import search_flights_by_route
     result = await search_flights_by_route(dep_city, arr_city, date)
     return result
+
+
+async def get_amap_city_distance(departure_city: str, dest_city: str) -> dict:
+    """通过高德地图API计算两城市间的驾车距离和耗时，用于精准判断交通方式
+    返回: {"success": bool, "distance_km": float, "duration_min": int, "traffic": str}"""
+    import httpx
+    from config import AMAP_KEY
+    try:
+        # 获取两城市坐标
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 并行获取坐标
+            dep_resp = await client.get(
+                "https://restapi.amap.com/v3/geocode/geo",
+                params={"key": AMAP_KEY, "address": departure_city, "city": departure_city}
+            )
+            dest_resp = await client.get(
+                "https://restapi.amap.com/v3/geocode/geo",
+                params={"key": AMAP_KEY, "address": dest_city, "city": dest_city}
+            )
+            dep_data = dep_resp.json()
+            dest_data = dest_resp.json()
+            if dep_data.get("status") != "1" or dest_data.get("status") != "1":
+                return {"success": False, "distance_km": 0, "duration_min": 0, "traffic": "", "error": "无法获取城市坐标"}
+            dep_loc = dep_data["geocodes"][0]["location"]
+            dest_loc = dest_data["geocodes"][0]["location"]
+            # 驾车路线规划
+            route_resp = await client.get(
+                "https://restapi.amap.com/v3/direction/driving",
+                params={
+                    "key": AMAP_KEY, "strategy": "0",
+                    "origin": dep_loc, "destination": dest_loc,
+                }
+            )
+            route_data = route_resp.json()
+            if route_data.get("status") == "1" and route_data.get("route", {}).get("paths"):
+                path = route_data["route"]["paths"][0]
+                distance_km = int(path.get("distance", "0")) / 1000
+                duration_min = int(path.get("duration", "0")) // 60
+                traffic = "畅通"
+                for step in path.get("steps", []):
+                    for tmc in step.get("tmcs", []):
+                        status = tmc.get("status", "")
+                        if "缓行" in status or "拥堵" in status:
+                            traffic = "缓行" if "缓行" in status else "拥堵"
+                            break
+                return {"success": True, "distance_km": round(distance_km, 1),
+                        "duration_min": duration_min, "traffic": traffic}
+            return {"success": False, "distance_km": 0, "duration_min": 0, "traffic": "", "error": "路线规划失败"}
+    except Exception as e:
+        return {"success": False, "distance_km": 0, "duration_min": 0, "traffic": "", "error": str(e)}
 
 
 def build_flight_query_text(dep_city: str, arr_city: str, date: str) -> str:
