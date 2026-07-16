@@ -623,9 +623,10 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 
 
 def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary: list,
-                            weather_data: list, start_date: str, end_date: str,
-                            is_self_drive: bool, departure_city: str,
-                            transport_info: dict = None, transport_mode: str = "") -> str:
+                           weather_data: list, start_date: str = "", end_date: str = "",
+                           is_self_drive: bool = False, departure_city: str = "",
+                           transport_info: dict = None, transport_mode: str = "",
+                           mixed_transport: dict = None) -> str:
     """构建重新生成计划的提示词，重点参考用户输入的新需求"""
     transport_info = transport_info or {}  # 防止为None时报错
     old_summary = ""
@@ -654,7 +655,19 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
     # 交通判断信息
     transport_section = ""
     if departure_city:
-        if user_transport_mode:
+        # 🔴 混合交通方式检测：出发和返程使用不同交通工具
+        if mixed_transport and mixed_transport.get("has_mixed"):
+            dep_cn = mixed_transport.get("departure_cn", "")
+            ret_cn = mixed_transport.get("return_cn", "")
+            transport_section = f"\n【🔴🔴 混合交通方式 - 最高优先级，绝对不可更改！】"
+            transport_section += f"\n用户明确要求出发和返程使用不同交通工具！"
+            transport_section += f"\n  - departure_transport.type 必须为'{dep_cn}'（出发交通）"
+            transport_section += f"\n  - return_transport.type 必须为'{ret_cn}'（返程交通）"
+            transport_section += f"\n  - 绝对禁止往返都使用同一种交通方式！出发和返程的type必须不同！"
+            transport_section += f"\n  - 如果飞常准API有数据，出发从{transport_info.get('variflight_data',{}).get('flights',[]) if dep_cn=='飞机' else ''}中选择{dep_cn}班次"
+            transport_section += f"\n  - 返程从{ret_cn}班次中选择，绝对禁止混淆"
+            transport_section += f"\n  - 即使飞常准API无数据，type也必须分别填'{dep_cn}'和'{ret_cn}'，flight_number可留空"
+        elif user_transport_mode:
             # 用户指定了具体出行方式：强制使用该方式
             transport_section = f"\n【🔴 用户指定出行方式 - 最高优先级，绝对不可更改！】{user_transport_mode}"
             if user_transport_mode == "自驾":
@@ -704,7 +717,11 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，但如果下面有飞常准API实时数据，必须以飞常准API为准！严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！飞常准API返回的机场/车站名即为有效名，无需参考其他名单！"
             # 飞常准API无数据时的致命警告
             if schedule.get("_no_data"):
-                if user_transport_mode:
+                if mixed_transport and mixed_transport.get("has_mixed"):
+                    dep_cn = mixed_transport.get("departure_cn", "")
+                    ret_cn = mixed_transport.get("return_cn", "")
+                    transport_section += f"\n【致命警告-飞常准API无数据】该路线飞常准API未返回实时班次！flight_number必须留空，departure_transport.type必须填'{dep_cn}'，return_transport.type必须填'{ret_cn}'，绝对禁止往返使用相同交通方式！禁止编造航班号！"
+                elif user_transport_mode:
                     transport_section += f"\n【致命警告-飞常准API无数据】该路线飞常准API未返回实时班次！flight_number必须留空，type必须填'{user_transport_mode}'（用户已指定），绝对禁止改为其他交通方式，禁止编造航班号！"
                 else:
                     transport_section += "\n【致命警告-飞常准API无数据】该路线飞常准API未返回实时班次！flight_number留空，只填交通方式类型，禁止编造航班号！"
@@ -719,13 +736,14 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
             if vf_data.get("success"):
                 vf_flights = vf_data.get("flights", [])
                 vf_trains = vf_data.get("trains", [])
-                # 🔴 根据用户交通方式过滤
+                # 🔴 根据用户交通方式过滤（混合交通时保留全部）
                 transport_mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
                 user_transport = transport_mode_map.get(transport_mode, "")
-                if user_transport == "飞机":
-                    vf_trains = []
-                elif user_transport == "高铁":
-                    vf_flights = []
+                if not (mixed_transport and mixed_transport.get("has_mixed")):
+                    if user_transport == "飞机":
+                        vf_trains = []
+                    elif user_transport == "高铁":
+                        vf_flights = []
                 if vf_flights or vf_trains:
                     transport_section += "\n\n【🔴 飞常准API实时数据 - 唯一权威数据源 - 必须100%严格使用！】"
                     transport_section += "\n以下班次为飞常准API实时查询结果，静态数据全部作废，只使用以下数据！"

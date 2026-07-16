@@ -1390,6 +1390,98 @@ async def resolve_image(name: str, city: str = "", type: str = "spot"):
         return {"success": False, "url": "", "error": str(e)}
 
 
+def _detect_mixed_transport_from_text(text: str) -> dict:
+    """从用户输入文本中检测混合交通方式需求（出发和返程不同交通工具）
+    返回: {"has_mixed": bool, "departure_mode": str, "return_mode": str, "departure_cn": str, "return_cn": str}
+    示例: "出发坐飞机，返程坐高铁" → {"has_mixed": True, "departure_mode": "plane", "return_mode": "train", ...}"""
+    if not text:
+        return {"has_mixed": False, "departure_mode": "", "return_mode": "", "departure_cn": "", "return_cn": ""}
+    
+    # 检测出发和返程各自指定的交通方式
+    dep_mode = ""
+    ret_mode = ""
+    
+    # 出发相关关键词检测
+    dep_keywords = ["出发", "去程", "去时", "前往", "去的时候"]
+    ret_keywords = ["返程", "回程", "回来", "返回", "回来的时候", "回的时候"]
+    
+    # 交通方式关键词映射
+    plane_kw = ["飞机", "航班", "飞行", "机票", "登机", "值机", "乘机"]
+    train_kw = ["高铁", "火车", "动车", "列车", "车票", "铁路"]
+    taxi_kw = ["打车", "出租车", "的士"]
+    drive_kw = ["自驾", "开车", "驾车"]
+    
+    def detect_mode(text_part: str) -> str:
+        if any(kw in text_part for kw in plane_kw):
+            return "plane"
+        if any(kw in text_part for kw in train_kw):
+            return "train"
+        if any(kw in text_part for kw in taxi_kw):
+            return "taxi"
+        if any(kw in text_part for kw in drive_kw):
+            return "selfdrive"
+        return ""
+    
+    # 查找出发和返程的交通方式
+    # 策略：按"出发"/"返程"关键词分割文本
+    has_dep_keyword = any(kw in text for kw in dep_keywords)
+    has_ret_keyword = any(kw in text for kw in ret_keywords)
+    
+    if has_dep_keyword and has_ret_keyword:
+        # 找到出发和返程各自的位置
+        dep_pos = -1
+        ret_pos = -1
+        for kw in dep_keywords:
+            idx = text.find(kw)
+            if idx >= 0 and (dep_pos < 0 or idx < dep_pos):
+                dep_pos = idx
+        for kw in ret_keywords:
+            idx = text.find(kw)
+            if idx >= 0 and (ret_pos < 0 or idx < ret_pos):
+                ret_pos = idx
+        
+        if dep_pos >= 0 and ret_pos >= 0 and dep_pos != ret_pos:
+            # 出发在前、返程在后
+            if dep_pos < ret_pos:
+                dep_text = text[dep_pos:ret_pos]
+                ret_text = text[ret_pos:]
+            else:
+                ret_text = text[ret_pos:dep_pos]
+                dep_text = text[dep_pos:]
+            dep_mode = detect_mode(dep_text)
+            ret_mode = detect_mode(ret_text)
+    
+    # 如果没检测到混合，尝试另一种模式：先提到交通工具再提到"往返"
+    if not dep_mode or not ret_mode:
+        # 检测"去飞机回高铁"、"飞机去高铁回"等模式
+        import re
+        patterns = [
+            (r'(飞机|航班).*(高铁|火车|动车)', "plane", "train"),
+            (r'(高铁|火车|动车).*(飞机|航班)', "train", "plane"),
+            (r'去.*(飞机|航班).*回.*(高铁|火车|动车)', "plane", "train"),
+            (r'去.*(高铁|火车|动车).*回.*(飞机|航班)', "train", "plane"),
+        ]
+        for pattern, first_mode, second_mode in patterns:
+            if re.search(pattern, text):
+                if not dep_mode:
+                    dep_mode = first_mode
+                if not ret_mode:
+                    ret_mode = second_mode
+                break
+    
+    if dep_mode and ret_mode and dep_mode != ret_mode:
+        cn_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+        return {
+            "has_mixed": True,
+            "departure_mode": dep_mode,
+            "return_mode": ret_mode,
+            "departure_cn": cn_map.get(dep_mode, dep_mode),
+            "return_cn": cn_map.get(ret_mode, ret_mode),
+        }
+    
+    return {"has_mixed": False, "departure_mode": "", "return_mode": "", "departure_cn": "", "return_cn": ""}
+
+
 def _detect_transport_mode_from_text(text: str) -> str:
     """从用户输入文本中检测交通方式变更意图
     返回对应的transport_mode值（plane/train/taxi/selfdrive），无检测到返回空字符串
@@ -1425,7 +1517,13 @@ async def regenerate_trip(request: Request):
 
         # 🔴 从用户输入文本中检测交通方式变更（覆盖首页选择的交通方式）
         detected_mode = _detect_transport_mode_from_text(user_input)
-        if detected_mode:
+        # 🔴 检测混合交通方式（出发和返程不同交通工具）
+        mixed_transport = _detect_mixed_transport_from_text(user_input)
+        if mixed_transport.get("has_mixed"):
+            print(f"[REGENERATE] 检测到混合交通方式: 出发={mixed_transport['departure_cn']}, 返程={mixed_transport['return_cn']}")
+            transport_mode = mixed_transport["departure_mode"]  # 用出发方式作为主模式
+            is_self_drive = (mixed_transport["departure_mode"] == "selfdrive")
+        elif detected_mode:
             print(f"[REGENERATE] 从用户输入检测到交通方式变更: '{detected_mode}'，覆盖原transport_mode='{transport_mode}'")
             transport_mode = detected_mode
             is_self_drive = (detected_mode == "selfdrive")
@@ -1511,7 +1609,9 @@ async def regenerate_trip(request: Request):
                     pass
             try:
                 from variflight_service import get_full_route_data
-                vf_result = await get_full_route_data(departure_city, dest, start_date, user_transport_mode=user_mode_cn)
+                # 🔴 混合交通方式时查询全部数据（不限制单一交通方式）
+                vf_mode = None if mixed_transport.get("has_mixed") else user_mode_cn
+                vf_result = await get_full_route_data(departure_city, dest, start_date, user_transport_mode=vf_mode)
                 transport_info["variflight_data"] = {
                     "flights": vf_result.get("flights", []),
                     "trains": vf_result.get("trains", []),
@@ -1525,10 +1625,12 @@ async def regenerate_trip(request: Request):
                 if vf_result.get("success"):
                     vf_flights_filtered = vf_result.get("flights", [])
                     vf_trains_filtered = vf_result.get("trains", [])
-                    if user_mode_cn == "飞机":
-                        vf_trains_filtered = []
-                    elif user_mode_cn == "高铁":
-                        vf_flights_filtered = []
+                    # 🔴 混合交通方式时保留全部数据，否则按单一模式过滤
+                    if not mixed_transport.get("has_mixed"):
+                        if user_mode_cn == "飞机":
+                            vf_trains_filtered = []
+                        elif user_mode_cn == "高铁":
+                            vf_flights_filtered = []
                     schedule = {
                         "flights": vf_flights_filtered,
                         "trains": vf_trains_filtered,
@@ -1544,7 +1646,7 @@ async def regenerate_trip(request: Request):
         # 构建regenerate prompt
         prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
                                          weather_data, start_date, end_date,
-                                         is_self_drive, departure_city, transport_info, transport_mode)
+                                         is_self_drive, departure_city, transport_info, transport_mode, mixed_transport)
         # 调用DeepSeek
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, 6000)
