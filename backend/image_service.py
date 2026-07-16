@@ -197,9 +197,14 @@ async def _resolve_and_set(item: dict, key: str, url: str):
 
 
 async def _fill_spot_image(spot_data: dict, dest: str):
-    """为单个景点获取真实照片URL（找不到真实照片时设为空）"""
+    """为单个景点获取真实照片URL（找不到真实照片时设为空）
+    购物和自由行活动使用本地专用图片"""
     name = spot_data.get("spot", "")
     if not name:
+        return
+    # 购物/自由行活动使用本地专用图片
+    if "购物" in name or "自由行" in name:
+        spot_data["image"] = "/app/shopping.jpg"
         return
     try:
         url = await get_best_spot_image(name, dest)
