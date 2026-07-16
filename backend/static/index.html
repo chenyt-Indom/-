@@ -566,7 +566,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="ticketsCard"></div>
   <div id="bookingTipsCard"></div>
   <div id="tipsCard"></div>
-  <button class="btn-share" onclick="shareTrip()">分享行程</button>
+  <button class="btn-share" onclick="shareTrip(event)">分享行程</button>
   <button class="btn-back" onclick="goToOverview()">返回总览地图</button>
 </div>
 
@@ -770,8 +770,8 @@ function showGradientFallback(img, type, name, onClickFn) {
 
 // 二维码分享
 function showQR() {
-  const url = 'https://lvbaixing.top/app/';
-  const qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(url);
+  var url = 'https://lvbaixing.top/app/';
+  var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(url);
   document.getElementById('qrImage').src = qrSrc;
   document.getElementById('qrOverlay').classList.add('show');
 }
@@ -2180,10 +2180,10 @@ function closeMap(){
   document.getElementById('mapOverlay').classList.remove('show');
 }
 
-function shareTrip(){
+function shareTrip(event){
   if(!tripData) return;
   // 生成专属分享链接
-  const btn = event && event.target ? event.target : document.querySelector('.share-btn');
+  var btn = event && event.target ? event.target : document.querySelector('.btn-share');
   if (btn) { btn.textContent = '⏳ 生成分享链接...'; btn.disabled = true; }
   fetch(API + '/api/share-trip', {
     method: 'POST',
@@ -2194,24 +2194,23 @@ function shareTrip(){
   .then(function(data) {
     if (btn) { btn.textContent = '📤 分享行程'; btn.disabled = false; }
     if (data.success) {
-      // 复制链接到剪贴板
+      // 复制链接到剪贴板，并显示分享卡片
       if (navigator.clipboard) {
         navigator.clipboard.writeText(data.share_url).then(function() {
-          alert('分享链接已复制到剪贴板！\n\n' + data.share_url + '\n\n其他人打开此链接即可查看该行程，但无法修改。');
+          showShareCard(data.share_url);
         }).catch(function() {
-          alert('分享链接：\n' + data.share_url + '\n\n（请手动复制链接分享给好友）');
+          showShareCard(data.share_url);
         });
       } else {
-        // 创建分享卡片显示链接
         showShareCard(data.share_url);
       }
     } else {
-      alert('分享失败：' + (data.error || '未知错误'));
+      showToast('分享失败：' + (data.error || '未知错误'));
     }
   })
   .catch(function(e) {
     if (btn) { btn.textContent = '📤 分享行程'; btn.disabled = false; }
-    alert('分享失败，请检查网络后重试');
+    showToast('分享失败，请检查网络后重试');
   });
 }
 
@@ -2813,7 +2812,8 @@ function checkIfToday(dateStr) {
 try { renderHistory(); } catch(e) { console.warn('历史记录渲染失败:', e); }
 
 // 检查是否为分享链接，如果是则加载分享行程（只读模式）
-(function checkSharedTrip() {
+// 必须等DOM加载完成后执行，否则无法获取页面元素
+document.addEventListener('DOMContentLoaded', function checkSharedTrip() {
   try {
   var params = new URLSearchParams(window.location.search);
   var shareId = params.get('share');
@@ -2822,8 +2822,9 @@ try { renderHistory(); } catch(e) { console.warn('历史记录渲染失败:', e)
   var homePage = document.getElementById('homePage');
   var overviewPage = document.getElementById('overviewPage');
   var tripPage = document.getElementById('tripPage');
+  if (!homePage || !tripPage) return;
   homePage.style.display = 'none';
-  overviewPage.style.display = 'none';
+  if (overviewPage) overviewPage.style.display = 'none';
   tripPage.style.display = 'block';
   tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:24px;margin-bottom:16px">⏳</div><div style="color:#666;font-size:16px">正在加载分享行程...</div></div>';
   fetch(API + '/api/shared-trip/' + shareId)
@@ -2842,7 +2843,7 @@ try { renderHistory(); } catch(e) { console.warn('历史记录渲染失败:', e)
       tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">❌</div><div style="color:#666;font-size:16px">加载失败，请检查网络后重试</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
     });
   } catch(e) { console.warn('分享链接检查失败:', e); }
-})();
+});
 
 function disableControlsForShared() {
   var editControls = document.querySelectorAll('.btn-regenerate, .btn-generate, .form-card, .share-btn, .fav-btn-wrap, #newPlanInput, #btnRegenerate, #btnMonitor, #btnOverview, .city-badge, #cityBadge');
@@ -2856,6 +2857,14 @@ function disableControlsForShared() {
   }
   var historySection = document.getElementById('historySection');
   if (historySection) historySection.style.display = 'none';
+}
+
+function showToast(msg) {
+  var toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.85);color:#fff;padding:16px 24px;border-radius:12px;font-size:16px;z-index:10001;max-width:320px;text-align:center;line-height:1.6;word-break:break-all';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 3000);
 }
 
 function showShareCard(url) {
@@ -2903,6 +2912,7 @@ window.showQR = showQR;
 window.closeQR = closeQR;
 window.shareTrip = shareTrip;
 window.showShareCard = showShareCard;
+window.showToast = showToast;
 window.goBackFromShare = goBackFromShare;
 window.imgFallback = imgFallback;
 window.toggleFavorite = toggleFavorite;
