@@ -726,13 +726,20 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 
-【用户的新需求】（最高优先级！必须优先满足！整个计划的核心就是满足以下需求！）
-{user_input}
+【🔴 用户的新需求 - 最高优先级！必须100%满足！】
+"{user_input}"
+
+请仔细分析用户需求中的关键信息：
+- 如果用户要求更换交通方式（如改为大巴、改为飞机、改为高铁），必须严格执行，不可使用原计划中的交通方式
+- 如果用户要求更换班次，必须从下方可选班次中重新选择，不可沿用原班次
+- 如果用户要求调整时间，必须按新时间重新安排全天行程
+- 如果用户要求增删景点，必须执行
+- 用户需求是整个计划的核心，不可偏离！
 
 【目的地】{dest}
 【天数】{days}天
 【出行日期】{start_date} 至 {end_date}
-【出行方式】{transport_mode}{transport_section}
+【出行方式】{transport_mode_display}{transport_section}
 
 【原行程概览（仅供参考，新需求优先）】
 {old_summary}

@@ -596,7 +596,9 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
     low_cost_distance = route_schedule.get("_distance_km", "") if route_schedule else ""
 
     # 🔴 临近城市强制低成本：直接覆盖所有交通为低成本方式，不查询任何航班/高铁数据
-    if low_cost_forced:
+    # 但如果用户明确选择了飞机/高铁，则尊重用户选择，不强制覆盖
+    user_transport = trip_data.get("_transport_mode", "")
+    if low_cost_forced and user_transport not in ("飞机", "高铁"):
         for key in ("departure_transport", "return_transport"):
             existing = trip_data.get(key, {})
             if not isinstance(existing, dict):
@@ -622,6 +624,8 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             trip_data[key] = existing
         print(f"[LOW_COST] _ensure_transport_data: 临近城市{low_cost_distance}，跳过所有航班/高铁数据填充，强制使用大巴")
         return trip_data
+    elif low_cost_forced and user_transport in ("飞机", "高铁"):
+        print(f"[LOW_COST] _ensure_transport_data: 临近城市{low_cost_distance}，但用户指定了{user_transport}出行，尊重用户选择，不强制覆盖")
 
     vf_flights = []
     vf_trains = []
@@ -985,7 +989,9 @@ async def generate_trip(req: TripRequest):
                 transport_info["transport"] = ti
             # 查询真实航班/火车班次数据（传入日期校准和高德API精确距离）
             amap_dist_km = transport_info.get("amap_distance", {}).get("distance_km", 0) if transport_info.get("amap_distance") else 0
-            schedule = get_route_schedule(req.departure_city, dest, start_date, force_distance_km=amap_dist_km)
+            mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+            user_mode_cn = mode_map.get(req.transport_mode, "") if req.transport_mode else ""
+            schedule = get_route_schedule(req.departure_city, dest, start_date, force_distance_km=amap_dist_km, user_transport_mode=user_mode_cn)
             transport_info["route_schedule"] = schedule
             if schedule.get("_low_cost_forced"):
                 transport_info["_low_cost_forced"] = True
@@ -1018,9 +1024,6 @@ async def generate_trip(req: TripRequest):
                     req.departure_city, dest, start_date)
             # 如果用户在首页选择了特定出行方式，强制覆盖交通判断
             if req.transport_mode:
-                mode_map = {
-                    "plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"
-                }
                 user_mode = mode_map.get(req.transport_mode, "")
                 if user_mode:
                     ti["mode"] = user_mode
@@ -1429,6 +1432,7 @@ async def regenerate_trip(request: Request):
 
         # 获取交通判断信息（用于AI选择交通工具）
         transport_info = {}
+        ti = {"mode": "公共交通", "reason": "默认出行方式", "need_flight": False}  # 默认值防止未定义
         if departure_city:
             try:
                 ti = judge_transport(departure_city, dest)
@@ -1471,7 +1475,9 @@ async def regenerate_trip(request: Request):
                     print(f"[TRANSPORT] 重新生成：用户选择出行方式: {transport_mode} → {user_mode}")
             try:
                 amap_dist_km_reg = transport_info.get("amap_distance", {}).get("distance_km", 0) if transport_info.get("amap_distance") else 0
-                schedule_reg = get_route_schedule(departure_city, dest, start_date, force_distance_km=amap_dist_km_reg)
+                mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+                user_mode_cn = mode_map.get(transport_mode, "") if transport_mode else ""
+                schedule_reg = get_route_schedule(departure_city, dest, start_date, force_distance_km=amap_dist_km_reg, user_transport_mode=user_mode_cn)
                 transport_info["route_schedule"] = schedule_reg
                 if schedule_reg.get("_low_cost_forced"):
                     transport_info["_low_cost_forced"] = True

@@ -624,11 +624,12 @@ COMMON_ROUTES = {
 }
 
 
-def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_distance_km: float = 0) -> dict:
+def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_distance_km: float = 0, user_transport_mode: str = "") -> dict:
     """获取两个城市间的航班/高铁班次参考数据（优先飞常准API，回退预存数据）
     date参数用于校准：确保AI只使用出行日期的班次，禁止混入过往数据
     临近城市（≤400km）自动过滤航班/高铁数据，强制低成本出行
-    force_distance_km: 外部传入的高德API精确距离（km），优先于预存数据判断"""
+    force_distance_km: 外部传入的高德API精确距离（km），优先于预存数据判断
+    user_transport_mode: 用户选择的出行方式（飞机/高铁/打车/自驾），为空则自动判断"""
     clean_dep = _clean_city_name(dep_city)
     clean_arr = _clean_city_name(arr_city)
     key1 = f"{clean_dep}-{clean_arr}"
@@ -647,6 +648,12 @@ def get_route_schedule(dep_city: str, arr_city: str, date: str = "", force_dista
         low_cost_mode = "大巴/自驾/汽车"
         est_dist = f"{effective_distance}km（高德地图精确测距）"
         print(f"[ROUTE] 高德API精确距离{effective_distance}km ≤400km，强制低成本出行")
+    
+    # 🔴 用户明确选择飞机/高铁时，跳过强制低成本过滤，保留航班/高铁数据
+    if user_transport_mode in ("飞机", "高铁"):
+        need_flight = True
+        low_cost_mode = user_transport_mode
+        print(f"[ROUTE] {clean_dep}-{clean_arr} {est_dist}，用户指定{user_transport_mode}出行，跳过强制低成本过滤")
     
     # 距离≤400km（need_flight=False且非高铁优先）：强制低成本出行，过滤航班/高铁数据
     if not need_flight and "高铁" not in low_cost_mode:
