@@ -102,7 +102,7 @@ async def verify_flight_number(flight_num: str, date: str, dep: str = "", arr: s
         # API返回航班列表，检查是否有匹配的FlightNo
         if isinstance(data, list) and len(data) > 0:
             for f in data:
-                if f.get("FlightNo", f.get("flightNumber", f.get("fnum", "")) == flight_num:
+                if f.get("FlightNo", f.get("flightNumber", f.get("fnum", ""))) == flight_num:
                     return {"valid": True, "data": f, "_source": "飞常准实时验证"}
         if isinstance(data, dict) and (data.get("FlightNo") or data.get("flightNumber") or data.get("fnum")):
             return {"valid": True, "data": data, "_source": "飞常准实时验证"}
