@@ -1,16 +1,16 @@
 """飞常准(Variflight) REST API 服务：航班查询+火车票查询+中转方案"""
 import httpx
+import asyncio
 from config import VARIFLIGHT_KEY, VARIFLIGHT_URL
 
-# MCP工具名 → REST端点名映射（飞常准API的MCP工具名与REST端点名不同）
+# MCP工具名 → REST端点名映射（使用MCP工具名本身作为REST端点名）
 MCP_TO_REST_ENDPOINT = {
-    "searchFlightsByDepArr": "flights",
-    "searchFlightsByNumber": "flight",
-    "getFlightTransferInfo": "transfer",
-    "flightHappinessIndex": "happiness",
-    "getRealtimeLocationByAnum": "realtimeLocation",
-    "getFutureWeatherByAirport": "futureAirportWeather",
-    # 以下端点名与MCP工具名一致，无需映射
+    "searchFlightsByDepArr": "searchFlightsByDepArr",
+    "searchFlightsByNumber": "searchFlightsByNumber",
+    "getFlightTransferInfo": "getFlightTransferInfo",
+    "flightHappinessIndex": "flightHappinessIndex",
+    "getRealtimeLocationByAnum": "getRealtimeLocationByAnum",
+    "getFutureWeatherByAirport": "getFutureAirportWeather",
     "searchFlightItineraries": "searchFlightItineraries",
     "getFlightPriceByCities": "getFlightPriceByCities",
     "trainStanTicket": "trainStanTicket",
@@ -39,80 +39,89 @@ def _fmt_duration(raw: str) -> str:
 
 async def _call_variflight(endpoint: str, params: dict) -> dict:
     """调用飞常准API通用方法，使用REST格式
-    飞常准API的MCP工具名与REST端点名不同，需要映射后再调用
-    参数必须嵌套在params键下"""
+    参数必须嵌套在params键下
+    包含重试机制：HTTP 403/429/502/503及连接错误时自动重试最多3次"""
     if not VARIFLIGHT_KEY:
         return {"success": False, "error": "VARIFLIGHT_API_KEY未配置", "data": []}
-    # 将MCP工具名映射为REST端点名
     rest_endpoint = MCP_TO_REST_ENDPOINT.get(endpoint, endpoint)
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        common_headers = {
-            "X-VARIFLIGHT-KEY": VARIFLIGHT_KEY,
-            "Content-Type": "application/json",
-        }
-        # 方案1：REST格式（优先使用，飞常准API主要支持此格式）
+    max_retries = 3
+    last_error = ""
+    for attempt in range(max_retries):
         try:
-            resp = await client.post(
-                VARIFLIGHT_URL,
-                headers=common_headers,
-                json={"endpoint": rest_endpoint, "params": params},
-            )
-            if resp.status_code == 401:
-                return {"success": False, "error": "飞常准API Key无效", "data": []}
-            if resp.status_code != 200:
-                return {"success": False, "error": f"飞常准API HTTP错误: {resp.status_code}", "data": []}
-            data = resp.json()
-            if data.get("code") == 200:
-                raw_data = data.get("data", data)
-                return {"success": True, "data": raw_data}
-            resp_preview = str(data)[:200]
-            print(f"[VARIFLIGHT] REST响应格式异常: {resp_preview}")
-            return {"success": False, "error": f"飞常准API返回错误: {data.get('message', '')}", "data": []}
-        except Exception as e:
-            last_error = f"REST调用失败: {str(e)}"
-
-        # 方案2：JSON-RPC 2.0 格式（兜底回退，当前服务器不支持此格式）
-        jsonrpc_body = {
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "params": {"name": endpoint, "arguments": params},
-            "id": 1,
-        }
-        try:
-            resp = await client.post(VARIFLIGHT_URL, headers=common_headers, json=jsonrpc_body)
-            if resp.status_code == 200:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                common_headers = {
+                    "X-VARIFLIGHT-KEY": VARIFLIGHT_KEY,
+                    "Content-Type": "application/json",
+                }
+                resp = await client.post(
+                    VARIFLIGHT_URL,
+                    headers=common_headers,
+                    json={"endpoint": rest_endpoint, "params": params},
+                )
+                if resp.status_code == 401:
+                    return {"success": False, "error": "飞常准API Key无效", "data": []}
+                # 可重试的错误码
+                if resp.status_code in (403, 429, 502, 503):
+                    last_error = f"飞常准API HTTP错误: {resp.status_code}"
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 2
+                        print(f"[VARIFLIGHT] {last_error}，{wait_time}s后重试({attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    return {"success": False, "error": last_error, "data": []}
+                if resp.status_code != 200:
+                    return {"success": False, "error": f"飞常准API HTTP错误: {resp.status_code}", "data": []}
                 data = resp.json()
-                if isinstance(data, dict) and data.get("code") == 200 and "data" in data:
-                    raw_data = data.get("data")
-                    print(f"[VARIFLIGHT] JSON-RPC直接返回格式: code=200, data_type={type(raw_data).__name__}")
-                    return {"success": True, "data": raw_data}
-                rpc_result = data.get("result", {})
-                if rpc_result:
-                    content = rpc_result.get("content", [])
-                    if content and len(content) > 0:
-                        import json
-                        inner_text = content[0].get("text", "")
-                        if inner_text:
-                            inner_data = json.loads(inner_text)
-                            if inner_data.get("code") == 200:
-                                return {"success": True, "data": inner_data.get("data", inner_data)}
-            elif resp.status_code == 401:
-                return {"success": False, "error": "飞常准API Key无效(JSON-RPC)", "data": []}
-        except Exception:
-            pass
-        return {"success": False, "error": f"飞常准API调用失败: {last_error}", "data": []}
+                # 支持 code=200 和 code=0 两种成功响应
+                if data.get("code") == 200 or data.get("code") == 0:
+                    return {"success": True, "data": data.get("data", data)}
+                resp_preview = str(data)[:200]
+                print(f"[VARIFLIGHT] REST响应格式异常: {resp_preview}")
+                return {"success": False, "error": f"飞常准API返回错误: {data.get('message', data.get('error', ''))}", "data": []}
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:
+            last_error = f"连接失败: {type(e).__name__}"
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"[VARIFLIGHT] {last_error}，{wait_time}s后重试({attempt+1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+                continue
+        except Exception as e:
+            last_error = f"REST调用失败: {type(e).__name__}: {str(e)[:100]}"
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"[VARIFLIGHT] {last_error}，{wait_time}s后重试({attempt+1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+                continue
+        break
+    return {"success": False, "error": f"飞常准API调用失败: {last_error}", "data": []}
 
 
 async def _try_flight_query(dep_iata: str, arr_iata: str, date: str) -> dict:
     """尝试查询航班（单个机场对），返回航班列表
-    优先使用depcity/arrcity（城市代码）进行查询，兼容性更好"""
+    优先使用depcity/arrcity（城市代码），回退使用dep/arr（机场代码）
+    策略间有延迟避免频率限制"""
+    from feichangzhun_service import get_primary_airport_iata
     print(f"[VARIFLIGHT] 查询航班: {dep_iata}→{arr_iata}, date={date}")
-    # 策略1：使用depcity/arrcity（城市代码），兼容性更好
+    # 策略1：使用depcity/arrcity（城市代码）
     result = await _call_variflight("searchFlightsByDepArr", {"depcity": dep_iata, "arrcity": arr_iata, "date": date})
+    # 处理dict格式错误响应（如{"error_code": 10, "error": "暂无数据"}）
+    if result.get("success") and isinstance(result.get("data"), dict):
+        error_info = result.get("data", {})
+        if error_info.get("error_code"):
+            print(f"[VARIFLIGHT] depcity查询返回错误: {error_info.get('error','')}，回退dep/arr")
+            result = {"success": False, "data": []}
     if not result.get("success") or not result.get("data"):
+        # 策略间延迟1秒，避免连续请求触发频率限制
+        await asyncio.sleep(1)
         # 策略2：回退到dep/arr（机场代码）
-        print(f"[VARIFLIGHT] 城市代码查询无结果，尝试机场代码查询")
-        result = await _call_variflight("searchFlightsByDepArr", {"dep": dep_iata, "arr": arr_iata, "date": date})
+        dep_airport = get_primary_airport_iata(dep_iata) or dep_iata
+        arr_airport = get_primary_airport_iata(arr_iata) or arr_iata
+        print(f"[VARIFLIGHT] 城市代码查询无结果，尝试机场代码: dep={dep_airport}, arr={arr_airport}")
+        result = await _call_variflight("searchFlightsByDepArr", {"dep": dep_airport, "arr": arr_airport, "date": date})
+    # 策略2也返回dict错误时，标记为无数据
+    if result.get("success") and isinstance(result.get("data"), dict) and result.get("data", {}).get("error_code"):
+        print(f"[VARIFLIGHT] dep/arr查询也返回错误: {result.get('data', {}).get('error','')}")
+        result = {"success": False, "data": [], "error": result.get("data", {}).get("error", "")}
     print(f"[VARIFLIGHT] 航班查询结果: success={result.get('success')}, data_type={type(result.get('data')).__name__}, data_len={len(result.get('data', [])) if isinstance(result.get('data'), list) else 'N/A'}, error={result.get('error', '')[:100]}")
     flights = []
     if result.get("success"):
@@ -187,7 +196,7 @@ async def search_flights_by_route(dep_city: str, arr_city: str, date: str) -> di
 async def _calibrate_nearby_airport_search(dep_city: str, arr_city: str, date: str,
                                            dep_iata: str, arr_iata: str) -> list:
     """反复校准：主查询无结果时，扩展搜索邻近城市机场
-    尝试多种机场组合，确保不遗漏可用的航班"""
+    尝试多种机场组合，策略间有延迟避免频率限制"""
     from feichangzhun_service import get_nearest_hub, get_primary_airport_iata, _clean_city_name
     all_flights = []
 
@@ -205,6 +214,7 @@ async def _calibrate_nearby_airport_search(dep_city: str, arr_city: str, date: s
 
     # 策略2：尝试到达城市邻近枢纽
     if not all_flights:
+        await asyncio.sleep(1.5)
         arr_hub = get_nearest_hub(arr_city)
         if arr_hub.get("has_hub") and arr_hub["hub_iata"] != arr_iata:
             alt_arr_iata = arr_hub["hub_iata"]
@@ -218,6 +228,7 @@ async def _calibrate_nearby_airport_search(dep_city: str, arr_city: str, date: s
 
     # 策略3：尝试出发和到达都使用邻近枢纽
     if not all_flights:
+        await asyncio.sleep(1.5)
         dep_hub2 = get_nearest_hub(dep_city)
         arr_hub2 = get_nearest_hub(arr_city)
         if dep_hub2.get("has_hub") and arr_hub2.get("has_hub"):

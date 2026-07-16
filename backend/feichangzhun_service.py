@@ -4,12 +4,17 @@ import asyncio
 
 
 def _clean_city_name(city: str) -> str:
-    """清洗城市名：去除'市'、'省'、'区'、'县'等后缀，返回纯城市名"""
+    """清洗城市名：去除'市'、'省'、'区'、'县'等后缀，返回纯城市名
+    注意：'州'可能为城市名的一部分（如广州、杭州），剥离后若只剩1字则不剥离"""
     if not city:
         return ""
     for suffix in ("市", "省", "自治区", "特别行政区", "区", "县", "州", "盟", "地区"):
         if city.endswith(suffix) and len(city) > len(suffix):
-            city = city[:-len(suffix)]
+            stripped = city[:-len(suffix)]
+            # '州'为城市名一部分时（如广州→广仅1字），不剥离
+            if suffix == "州" and len(stripped) < 2:
+                continue
+            city = stripped
     return city
 
 
