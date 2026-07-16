@@ -155,8 +155,9 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                         transport_section += "\n  ③ departure_time必须与上表中该班次的dep时间完全一致！"
                         transport_section += "\n  ④ arrival_time必须与上表中该班次的arr时间完全一致！"
                         transport_section += "\n  ⑤ duration必须使用'班次号 + 耗时'格式（如'MU5102 2h5min'），耗时与上表一致！"
-                        transport_section += "\n  ⑥ station必须使用上表中的机场/车站名，禁止编造！"
+                        transport_section += "\n  ⑥ station必须使用上表中的机场/车站名，禁止编造！飞常准API返回的机场名即为有效名！"
                         transport_section += "\n  ⑦ 去程和返程各选一个班次，4个字段（flight_number/departure_time/arrival_time/duration）必须来自同一班次！"
+                        transport_section += "\n  ⑧ 🔴 绝对禁止编造班次号！如果上表中没有任何班次数据，flight_number必须留空字符串''！"
                         transport_section += "\n  ⑧ 如果上表中有多个班次，优先选择上午出发的班次（休闲节奏选08:00后），确保到达后有充足时间！"
                         transport_section += "\n  ⑨ 绝对禁止编造任何不在上表中的航班号/车次号！绝对禁止修改上表中的时间！"
             transport_section += f"\n第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。"
@@ -403,7 +404,7 @@ def build_retry_prompt(original_prompt: str, validation_result: dict, transport_
 【致命规则 - 违反将导致行程无效！】
 1. 航班号/车次号必须且只能从飞常准API提供的真实班次中选择，绝对禁止编造！
 2. 如果飞常准API没有返回任何数据，flight_number必须留空字符串""，绝对不能自己编一个！
-3. station必须是真实运营的民用机场/车站名，禁止使用南苑、大校场等已关闭/军用机场！
+3. station必须是飞常准API返回的机场/车站名，API返回的即为有效名，不需要参考任何其他名单！
 4. departure_time和arrival_time必须与所选真实班次的dep/arr时间完全一致！
 5. duration必须使用"班次号 + 耗时"格式，不可只写耗时！
 
@@ -610,7 +611,7 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                 transport_section += "\n可选火车/高铁："
                 for t in schedule["trains"]:
                     transport_section += f"\n  🚄 {t['num']}：{t['dep']}出发 → {t['arr']}到达（{t['duration']}）"
-            transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！绝对禁止使用南苑等已关闭/军用机场！只能使用：北京首都T2/T3、北京大兴、上海虹桥T1/T2、上海浦东T1/T2、广州白云、深圳宝安、成都双流、成都天府等真实民用机场！"
+            transport_section += "\n【强制要求-班次严格匹配】必须从以上班次中选择，但如果下面有飞常准API实时数据，必须以飞常准API为准！严格使用该班次全部信息：flight_number=班次号、departure_time=出发时间、arrival_time=到达时间、duration='班次号+耗时'格式，4个字段必须来自同一班次！飞常准API返回的机场/车站名即为有效名，无需参考其他名单！"
             # 无预存数据时的致命警告
             if schedule.get("_no_data"):
                 transport_section += "\n【致命警告-无预存数据】该路线没有预存真实班次数据！flight_number留空，只填交通方式类型，禁止编造航班号！"
