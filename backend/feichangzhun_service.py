@@ -597,11 +597,36 @@ COMMON_ROUTES = {
 def get_route_schedule(dep_city: str, arr_city: str, date: str = "") -> dict:
     """获取两个城市间的航班/高铁班次参考数据（优先飞常准API，回退预存数据）
     date参数用于校准：确保AI只使用出行日期的班次，禁止混入过往数据
+    临近城市（≤400km）自动过滤航班/高铁数据，强制低成本出行
     """
     clean_dep = _clean_city_name(dep_city)
     clean_arr = _clean_city_name(arr_city)
     key1 = f"{clean_dep}-{clean_arr}"
     key2 = f"{clean_arr}-{clean_dep}"
+    
+    # 临近城市检查：≤400km不使用飞机/高铁，强制低成本出行
+    # 使用judge_transport中的预存距离数据，避免重复查询高德API
+    transport_judge = judge_transport(dep_city, arr_city)
+    est_dist = transport_judge.get("estimated_distance", "")
+    need_flight = transport_judge.get("need_flight", True)
+    low_cost_mode = transport_judge.get("mode", "")
+    
+    # 距离≤400km（need_flight=False且非高铁优先）：强制低成本出行，过滤航班/高铁数据
+    if not need_flight and "高铁" not in low_cost_mode:
+        print(f"[ROUTE] {clean_dep}-{clean_arr} {est_dist}，{low_cost_mode}，强制低成本出行，过滤航班/高铁数据")
+        return {
+            "flights": [], "trains": [],
+            "_verified": "无需", "_source": "临近城市（≤400km）",
+            "_no_data": True,
+            "_no_data_note": (
+                f"【强制低成本出行-最高优先级】{clean_dep}到{clean_arr}距离约{est_dist}，属于临近城市！"
+                f"必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！"
+                f"① flight_number必须留空字符串'' ② type必须填写'大巴'或'自驾'或'汽车' ③ duration只写估算耗时 ④ station留空 ⑤ 绝对禁止编造任何航班号/车次号！"
+            ),
+            "_low_cost_forced": True,
+            "_distance_km": est_dist,
+        }
+    
     static = COMMON_ROUTES.get(key1) or COMMON_ROUTES.get(key2) or {
         "flights": [], "trains": [],
         "_verified": "无", "_source": "无预存数据",
