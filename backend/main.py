@@ -140,6 +140,8 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
     all_vf_items = vf_flights + vf_trains
     all_real_nums = {item["num"] for item in all_vf_items if item.get("num")}
+    # 记录已分配给出发交通的班次，避免返程使用同一班次
+    used_departure_num = None
     # 临近城市强制低成本出行检查：强制拒绝飞机/高铁
     low_cost_forced = route_schedule.get("_low_cost_forced", False) if route_schedule else False
 
@@ -149,8 +151,9 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
             continue
 
         transport_type = str(transport.get("type", "")).strip()
-        # 🔴 临近城市强制低成本出行：拒绝飞机/高铁
-        if low_cost_forced and transport_type in ("飞机", "高铁", "动车", "火车"):
+        # 🔴 临近城市强制低成本出行：拒绝飞机/高铁（除非用户明确指定了飞机或高铁）
+        user_transport_mode = trip_data.get("_transport_mode", "")
+        if low_cost_forced and transport_type in ("飞机", "高铁", "动车", "火车") and user_transport_mode not in ("飞机", "高铁"):
             issue = f"{key}使用了{transport_type}（临近城市禁止），已强制改为大巴"
             print(f"[LOW_COST_REJECT] {issue}")
             result["issues"].append(issue)
@@ -201,7 +204,13 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
             vf_matched = None
             if flight_num and all_vf_items:
-                for item in all_vf_items:
+                # 返程排除已用于出发的班次号
+                available_items = all_vf_items
+                if key == "return_transport" and used_departure_num:
+                    available_items = [item for item in all_vf_items if item.get("num") != used_departure_num]
+                    if not available_items:
+                        available_items = all_vf_items  # 回退，确保有可选数据
+                for item in available_items:
                     if item.get("num") == flight_num:
                         vf_matched = item
                         break
@@ -227,12 +236,20 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["_verified"] = True
                 transport["_verified_source"] = "飞常准实时API"
                 transport["_verified_date"] = travel_date
+                if key == "departure_transport":
+                    used_departure_num = vf_matched["num"]
                 print(f"[OK] 飞常准API验证通过: {flight_num} {vf_matched.get('dep','')}→{vf_matched.get('arr','')} type={transport.get('type','')}")
 
             elif flight_num and all_vf_items and not vf_matched:
                 # ❌ 飞常准API有数据但AI选的班次不在其中 → 必须替换
-                chosen = all_vf_items[0]
+                # 🔴 返程不能使用出发的同一班次
+                available_items = all_vf_items
+                if key == "return_transport" and used_departure_num and len(all_vf_items) > 1:
+                    available_items = [item for item in all_vf_items if item.get("num") != used_departure_num]
+                chosen = available_items[0]
                 issue = f"{key}班次{flight_num}不在飞常准API数据中，已替换为{chosen['num']}"
+                if key == "return_transport" and used_departure_num and chosen["num"] == used_departure_num:
+                    issue += "（⚠️ 飞常准API仅有一个班次，往返共用同一班次号）"
                 print(f"[WARN] {issue}")
                 result["issues"].append(issue)
                 result["fabricated"].append(flight_num)
@@ -254,10 +271,16 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 transport["_verified"] = True
                 transport["_verified_source"] = "飞常准实时API（自动校准）"
                 transport["note"] = (transport.get("note", "") + f"（已校准为飞常准API真实班次{chosen['num']}）").strip()
+                if key == "departure_transport":
+                    used_departure_num = chosen["num"]
 
             elif not flight_num and all_vf_items:
                 # AI没填班次号但飞常准API有数据，自动填充
-                chosen = all_vf_items[0]
+                # 🔴 返程不能使用出发的同一班次
+                available_items = all_vf_items
+                if key == "return_transport" and used_departure_num and len(all_vf_items) > 1:
+                    available_items = [item for item in all_vf_items if item.get("num") != used_departure_num]
+                chosen = available_items[0]
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", "")
                 transport["arrival_time"] = chosen.get("arr", "")
@@ -274,6 +297,8 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                     transport["cost"] = chosen["price"]
                 transport["_verified"] = True
                 transport["_verified_source"] = "飞常准实时API（自动填充）"
+                if key == "departure_transport":
+                    used_departure_num = chosen["num"]
                 print(f"[OK] 飞常准API自动填充: {chosen['num']} type={transport.get('type','')}")
 
             elif flight_num and not all_vf_items:
@@ -991,6 +1016,18 @@ async def generate_trip(req: TripRequest):
                 # 生成火车票查询指引
                 transport_info["flight_query_text"] = build_flight_query_text(
                     req.departure_city, dest, start_date)
+            # 如果用户在首页选择了特定出行方式，强制覆盖交通判断
+            if req.transport_mode:
+                mode_map = {
+                    "plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"
+                }
+                user_mode = mode_map.get(req.transport_mode, "")
+                if user_mode:
+                    ti["mode"] = user_mode
+                    ti["reason"] = f"用户指定{user_mode}出行"
+                    ti["need_flight"] = (user_mode == "飞机")
+                    transport_info["transport"] = ti
+                    print(f"[TRANSPORT] 用户选择出行方式: {req.transport_mode} → {user_mode}")
             # 自驾模式：计算自驾路线
             if req.is_self_drive:
                 sd_plan = await calculate_self_drive_plan(
@@ -1050,7 +1087,7 @@ async def generate_trip(req: TripRequest):
         # 2. 调用 DeepSeek 生成行程
         prompt = build_trip_prompt(dest, days, req.budget, req.interests, ranked_pois, weather_data,
                                    start_date, end_date, req.travelers, req.budget_type, req.pace,
-                                   req.is_self_drive, req.departure_city, transport_info)
+                                   req.is_self_drive, req.departure_city, transport_info, req.transport_mode)
         dynamic_tokens = 4000 + days * 500
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, dynamic_tokens)
@@ -1077,6 +1114,9 @@ async def generate_trip(req: TripRequest):
         max_retries = 3
         for retry_attempt in range(max_retries + 1):
             try:
+                # 将用户选择的出行方式注入trip_data，供验证函数使用
+                user_mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+                trip_data["_transport_mode"] = user_mode_map.get(req.transport_mode, "") if req.transport_mode else ""
                 validation_result = _validate_transport_airports(
                     trip_data, req.departure_city, dest, req.start_date,
                     transport_info.get("variflight_data"),
@@ -1366,6 +1406,7 @@ async def regenerate_trip(request: Request):
         user_input = body.get("user_input", "").strip()
         trip_data = body.get("trip_data", {})
         is_self_drive = body.get("is_self_drive", False)
+        transport_mode = body.get("transport_mode", "")
         departure_city = body.get("departure_city", "")
 
         if not user_input:
@@ -1418,6 +1459,16 @@ async def regenerate_trip(request: Request):
                     print(f"[AMAP] 重新生成时距离查询失败: {e}")
             except Exception:
                 pass
+            # 如果用户在首页选择了特定出行方式，强制覆盖交通判断（重新生成时）
+            if transport_mode:
+                mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+                user_mode = mode_map.get(transport_mode, "")
+                if user_mode:
+                    ti["mode"] = user_mode
+                    ti["reason"] = f"用户指定{user_mode}出行"
+                    ti["need_flight"] = (user_mode == "飞机")
+                    transport_info["transport"] = ti
+                    print(f"[TRANSPORT] 重新生成：用户选择出行方式: {transport_mode} → {user_mode}")
             try:
                 amap_dist_km_reg = transport_info.get("amap_distance", {}).get("distance_km", 0) if transport_info.get("amap_distance") else 0
                 schedule_reg = get_route_schedule(departure_city, dest, start_date, force_distance_km=amap_dist_km_reg)
@@ -1499,7 +1550,7 @@ async def regenerate_trip(request: Request):
         # 构建regenerate prompt
         prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
                                          weather_data, start_date, end_date,
-                                         is_self_drive, departure_city, transport_info)
+                                         is_self_drive, departure_city, transport_info, transport_mode)
         # 调用DeepSeek
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, 6000)
@@ -1527,6 +1578,9 @@ async def regenerate_trip(request: Request):
         max_retries = 3
         for retry_attempt in range(max_retries + 1):
             try:
+                # 将用户选择的出行方式注入trip_data，供验证函数使用
+                user_mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+                new_trip["_transport_mode"] = user_mode_map.get(transport_mode, "") if transport_mode else ""
                 validation_result = _validate_transport_airports(
                     new_trip, departure_city, dest, start_date,
                     transport_info.get("variflight_data"),

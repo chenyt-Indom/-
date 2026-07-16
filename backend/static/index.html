@@ -499,7 +499,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="form-item">
       <label class="label">出行方式</label>
       <div class="tag-group" id="transportGroup">
-        <button class="tag active" data-tag="public" onclick="switchTransport('public')">公共交通</button>
+        <button class="tag" data-tag="plane" onclick="switchTransport('plane')">飞机</button>
+        <button class="tag" data-tag="train" onclick="switchTransport('train')">高铁</button>
+        <button class="tag" data-tag="taxi" onclick="switchTransport('taxi')">打车</button>
         <button class="tag" data-tag="selfdrive" onclick="switchTransport('selfdrive')">自驾</button>
       </div>
     </div>
@@ -694,13 +696,15 @@ let selectedTags = [];
 let tripData = null;
 let departureCity = '';
 let budgetType = 'total';  // 预算类型：total=总预算, aa=AA制
-let isSelfDrive = false;   // 是否自驾
+let isSelfDrive = false;   // 是否自驾（保留兼容性）
+let transportMode = '';     // 出行方式：plane/train/taxi/selfdrive，空字符串=未选择
 let monitorTimer = null;   // 实时监测定时器
 let monitorRejected = false;  // 用户是否拒绝过监测建议
 let monitorStopped = false;   // 用户是否选择不再提示
 
-// 出行方式切换
+// 出行方式切换（飞机/高铁/打车/自驾）
 function switchTransport(type) {
+  transportMode = type;
   isSelfDrive = (type === 'selfdrive');
   document.querySelectorAll('#transportGroup .tag').forEach(b => {
     b.classList.toggle('active', b.dataset.tag === type);
@@ -1037,6 +1041,7 @@ btnGen.addEventListener('click', async function(){
         travelers: parseInt(document.getElementById('travelers').value) || 1,
         pace: parseInt(document.getElementById('paceSlider').value),
         is_self_drive: isSelfDrive,
+        transport_mode: transportMode,
       })
     });
     clearInterval(progressTimer);
@@ -2657,6 +2662,7 @@ async function regeneratePlan() {
         user_input: newPlan,
         trip_data: tripData,
         is_self_drive: isSelfDrive,
+        transport_mode: transportMode,
         departure_city: departureCity,
       })
     });

@@ -30,7 +30,7 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                       poi_data: list, weather_data: list, start_date: str, end_date: str,
                       travelers: int = 1, budget_type: str = "total", pace: int = 50,
                       is_self_drive: bool = False, departure_city: str = "",
-                      transport_info: dict = None) -> str:
+                      transport_info: dict = None, transport_mode: str = "") -> str:
     """构建行程生成提示词，包含POI数据、天气、人数、预算类型、节奏、自驾和JSON格式要求"""
     interest_str = "、".join(interests) if interests else "综合体验"
     poi_str = "\n".join([
@@ -43,10 +43,39 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     ]) if weather_data else "（请根据常识判断）"
     date_info = f"\n【出行日期】{start_date} 至 {end_date}（共{days}天）" if start_date else ""
 
+    # 🔴 用户指定出行方式：最高优先级，覆盖所有自动判断
+    transport_mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+    user_transport_mode = transport_mode_map.get(transport_mode, "")
+    if user_transport_mode:
+        is_self_drive = True  # 用户指定了方式，按用户选择处理
+
     # 出发/返程交通信息
     transport_section = ""
     if departure_city:
-        if is_self_drive:
+        if user_transport_mode:
+            # 用户指定了具体出行方式：强制使用该方式
+            transport_section = f"\n【🔴 用户指定出行方式 - 最高优先级】{user_transport_mode}"
+            if user_transport_mode == "自驾":
+                transport_section += f"\n【出行方式】自驾从{departure_city}出发"
+                if transport_info:
+                    sd = transport_info.get("self_drive_plan", {})
+                    if sd.get("total_distance"):
+                        transport_section += f"\n【自驾路线】全程{sd.get('total_distance','')}，预计驾驶{sd.get('total_duration_min',0)}分钟，当前路况{sd.get('traffic','畅通')}"
+                    if sd.get("stopover"):
+                        so = sd["stopover"]
+                        transport_section += f"\n【沿途过夜】{so.get('suggestion','')}，第一天驾驶{so.get('day1_drive','')}，第二天驾驶{so.get('day2_drive','')}"
+                    transport_section += f"\n【出发建议】{sd.get('suggested_departure','')}"
+                transport_section += "\n第一天和最后一天需包含出发/返程自驾规划，计算好驾驶时间，不要安排太紧凑，留足休息时间"
+            elif user_transport_mode == "飞机":
+                transport_section += f"\n【出行方式】用户指定飞机出行，必须安排{departure_city}到{dest}的往返航班"
+                transport_section += "\n必须从飞常准API实时数据中选择真实航班，不可编造航班号"
+            elif user_transport_mode == "高铁":
+                transport_section += f"\n【出行方式】用户指定高铁出行，必须安排{departure_city}到{dest}的往返高铁/动车"
+                transport_section += "\n必须从飞常准API实时数据中选择真实车次，不可编造车次号"
+            elif user_transport_mode == "打车":
+                transport_section += f"\n【出行方式】用户指定打车出行，{departure_city}到{dest}使用打车/出租车"
+                transport_section += "\n无需安排航班或高铁，只标注打车预估费用和耗时即可"
+        elif is_self_drive:
             transport_section = f"\n【出行方式】自驾从{departure_city}出发"
             if transport_info:
                 sd = transport_info.get("self_drive_plan", {})
@@ -571,7 +600,7 @@ def build_booking_prompt(dest: str, start_date: str, end_date: str, budget: str,
 def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary: list,
                             weather_data: list, start_date: str, end_date: str,
                             is_self_drive: bool, departure_city: str,
-                            transport_info: dict = None) -> str:
+                            transport_info: dict = None, transport_mode: str = "") -> str:
     """构建重新生成计划的提示词，重点参考用户输入的新需求"""
     transport_info = transport_info or {}  # 防止为None时报错
     old_summary = ""
@@ -588,12 +617,30 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
         for w in (weather_data or [])[:days+2]
     ]) if weather_data else "（请根据常识判断）"
 
-    transport_mode = "自驾" if is_self_drive else "公共交通"
+    # 🔴 用户指定出行方式：最高优先级
+    transport_mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
+    user_transport_mode = transport_mode_map.get(transport_mode, "")
+    if user_transport_mode:
+        transport_mode_display = user_transport_mode
+        is_self_drive = (user_transport_mode == "自驾")
+    else:
+        transport_mode_display = "自驾" if is_self_drive else "公共交通"
 
     # 交通判断信息
     transport_section = ""
     if departure_city:
-        if is_self_drive:
+        if user_transport_mode:
+            # 用户指定了具体出行方式：强制使用该方式
+            transport_section = f"\n【🔴 用户指定出行方式 - 最高优先级，不可更改！】{user_transport_mode}"
+            if user_transport_mode == "自驾":
+                transport_section += f"\n【出行方式】自驾从{departure_city}出发，需计算驾驶时间，长途需安排过夜停留"
+            elif user_transport_mode == "飞机":
+                transport_section += f"\n【出行方式】用户指定飞机出行，必须安排{departure_city}到{dest}的往返航班"
+            elif user_transport_mode == "高铁":
+                transport_section += f"\n【出行方式】用户指定高铁出行，必须安排{departure_city}到{dest}的往返高铁/动车"
+            elif user_transport_mode == "打车":
+                transport_section += f"\n【出行方式】用户指定打车出行，{departure_city}到{dest}使用打车/出租车"
+        elif is_self_drive:
             transport_section = f"\n【出行方式】自驾从{departure_city}出发，需计算驾驶时间，长途需安排过夜停留"
         else:
             transport_section = f"\n【出发城市】{departure_city}，公共交通出行"
@@ -606,16 +653,19 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                     transport_section += f"\n【出发地枢纽】{dep_hub['note']}"
                 if dest_hub.get("has_hub"):
                     transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
-    # 临近城市强制低成本出行检查
+    # 临近城市强制低成本出行检查（用户未指定飞机/高铁时才生效）
     low_cost_forced = False
     schedule = transport_info.get("route_schedule", {}) if transport_info else {}
-    if schedule.get("_low_cost_forced"):
+    if schedule.get("_low_cost_forced") and user_transport_mode not in ("飞机", "高铁"):
         low_cost_forced = True
         transport_section += f"\n\n🔴🔴【强制低成本出行-最高优先级】{departure_city}到{dest}距离仅{schedule.get('_distance_km','')}，属于临近城市！"
         transport_section += "\n必须使用大巴/自驾/汽车等低成本交通方式！绝对禁止使用飞机或高铁！"
         transport_section += "\n① flight_number必须留空字符串'' ② type必须填写'大巴'或'自驾'或'汽车' ③ duration只写估算耗时 ④ 绝对禁止编造任何航班号/车次号！"
     transport_section += f"""
-【交通选择原则】根据距离和性价比选择交通工具，优先考虑低成本方案：
+【交通选择原则】根据距离和性价比选择交通工具，优先考虑低成本方案："""
+    if user_transport_mode:
+        transport_section += f"\n【用户已指定出行方式为{user_transport_mode}，必须严格遵循！】"
+    transport_section += f"""
   - ≤5km：步行
   - ≤30km：公交/地铁/打车
   - ≤100km：大巴/城际/自驾
