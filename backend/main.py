@@ -1482,6 +1482,45 @@ def _detect_mixed_transport_from_text(text: str) -> dict:
     return {"has_mixed": False, "departure_mode": "", "return_mode": "", "departure_cn": "", "return_cn": ""}
 
 
+def _enforce_mixed_transport(trip_data: dict, mixed_transport: dict):
+    """强制校验混合交通方式：确保出发和返程交通类型与用户要求一致"""
+    if not mixed_transport or not mixed_transport.get("has_mixed"):
+        return
+    dep_cn = mixed_transport.get("departure_cn", "")
+    ret_cn = mixed_transport.get("return_cn", "")
+    if not dep_cn or not ret_cn:
+        return
+    
+    # 强制修正出发交通
+    dep_trans = trip_data.get("departure_transport", {})
+    if dep_trans:
+        current_type = dep_trans.get("type", "")
+        if current_type != dep_cn:
+            print(f"[MIXED] 出发交通类型修正: '{current_type}' → '{dep_cn}'")
+            dep_trans["type"] = dep_cn
+            # 如果类型改变了，清除旧班次信息（避免飞机类型配高铁班次号）
+            if current_type and current_type != dep_cn:
+                dep_trans["flight_number"] = ""
+                dep_trans["departure_time"] = ""
+                dep_trans["arrival_time"] = ""
+                dep_trans["station"] = ""
+                dep_trans["duration"] = f"约{dep_cn}出行"
+    
+    # 强制修正返程交通
+    ret_trans = trip_data.get("return_transport", {})
+    if ret_trans:
+        current_type = ret_trans.get("type", "")
+        if current_type != ret_cn:
+            print(f"[MIXED] 返程交通类型修正: '{current_type}' → '{ret_cn}'")
+            ret_trans["type"] = ret_cn
+            if current_type and current_type != ret_cn:
+                ret_trans["flight_number"] = ""
+                ret_trans["departure_time"] = ""
+                ret_trans["arrival_time"] = ""
+                ret_trans["station"] = ""
+                ret_trans["duration"] = f"约{ret_cn}出行"
+
+
 def _detect_transport_mode_from_text(text: str) -> str:
     """从用户输入文本中检测交通方式变更意图
     返回对应的transport_mode值（plane/train/taxi/selfdrive），无检测到返回空字符串
@@ -1676,7 +1715,12 @@ async def regenerate_trip(request: Request):
             try:
                 # 将用户选择的出行方式注入trip_data，供验证函数使用
                 user_mode_map = {"plane": "飞机", "train": "高铁", "taxi": "打车", "selfdrive": "自驾"}
-                new_trip["_transport_mode"] = user_mode_map.get(transport_mode, "") if transport_mode else ""
+                # 🔴 混合交通方式时不设置_transport_mode（避免强制统一往返类型）
+                if mixed_transport.get("has_mixed"):
+                    new_trip["_transport_mode"] = ""
+                    new_trip["_mixed_transport"] = mixed_transport
+                else:
+                    new_trip["_transport_mode"] = user_mode_map.get(transport_mode, "") if transport_mode else ""
                 validation_result = _validate_transport_airports(
                     new_trip, departure_city, dest, start_date,
                     transport_info.get("variflight_data"),
@@ -1707,6 +1751,8 @@ async def regenerate_trip(request: Request):
             else:
                 break
 
+        # 🔴 混合交通方式：强制校验出发和返程交通类型
+        _enforce_mixed_transport(new_trip, mixed_transport)
         # 确保往返交通信息始终存在
         try:
             _ensure_transport_data(new_trip, departure_city, dest,

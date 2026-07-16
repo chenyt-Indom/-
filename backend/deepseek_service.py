@@ -695,7 +695,11 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                     transport_section += f"\n【目的地枢纽】{dest_hub['note']}"
     transport_section += f"""
 【交通选择原则】根据用户偏好和飞常准API数据选择合适的交通工具："""
-    if user_transport_mode:
+    if mixed_transport and mixed_transport.get("has_mixed"):
+        dep_cn = mixed_transport.get("departure_cn", "")
+        ret_cn = mixed_transport.get("return_cn", "")
+        transport_section += f"\n【🔴 混合交通方式已在上面声明，出发={dep_cn}、返程={ret_cn}，绝对不可混淆！】"
+    elif user_transport_mode:
         transport_section += f"\n【用户已指定出行方式为{user_transport_mode}，必须严格遵循！】"
     transport_section += f"""
 第一天必须包含从{departure_city}出发前往{dest}的交通规划，最后一天必须包含从{dest}返回{departure_city}的交通规划。
