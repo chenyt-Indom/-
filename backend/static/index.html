@@ -710,7 +710,7 @@ function showGradientFallback(img, type, name, onClickFn) {
 
 // 二维码分享
 function showQR() {
-  const url = 'http://lvbaixing.top/app/';
+  const url = 'https://lvbaixing.top/app/';
   const qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(url);
   document.getElementById('qrImage').src = qrSrc;
   document.getElementById('qrOverlay').classList.add('show');
@@ -2030,28 +2030,45 @@ function closeMap(){
 
 function shareTrip(){
   if(!tripData) return;
-  const canvas = document.createElement('canvas');
-  canvas.width = 375; canvas.height = 500;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#4A90D9'; ctx.fillRect(0,0,375,80);
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(`行旅白 · ${tripData.destination}${tripData.days}日游`, 187, 50);
-  ctx.fillStyle = '#333'; ctx.font = '14px sans-serif'; ctx.textAlign = 'left';
-  let y = 110;
-  (tripData.itinerary||[]).forEach(day => {
-    if(y>440) return;
-    ctx.fillText(`Day${day.day} | ${day.morning?.spot||''} → ${day.afternoon?.spot||''}`, 20, y);
-    y += 24;
+  // 生成专属分享链接
+  const btn = event && event.target ? event.target : document.querySelector('.share-btn');
+  if (btn) { btn.textContent = '⏳ 生成分享链接...'; btn.disabled = true; }
+  fetch(API + '/api/share-trip', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({trip_data: tripData})
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (btn) { btn.textContent = '📤 分享行程'; btn.disabled = false; }
+    if (data.success) {
+      // 复制链接到剪贴板
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(data.share_url).then(function() {
+          alert('分享链接已复制到剪贴板！\n\n' + data.share_url + '\n\n其他人打开此链接即可查看该行程，但无法修改。');
+        }).catch(function() {
+          alert('分享链接：\n' + data.share_url + '\n\n（请手动复制链接分享给好友）');
+        });
+      } else {
+        // 创建分享卡片显示链接
+        showShareCard(data.share_url);
+      }
+    } else {
+      alert('分享失败：' + (data.error || '未知错误'));
+    }
+  })
+  .catch(function(e) {
+    if (btn) { btn.textContent = '📤 分享行程'; btn.disabled = false; }
+    alert('分享失败，请检查网络后重试');
   });
-  ctx.fillStyle = '#666'; ctx.font = '12px sans-serif';
-  (tripData.tips||[]).forEach(t => { if(y>480) return; ctx.fillText(`• ${t}`, 20, y); y+=20; });
-  const link = canvas.toDataURL('image/png');
-  const a = document.createElement('a'); a.href = link; a.download = `行旅白_${tripData.destination}${tripData.days}日游.png`;
-  a.click();
-  alert('分享卡片已下载！');
 }
 
 function goHome(){
+  // 如果是分享只读模式，返回首页需清除URL参数
+  if (window._isReadonly) {
+    goBackFromShare();
+    return;
+  }
   // 保存当前计划到历史记录
   if (tripData && tripData.destination) {
     saveToHistory(tripData);
@@ -2642,6 +2659,65 @@ function checkIfToday(dateStr) {
 }
 
 renderHistory();
+
+// 检查是否为分享链接，如果是则加载分享行程（只读模式）
+(function checkSharedTrip() {
+  var params = new URLSearchParams(window.location.search);
+  var shareId = params.get('share');
+  if (!shareId) return;
+  // 有分享参数，加载分享行程
+  var homePage = document.getElementById('homePage');
+  var overviewPage = document.getElementById('overviewPage');
+  var tripPage = document.getElementById('tripPage');
+  homePage.style.display = 'none';
+  overviewPage.style.display = 'none';
+  tripPage.style.display = 'block';
+  tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:24px;margin-bottom:16px">⏳</div><div style="color:#666;font-size:16px">正在加载分享行程...</div></div>';
+  fetch(API + '/api/shared-trip/' + shareId)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (!data.success || !data.data) {
+        tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div style="color:#666;font-size:16px">分享链接不存在或已过期</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
+        return;
+      }
+      tripData = data.data;
+      window._isReadonly = true;
+      renderTrip();
+      disableControlsForShared();
+    })
+    .catch(function(e) {
+      tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">❌</div><div style="color:#666;font-size:16px">加载失败，请检查网络后重试</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
+    });
+})();
+
+function disableControlsForShared() {
+  var editControls = document.querySelectorAll('.btn-regenerate, .btn-generate, .form-card, .share-btn, .fav-btn-wrap, #newPlanInput, #btnRegenerate, #btnMonitor, #btnOverview, .city-badge, #cityBadge');
+  editControls.forEach(function(el) { if (el) el.style.display = 'none'; });
+  var tripPage = document.getElementById('tripPage');
+  if (tripPage) {
+    var banner = document.createElement('div');
+    banner.style.cssText = 'text-align:center;padding:12px;background:#FFF3E0;color:#E65100;font-size:14px;border-radius:8px;margin-bottom:16px';
+    banner.innerHTML = '🔒 这是分享的行程，仅供查看，不可修改';
+    tripPage.insertBefore(banner, tripPage.firstChild);
+  }
+  var historySection = document.getElementById('historySection');
+  if (historySection) historySection.style.display = 'none';
+}
+
+function showShareCard(url) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px;max-width:360px;width:90%;text-align:center"><div style="font-size:20px;font-weight:600;margin-bottom:16px">📤 分享行程</div><div style="background:#f5f5f5;border-radius:8px;padding:12px;margin-bottom:16px;word-break:break-all;font-size:14px;color:#333">' + url + '</div><div style="font-size:13px;color:#999;margin-bottom:16px">长按复制链接分享给好友</div><button style="background:#4A90D9;color:#fff;border:none;padding:10px 32px;border-radius:8px;font-size:16px;cursor:pointer" onclick="this.parentElement.parentElement.remove()">关闭</button></div>';
+  document.body.appendChild(overlay);
+}
+
+function goBackFromShare() {
+  // 从分享页面返回首页，清除URL参数
+  history.replaceState(null, '', '/app/');
+  location.reload();
+}
+
 // 将HTML onclick引用的函数暴露到全局作用域
 window.editCity = editCity;
 window.toggleHistory = toggleHistory;
@@ -2671,6 +2747,9 @@ window.updatePeopleHint = updatePeopleHint;
 window.updatePace = updatePace;
 window.showQR = showQR;
 window.closeQR = closeQR;
+window.shareTrip = shareTrip;
+window.showShareCard = showShareCard;
+window.goBackFromShare = goBackFromShare;
 window.imgFallback = imgFallback;
 window.toggleFavorite = toggleFavorite;
 window.regenerateDetail = regenerateDetail;

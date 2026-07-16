@@ -19,3 +19,6 @@ Thumbs.db
 .env
 *.env.local
 start_server.bat
+
+# Shared trips data
+backend/shared_trips/
