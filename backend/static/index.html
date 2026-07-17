@@ -1563,6 +1563,7 @@ function getWeatherIcon(desc) {
 }
 
 function renderTrip(data){
+  if (!data) data = tripData;
   tripData = data;
   const bk = data.booking_info || {};
   document.getElementById('tripTitle').textContent = data.destination + data.days + '日游';
