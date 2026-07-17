@@ -77,8 +77,14 @@ async def _call_variflight(endpoint: str, params: dict) -> dict:
                     inner = data.get("data", data)
                     # 🔴 检测 data 中的 error_code（API返回code=200但data中包含错误信息）
                     if isinstance(inner, dict) and inner.get("error_code"):
+                        error_code = inner.get("error_code")
                         error_msg = inner.get("error", "未知错误")
-                        print(f"[VARIFLIGHT] API返回错误: error_code={inner.get('error_code')}, error={error_msg}")
+                        # error_code=10 表示"暂无数据"，不是错误，返回空数据即可
+                        if error_code == 10:
+                            print(f"[VARIFLIGHT] 暂无数据: {error_msg}")
+                            return {"success": True, "data": []}
+                        # 其他error_code（如3=参数错误, 4=无权限）才是真正的错误
+                        print(f"[VARIFLIGHT] API返回错误: error_code={error_code}, error={error_msg}")
                         return {"success": False, "error": f"飞常准API错误: {error_msg}", "data": []}
                     return {"success": True, "data": inner}
                 resp_preview = str(data)[:200]
