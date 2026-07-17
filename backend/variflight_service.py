@@ -7,10 +7,10 @@ from config import VARIFLIGHT_KEY, VARIFLIGHT_URL
 MCP_TO_REST_ENDPOINT = {
     "searchFlightsByDepArr": "flights",
     "searchFlightsByNumber": "flight",
-    "getFlightTransferInfo": "getFlightTransferInfo",
-    "flightHappinessIndex": "flightHappinessIndex",
-    "getRealtimeLocationByAnum": "getRealtimeLocationByAnum",
-    "getFutureWeatherByAirport": "getFutureAirportWeather",
+    "getFlightTransferInfo": "transfer",
+    "flightHappinessIndex": "happiness",
+    "getRealtimeLocationByAnum": "realtimeLocation",
+    "getFutureWeatherByAirport": "futureAirportWeather",
     "searchFlightItineraries": "searchFlightItineraries",
     "getFlightPriceByCities": "getFlightPriceByCities",
     "trainStanTicket": "trainStanTicket",
@@ -74,7 +74,13 @@ async def _call_variflight(endpoint: str, params: dict) -> dict:
                 data = resp.json()
                 # 支持 code=200 和 code=0 两种成功响应
                 if data.get("code") == 200 or data.get("code") == 0:
-                    return {"success": True, "data": data.get("data", data)}
+                    inner = data.get("data", data)
+                    # 🔴 检测 data 中的 error_code（API返回code=200但data中包含错误信息）
+                    if isinstance(inner, dict) and inner.get("error_code"):
+                        error_msg = inner.get("error", "未知错误")
+                        print(f"[VARIFLIGHT] API返回错误: error_code={inner.get('error_code')}, error={error_msg}")
+                        return {"success": False, "error": f"飞常准API错误: {error_msg}", "data": []}
+                    return {"success": True, "data": inner}
                 resp_preview = str(data)[:200]
                 print(f"[VARIFLIGHT] REST响应格式异常: {resp_preview}")
                 return {"success": False, "error": f"飞常准API返回错误: {data.get('message', data.get('error', ''))}", "data": []}
@@ -291,9 +297,14 @@ async def verify_flight_number(flight_num: str, date: str, dep: str = "", arr: s
 
 
 async def search_train_tickets(dep_city: str, arr_city: str, date: str) -> dict:
-    """查询火车票（高铁/动车/普通列车）"""
+    """查询火车票（高铁/动车/普通列车）
+    参数使用飞常准API文档规定的 cdep/carr（中文城市名）"""
+    # 清洗城市名（去除"市"等后缀）
+    from feichangzhun_service import _clean_city_name
+    dep_clean = _clean_city_name(dep_city)
+    arr_clean = _clean_city_name(arr_city)
     result = await _call_variflight("trainStanTicket", {
-        "cdep": dep_city, "carr": arr_city, "date": date
+        "cdep": dep_clean, "carr": arr_clean, "date": date
     })
     trains = []
     if result.get("success"):
@@ -321,6 +332,8 @@ async def search_train_tickets(dep_city: str, arr_city: str, date: str) -> dict:
                     "price": price,
                     "_source": "飞常准实时API",
                 })
+    else:
+        print(f"[VARIFLIGHT] 火车票查询失败: {result.get('error', '')[:200]}")
     return {"success": result.get("success"), "error": result.get("error", ""),
             "trains": trains, "_source": "飞常准实时API"}
 
