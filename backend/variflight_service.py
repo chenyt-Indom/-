@@ -263,6 +263,77 @@ async def _calibrate_nearby_airport_search(dep_city: str, arr_city: str, date: s
     return all_flights
 
 
+async def _calibrate_nearby_train_search(dep_city: str, arr_city: str, date: str) -> list:
+    """高铁邻近城市扩展搜索：当主城市查无高铁线路时，扩展搜索邻近城市
+    策略1：邻近出发城市 → 原到达城市
+    策略2：原出发城市 → 邻近到达城市
+    策略3：邻近出发城市 → 邻近到达城市"""
+    from feichangzhun_service import get_train_nearby_cities, _clean_city_name
+
+    dep_nearby = get_train_nearby_cities(dep_city)
+    arr_nearby = get_train_nearby_cities(arr_city)
+    all_trains = []
+
+    # 策略1：尝试邻近出发城市 → 原到达城市（最多尝试3个邻近城市）
+    if dep_nearby:
+        for alt_dep in dep_nearby[:3]:
+            print(f"[CALIBRATE-TRAIN] 策略1：尝试邻近出发 {alt_dep} → {arr_city}")
+            result = await search_train_tickets(alt_dep, arr_city, date)
+            alt_trains = result.get("trains", [])
+            if alt_trains:
+                for t in alt_trains:
+                    t["_source"] = f"飞常准实时API（邻近城市{alt_dep}出发）"
+                    t["_calibrated"] = True
+                all_trains.extend(alt_trains)
+                print(f"[CALIBRATE-TRAIN] 策略1成功：{alt_dep}→{arr_city} 找到{len(alt_trains)}条")
+                break
+            await asyncio.sleep(0.8)
+
+    # 策略2：尝试原出发城市 → 邻近到达城市
+    if not all_trains and arr_nearby:
+        for alt_arr in arr_nearby[:3]:
+            print(f"[CALIBRATE-TRAIN] 策略2：尝试 {dep_city} → 邻近到达 {alt_arr}")
+            result = await search_train_tickets(dep_city, alt_arr, date)
+            alt_trains = result.get("trains", [])
+            if alt_trains:
+                for t in alt_trains:
+                    t["_source"] = f"飞常准实时API（邻近城市{alt_arr}到达）"
+                    t["_calibrated"] = True
+                all_trains.extend(alt_trains)
+                print(f"[CALIBRATE-TRAIN] 策略2成功：{dep_city}→{alt_arr} 找到{len(alt_trains)}条")
+                break
+            await asyncio.sleep(0.8)
+
+    # 策略3：尝试邻近出发 → 邻近到达（双向邻近）
+    if not all_trains and dep_nearby and arr_nearby:
+        for alt_dep in dep_nearby[:2]:
+            found = False
+            for alt_arr in arr_nearby[:2]:
+                if alt_dep == alt_arr:
+                    continue
+                print(f"[CALIBRATE-TRAIN] 策略3：尝试双向邻近 {alt_dep} → {alt_arr}")
+                result = await search_train_tickets(alt_dep, alt_arr, date)
+                alt_trains = result.get("trains", [])
+                if alt_trains:
+                    for t in alt_trains:
+                        t["_source"] = f"飞常准实时API（双向邻近城市校准）"
+                        t["_calibrated"] = True
+                    all_trains.extend(alt_trains)
+                    print(f"[CALIBRATE-TRAIN] 策略3成功：{alt_dep}→{alt_arr} 找到{len(alt_trains)}条")
+                    found = True
+                    break
+                await asyncio.sleep(0.8)
+            if found:
+                break
+
+    if all_trains:
+        print(f"[CALIBRATE-TRAIN] 邻近城市高铁搜索完成，共找到{len(all_trains)}条")
+    else:
+        print(f"[CALIBRATE-TRAIN] 所有邻近城市高铁策略均未找到车次")
+
+    return all_trains
+
+
 async def verify_flight_number(flight_num: str, date: str, dep: str = "", arr: str = "") -> dict:
     """验证航班号是否真实存在
     优先不带dep/arr参数查询（兼容性最好），失败后回退带dep/arr参数"""
@@ -402,6 +473,12 @@ async def get_full_route_data(dep_city: str, arr_city: str, date: str, user_tran
     if trains and len(trains) > 0:
         trains = await _calibrate_train_results(trains, date, dep_city, arr_city)
         print(f"[VARIFLIGHT] 火车票校准完成：{len(trains)}条有效车次")
+
+    # 🔴 邻近城市扩展搜索：如果主城市无高铁数据，尝试搜索邻近城市
+    if not trains:
+        trains = await _calibrate_nearby_train_search(dep_city, arr_city, date)
+        if trains:
+            print(f"[VARIFLIGHT] 邻近城市高铁搜索成功：{len(trains)}条车次")
 
     has_flights = bool(flights)
     has_trains = bool(trains)
