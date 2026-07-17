@@ -34,9 +34,15 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
     # 构建飞常准API数据索引（唯一数据源）
     vf_flights = []
     vf_trains = []
+    # 🔴 返程方向数据（目的地→出发地）
+    vf_return_flights = []
+    vf_return_trains = []
     if variflight_data and variflight_data.get("success"):
         vf_flights = variflight_data.get("flights", [])
         vf_trains = variflight_data.get("trains", [])
+    if variflight_data:
+        vf_return_flights = variflight_data.get("return_flights", [])
+        vf_return_trains = variflight_data.get("return_trains", [])
 
     # 🔴 飞常准API是唯一数据源，不使用预存COMMON_ROUTES回退
     # 如果API无数据，all_vf_items为空，后续验证将标记所有班次为未验证
@@ -117,13 +123,18 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                 dep_city, arr_city = departure_city, dest
 
             vf_matched = None
-            if flight_num and all_vf_items:
+            # 🔴 返程使用返程方向数据（目的地→出发地），避免匹配到错误方向的车站
+            if key == "return_transport" and (vf_return_flights or vf_return_trains):
+                search_items = vf_return_flights + vf_return_trains
+            else:
+                search_items = all_vf_items
+            if flight_num and search_items:
                 # 返程排除已用于出发的班次号
-                available_items = all_vf_items
+                available_items = search_items
                 if key == "return_transport" and used_departure_num:
-                    available_items = [item for item in all_vf_items if item.get("num") != used_departure_num]
+                    available_items = [item for item in search_items if item.get("num") != used_departure_num]
                     if not available_items:
-                        available_items = all_vf_items  # 回退，确保有可选数据
+                        available_items = search_items  # 回退，确保有可选数据
                 for item in available_items:
                     if item.get("num") == flight_num:
                         vf_matched = item
@@ -156,10 +167,14 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
 
             elif flight_num and all_vf_items and not vf_matched:
                 # ❌ 飞常准API有数据但AI选的班次不在其中 → 必须替换
+                # 🔴 返程使用返程方向数据（目的地→出发地），确保替换的班次方向正确
                 # 🔴 返程不能使用出发的同一班次，且必须尊重用户交通方式选择
-                available_items = all_vf_items
-                if key == "return_transport" and used_departure_num and len(all_vf_items) > 1:
-                    available_items = [item for item in all_vf_items if item.get("num") != used_departure_num]
+                if key == "return_transport" and (vf_return_flights or vf_return_trains):
+                    available_items = vf_return_flights + vf_return_trains
+                else:
+                    available_items = all_vf_items
+                if key == "return_transport" and used_departure_num and len(available_items) > 1:
+                    available_items = [item for item in available_items if item.get("num") != used_departure_num]
                 # 🔴 根据用户交通方式过滤：用户选飞机则只替换为航班，选高铁则只替换为高铁
                 mode_filtered = _filter_by_user_mode(available_items, effective_user_mode)
                 if mode_filtered:
@@ -566,14 +581,24 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
 
     vf_flights = []
     vf_trains = []
+    # 🔴 返程方向数据（目的地→出发地），用于确保返程交通方向正确
+    vf_return_flights = []
+    vf_return_trains = []
     if variflight_data and variflight_data.get("success"):
         vf_flights = variflight_data.get("flights", [])
         vf_trains = variflight_data.get("trains", [])
+    # 提取返程方向数据
+    if variflight_data:
+        vf_return_flights = variflight_data.get("return_flights", [])
+        vf_return_trains = variflight_data.get("return_trains", [])
 
     # 🔴 飞常准API是唯一数据源，不使用预存COMMON_ROUTES回退
 
     # 构建默认交通模板
     def _build_transport_template(is_return=False, existing_type_hint=""):
+        # 🔴 返程时使用返程方向数据（目的地→出发地），确保车站/机场方向正确
+        flights = vf_return_flights if is_return and vf_return_flights else vf_flights
+        trains = vf_return_trains if is_return and vf_return_trains else vf_trains
         t = {
             "type": "", "flight_number": "", "departure_time": "", "arrival_time": "",
             "station": "", "duration": "", "cost": "", "cross_day": False,
@@ -581,8 +606,8 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             "_verified": False, "_verified_source": "自动填充"
         }
         # 🔴 根据用户交通方式选择优先匹配：用户选飞机时只用航班，选高铁时只用火车
-        if user_transport == "飞机" and vf_flights:
-            f = vf_flights[0]
+        if user_transport == "飞机" and flights:
+            f = flights[0]
             t["type"] = "飞机"
             t["flight_number"] = f["num"]
             t["departure_time"] = f.get("dep", "")
@@ -592,8 +617,8 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             t["cost"] = f.get("price", "")
             t["_verified"] = True
             t["_verified_source"] = "飞常准实时API"
-        elif user_transport == "高铁" and vf_trains:
-            tr = vf_trains[0]
+        elif user_transport == "高铁" and trains:
+            tr = trains[0]
             t["type"] = "高铁"
             t["flight_number"] = tr["num"]
             t["departure_time"] = tr.get("dep", "")
@@ -603,8 +628,8 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             t["cost"] = tr.get("price", "")
             t["_verified"] = True
             t["_verified_source"] = "飞常准实时API"
-        elif vf_flights and user_transport != "高铁":
-            f = vf_flights[0]
+        elif flights and user_transport != "高铁":
+            f = flights[0]
             t["type"] = "飞机"
             t["flight_number"] = f["num"]
             t["departure_time"] = f.get("dep", "")
@@ -614,8 +639,8 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             t["cost"] = f.get("price", "")
             t["_verified"] = True
             t["_verified_source"] = "飞常准实时API"
-        elif vf_trains and user_transport != "飞机":
-            tr = vf_trains[0]
+        elif trains and user_transport != "飞机":
+            tr = trains[0]
             t["type"] = "高铁"
             t["flight_number"] = tr["num"]
             t["departure_time"] = tr.get("dep", "")

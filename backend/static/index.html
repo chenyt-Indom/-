@@ -111,6 +111,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* 行程页 */
 .trip-container{max-width:420px;margin:0 auto;padding:16px 24px 32px;background:#f5f6f8;min-height:100vh;display:none}
+/* 分享链接加载遮罩 */
+.share-loading-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:#f5f6f8;z-index:100;display:flex;align-items:center;justify-content:center}
+.share-loading-content{text-align:center;padding:80px 20px}
+.share-loading-content .loading-icon{font-size:24px;margin-bottom:16px}
+.share-loading-content .loading-text{color:#666;font-size:16px}
+.share-loading-content .share-error-icon{font-size:48px;margin-bottom:16px}
+.share-loading-content .share-back-btn{margin-top:24px;background:#4A90D9;color:#fff;border:none;border-radius:20px;padding:10px 24px;font-size:16px;cursor:pointer}
 /* 详情页顶部新计划控件 */
 .detail-top-controls{background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
 .detail-top-controls .new-plan-input{width:100%;border:1px solid #e8e8e8;border-radius:10px;padding:12px 14px;font-size:16px;background:#f9fafb;outline:none;margin-bottom:8px}
@@ -568,6 +575,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- 行程详情页 -->
 <div class="trip-container" id="tripPage">
+  <!-- 分享链接加载状态遮罩（不替换innerHTML，保留子元素结构） -->
+  <div class="share-loading-overlay" id="shareLoadingOverlay" style="display:none">
+    <div class="share-loading-content" id="shareLoadingContent"></div>
+  </div>
   <div class="detail-top-controls">
     <input class="new-plan-input" id="newPlanInput" placeholder="输入新计划需求，如：增加一个景点、调整住宿...">
     <div class="btn-row">
@@ -2903,25 +2914,42 @@ document.addEventListener('DOMContentLoaded', function checkSharedTrip() {
   var homePage = document.getElementById('homePage');
   var overviewPage = document.getElementById('overviewPage');
   var tripPage = document.getElementById('tripPage');
+  var overlay = document.getElementById('shareLoadingOverlay');
+  var overlayContent = document.getElementById('shareLoadingContent');
   if (!homePage || !tripPage) return;
   homePage.style.display = 'none';
   if (overviewPage) overviewPage.style.display = 'none';
   tripPage.style.display = 'block';
-  tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:24px;margin-bottom:16px">⏳</div><div style="color:#666;font-size:16px">正在加载分享行程...</div></div>';
+  tripPage.style.position = 'relative';
+  // 显示加载遮罩（不替换innerHTML，保留子元素结构）
+  if (overlay) {
+    overlay.style.display = 'flex';
+    overlayContent.innerHTML = '<div class="loading-icon">⏳</div><div class="loading-text">正在加载分享行程...</div>';
+  }
   fetch(API + '/api/shared-trip/' + shareId)
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (!data.success || !data.data) {
-        tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div style="color:#666;font-size:16px">分享链接不存在或已过期</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
+        if (overlay) {
+          overlayContent.innerHTML = '<div class="share-error-icon">🔗</div><div class="loading-text">分享链接不存在或已过期</div><button class="share-back-btn" onclick="goBackFromShare()">返回首页</button>';
+        } else {
+          tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">🔗</div><div style="color:#666;font-size:16px">分享链接不存在或已过期</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
+        }
         return;
       }
       tripData = data.data;
       window._isReadonly = true;
       renderTrip();
       disableControlsForShared();
+      // 隐藏加载遮罩
+      if (overlay) overlay.style.display = 'none';
     })
     .catch(function(e) {
-      tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">❌</div><div style="color:#666;font-size:16px">加载失败，请检查网络后重试</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
+      if (overlay) {
+        overlayContent.innerHTML = '<div class="share-error-icon">❌</div><div class="loading-text">加载失败，请检查网络后重试</div><button class="share-back-btn" onclick="goBackFromShare()">返回首页</button>';
+      } else {
+        tripPage.innerHTML = '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">❌</div><div style="color:#666;font-size:16px">加载失败，请检查网络后重试</div><button class="btn-primary" style="margin-top:24px" onclick="goBackFromShare()">返回首页</button></div>';
+      }
     });
   } catch(e) { console.warn('分享链接检查失败:', e); }
 });

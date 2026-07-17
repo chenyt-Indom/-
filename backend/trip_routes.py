@@ -127,6 +127,8 @@ async def generate_trip(req: TripRequest):
             # 并行查询：飞常准API火车票 + 完整路线数据
             from variflight_service import get_full_route_data
             vf_result = await get_full_route_data(req.departure_city, dest, start_date, user_transport_mode=user_mode_cn)
+            # 🔴 返程方向单独查询（目的地→出发地），用于确保返程交通数据正确
+            vf_return = await get_full_route_data(dest, req.departure_city, end_date or start_date, user_transport_mode=user_mode_cn)
             transport_info["variflight_data"] = {
                 "flights": vf_result.get("flights", []),
                 "trains": vf_result.get("trains", []),
@@ -135,6 +137,10 @@ async def generate_trip(req: TripRequest):
                 "_no_data": vf_result.get("_no_data", False),
                 "_no_data_message": vf_result.get("_no_data_message", ""),
                 "source": vf_result.get("_source", "飞常准API"),
+                # 🔴 返程方向数据
+                "return_flights": vf_return.get("flights", []),
+                "return_trains": vf_return.get("trains", []),
+                "return_success": vf_return.get("success"),
             }
             # 🔴 飞常准API是唯一数据源，直接用API数据替换route_schedule
             if vf_result.get("success"):
@@ -393,6 +399,8 @@ async def regenerate_trip(request: Request):
                 # 🔴 混合交通方式时查询全部数据（不限制单一交通方式）
                 vf_mode = None if mixed_transport.get("has_mixed") else user_mode_cn
                 vf_result = await get_full_route_data(departure_city, dest, start_date, user_transport_mode=vf_mode)
+                # 🔴 返程方向单独查询（目的地→出发地），用于确保返程交通数据正确
+                vf_return = await get_full_route_data(dest, departure_city, end_date or start_date, user_transport_mode=vf_mode)
                 transport_info["variflight_data"] = {
                     "flights": vf_result.get("flights", []),
                     "trains": vf_result.get("trains", []),
@@ -401,6 +409,10 @@ async def regenerate_trip(request: Request):
                     "_no_data": vf_result.get("_no_data", False),
                     "_no_data_message": vf_result.get("_no_data_message", ""),
                     "source": vf_result.get("_source", "飞常准API"),
+                    # 🔴 返程方向数据
+                    "return_flights": vf_return.get("flights", []),
+                    "return_trains": vf_return.get("trains", []),
+                    "return_success": vf_return.get("success"),
                 }
                 # 🔴 飞常准API是唯一数据源，直接用API数据替换route_schedule
                 if vf_result.get("success"):
