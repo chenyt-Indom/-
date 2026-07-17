@@ -17,3 +17,4 @@ class TripRequest(BaseModel):
     pace: int = 50     # 游玩节奏 0-100，0=极慢，100=极快
     is_self_drive: bool = False  # 是否自驾出行
     transport_mode: str = ""  # 出行方式：plane(飞机)/train(高铁)/taxi(打车)/selfdrive(自驾)，空字符串=未选择
+    travel_group: str = ""  # 出行人群：youth(青少年)/senior(中老年人)/family(全家出行)，空字符串=未选择

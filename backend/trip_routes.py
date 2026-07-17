@@ -157,7 +157,8 @@ async def generate_trip(req: TripRequest):
         # 2. 调用 DeepSeek 生成行程
         prompt = build_trip_prompt(dest, days, req.budget, req.interests, ranked_pois, weather_data,
                                    start_date, end_date, req.travelers, req.budget_type, req.pace,
-                                   req.is_self_drive, req.departure_city, transport_info, req.transport_mode)
+                                   req.is_self_drive, req.departure_city, transport_info, req.transport_mode,
+                                   req.travel_group)
         dynamic_tokens = 4000 + days * 500
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, dynamic_tokens)
@@ -293,6 +294,7 @@ async def regenerate_trip(request: Request):
         is_self_drive = body.get("is_self_drive", False)
         transport_mode = body.get("transport_mode", "")
         departure_city = body.get("departure_city", "")
+        travel_group = body.get("travel_group", "")
 
         # 🔴 从用户输入文本中检测交通方式变更（覆盖首页选择的交通方式）
         detected_mode = _detect_transport_mode_from_text(user_input)
@@ -425,7 +427,7 @@ async def regenerate_trip(request: Request):
         # 构建regenerate prompt
         prompt = build_regenerate_prompt(dest, days, user_input, old_itinerary,
                                          weather_data, start_date, end_date,
-                                         is_self_drive, departure_city, transport_info, transport_mode, mixed_transport)
+                                         is_self_drive, departure_city, transport_info, transport_mode, mixed_transport, travel_group)
         # 调用DeepSeek
         try:
             raw = await call_deepseek("你是一个专业的旅行规划师，只输出JSON格式数据。", prompt, 6000)

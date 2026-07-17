@@ -52,7 +52,8 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
                       poi_data: list, weather_data: list, start_date: str, end_date: str,
                       travelers: int = 1, budget_type: str = "total", pace: int = 50,
                       is_self_drive: bool = False, departure_city: str = "",
-                      transport_info: dict = None, transport_mode: str = "") -> str:
+                      transport_info: dict = None, transport_mode: str = "",
+                      travel_group: str = "") -> str:
     """构建行程生成提示词，包含POI数据、天气、人数、预算类型、节奏、自驾和JSON格式要求"""
     interest_str = "、".join(interests) if interests else "综合体验"
     poi_str = "\n".join([
@@ -292,10 +293,52 @@ def build_trip_prompt(dest: str, days: int, budget: str, interests: list,
     if pace <= 40:
         pace_info += "\n【休闲节奏约束-最高优先级】此用户选择了偏休闲/慢节奏，所有出行时间不得早于上午8:00！上午景点最早8:00开始，出发时间最早8:00（绝对不能是7:00、7:30等）。"
 
+    # 出行人群偏好
+    travel_group_info = ""
+    if travel_group == "youth":
+        travel_group_info = """
+【出行人群-青少年-最高优先级】
+用户选择了"青少年"出行人群，请按以下原则安排行程：
+1. 景点选择：优先安排年轻人喜爱的热门打卡地、网红景点、主题乐园、户外探险、运动体验类项目
+2. 住宿选择：推荐青旅、民宿、特色胶囊酒店等性价比高且有社交氛围的住宿
+3. 餐饮推荐：以本地特色小吃、网红餐厅、夜市美食为主，注重性价比和体验感
+4. 节奏建议：可安排偏紧凑的节奏，年轻人精力充沛，可适当增加景点密度
+5. 交通建议：优先推荐公共交通（地铁/公交），减少打车费用，适合背包客风格
+6. 预算控制：整体预算偏经济型，控制住宿和交通成本，更多预算留给体验项目
+7. 避免安排：不适合老年人的高强度爬山、需要门票的高消费项目需标注性价比分析
+8. 安全提示：户外探险类活动需标注安全注意事项"""
+    elif travel_group == "senior":
+        travel_group_info = """
+【出行人群-中老年人-最高优先级】
+用户选择了"中老年人"出行人群，请按以下原则安排行程：
+1. 景点选择：优先安排文化历史类景点（博物馆、古迹、寺庙）、自然风光（公园、湖泊）、温泉养生类项目，避免高强度爬山和刺激性游乐项目
+2. 住宿选择：推荐安静舒适、交通便利的酒店，优先选择有电梯、离景区近的住宿，避免青年旅舍和嘈杂地段
+3. 餐饮推荐：以清淡健康、卫生可靠的正餐为主，推荐老字号餐厅、品质中餐，避免辛辣刺激和街边摊
+4. 节奏建议：必须采用慢节奏！每天最多2个景点，上午9:30后出发，下午留足休息时间，晚上不安排活动或只安排轻松散步
+5. 交通建议：优先推荐打车/包车/景区电瓶车，减少步行距离，避免长时间公共交通换乘
+6. 预算控制：预算适当放宽，优先考虑舒适度和便利性，住宿和交通可占较高比例
+7. 健康关怀：每个景点标注是否有无障碍设施、休息区、医疗点，行程中预留充足的休息时间
+8. 避免安排：不建议安排爬山、长时间步行（单次不超过1小时）、高温时段户外活动、夜间活动
+9. 保险建议：提示用户购买旅行意外险，特别是包含医疗救援的险种"""
+    elif travel_group == "family":
+        travel_group_info = """
+【出行人群-全家出行-最高优先级】
+用户选择了"全家出行"（含老人和小孩），请按以下原则安排行程：
+1. 景点选择：兼顾各年龄段需求，优先选择老少皆宜的景点（主题乐园、动物园、海洋馆、科技馆、自然风光），避免纯成人向的网红打卡地和极限运动
+2. 住宿选择：推荐家庭房/套房/公寓式酒店，有厨房和洗衣机更佳，靠近商圈或景区，方便就餐和购物
+3. 餐饮推荐：以家庭聚餐为主，推荐有包间、有儿童座椅的餐厅，口味兼顾老人清淡和小孩喜好，避免排长队的网红店
+4. 节奏建议：必须采用慢节奏！每天最多2-3个景点，上午9:00后出发，中午安排午休时间（12:00-14:00不安排景点），下午5:00前结束游览
+5. 交通建议：优先推荐包车/自驾/打车，避免频繁换乘公共交通，确保有安全座椅等儿童设施
+6. 预算控制：以家庭为单位计算，住宿和餐饮占比较高，门票预算考虑儿童/老人优惠票
+7. 亲子设施：每个景点标注是否有儿童游乐区、母婴室、无障碍通道、家庭卫生间
+8. 老人关怀：避免长时间步行（单次不超过1.5小时），预留充足休息时间，注意温差变化
+9. 安全提示：标注景点安全等级，提醒看管好儿童，注意人流密集区域的安全
+10. 弹性安排：行程中预留1-2个自由活动时段，方便家庭成员根据体力情况灵活调整"""
+
     return f"""你是一个资深旅行规划师。请根据以下真实数据，生成一份 {days} 天的{dest}行程。
 
 【目的地】{dest}
-【天数】{days}天{date_info}{people_info}{budget_info}{pace_info}{transport_section}
+【天数】{days}天{date_info}{people_info}{budget_info}{pace_info}{travel_group_info}{transport_section}
 【兴趣】{interest_str}
 
 【高德 POI 真实数据（按评分降序排列，评分越高越热门）】
@@ -648,7 +691,7 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                            weather_data: list, start_date: str = "", end_date: str = "",
                            is_self_drive: bool = False, departure_city: str = "",
                            transport_info: dict = None, transport_mode: str = "",
-                           mixed_transport: dict = None) -> str:
+                           mixed_transport: dict = None, travel_group: str = "") -> str:
     """构建重新生成计划的提示词，重点参考用户输入的新需求"""
     transport_info = transport_info or {}  # 防止为None时报错
     old_summary = ""
@@ -789,6 +832,15 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
                             transport_section += f"\n  🚄 {t['num']}：{t.get('dep','')}→{t.get('arr','')}（{t.get('duration','')}）{station_info}"
                     transport_section += "\n\n【🔴 飞常准API强制规则】flight_number/departure_time/arrival_time/duration必须来自同一班次，一字不差，禁止编造！"
 
+    # 出行人群偏好（重新生成时也需遵循）
+    regen_travel_group_info = ""
+    if travel_group == "youth":
+        regen_travel_group_info = "\n【出行人群-青少年】优先安排年轻人喜爱的热门打卡地、网红景点、主题乐园、户外探险类项目。住宿推荐青旅/民宿，餐饮以本地小吃和网红餐厅为主，节奏可偏紧凑，优先公共交通，预算偏经济型。"
+    elif travel_group == "senior":
+        regen_travel_group_info = "\n【出行人群-中老年人】优先安排文化历史类景点、自然风光、温泉养生类项目，避免高强度爬山和刺激性项目。住宿推荐安静舒适酒店，餐饮以清淡健康为主，必须采用慢节奏（每天最多2个景点，9:30后出发），优先打车/包车，预算适当放宽。"
+    elif travel_group == "family":
+        regen_travel_group_info = "\n【出行人群-全家出行】兼顾各年龄段需求，优先老少皆宜景点（主题乐园、动物园、海洋馆等），住宿推荐家庭房/套房，餐饮以家庭聚餐为主，必须采用慢节奏（每天最多2-3个景点，9:00后出发，12:00-14:00午休），优先包车/自驾，关注儿童和老人设施。"
+
     return f"""你是一个资深旅行规划师。用户查看已有行程后提出了新的需求，请根据新需求重新制定计划。
 
 【🔴 用户的新需求 - 最高优先级！必须100%满足！】
@@ -804,7 +856,7 @@ def build_regenerate_prompt(dest: str, days: int, user_input: str, old_itinerary
 【目的地】{dest}
 【天数】{days}天
 【出行日期】{start_date} 至 {end_date}
-【出行方式】{transport_mode_display}{transport_section}
+【出行方式】{transport_mode_display}{regen_travel_group_info}{transport_section}
 
 【原行程概览（仅供参考，新需求优先）】
 {old_summary}

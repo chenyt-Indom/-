@@ -30,8 +30,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .input{width:100%;border:1px solid #e8e8e8;border-radius:12px;padding:16px 18px;font-size:20px;background:#f9fafb;color:#333;outline:none;transition:border-color .2s}
 .input:focus{border-color:#4A90D9}
 .date-row{display:flex;align-items:center;gap:10px}
-.date-picker{flex:1;min-width:0;border:1px solid #e8e8e8;border-radius:12px;padding:14px 10px;font-size:16px;background:#f9fafb;color:#333;cursor:pointer;text-align:center}
-.date-picker.placeholder{color:#999}
+.date-picker-wrapper{flex:1;min-width:0;position:relative;border:1px solid #e8e8e8;border-radius:12px;padding:14px 10px;background:#f9fafb;cursor:pointer;text-align:center;overflow:hidden}
+.date-picker-wrapper:hover{border-color:#4A90D9}
+.date-display{font-size:16px;color:#333;pointer-events:none}
+.date-display.placeholder{color:#999}
+.date-hidden{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer}
 .date-arrow{font-size:24px;color:#4A90D9;font-weight:600;flex-shrink:0}
 .days-hint{text-align:right;margin-top:8px;font-size:16px;color:#666}
 .days-num{color:#4A90D9;font-size:24px;font-weight:700}
@@ -59,7 +62,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn-generate{width:100%;height:72px;background:linear-gradient(135deg,#4A90D9,#357ABD);color:#fff;border-radius:40px;font-size:24px;font-weight:600;margin-top:16px;border:none;cursor:pointer;transition:opacity .2s}
 .btn-generate:disabled{opacity:.7;cursor:not-allowed}
 /* 控件禁用状态 */
-.form-card.disabled .input,.form-card.disabled .date-picker,.form-card.disabled .people-input,.form-card.disabled .tag,.form-card.disabled .budget-type-btn,.form-card.disabled .people-btn,.form-card.disabled .pace-slider{pointer-events:none;opacity:.5;background:#f0f0f0;color:#999}
+.form-card.disabled .input,.form-card.disabled .date-picker-wrapper,.form-card.disabled .people-input,.form-card.disabled .tag,.form-card.disabled .budget-type-btn,.form-card.disabled .people-btn,.form-card.disabled .pace-slider{pointer-events:none;opacity:.5;background:#f0f0f0;color:#999}
 .form-card.disabled .tag.active{background:#b0c4de;color:#fff}
 .form-card.disabled .pace-slider::-webkit-slider-thumb{background:#ddd;border-color:#999}
 .form-card.disabled{pointer-events:none}
@@ -446,9 +449,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="form-item">
       <label class="label">出行日期</label>
       <div class="date-row">
-        <input type="date" class="date-picker" id="startDate" min="">
+        <div class="date-picker-wrapper" onclick="openDatePicker('start')">
+          <span class="date-display" id="startDateDisplay">选择日期</span>
+          <input type="date" class="date-hidden" id="startDate" min="" onchange="onDateChange('start')">
+        </div>
         <span class="date-arrow">→</span>
-        <input type="date" class="date-picker" id="endDate" min="">
+        <div class="date-picker-wrapper" onclick="openDatePicker('end')">
+          <span class="date-display" id="endDateDisplay">选择日期</span>
+          <input type="date" class="date-hidden" id="endDate" min="" onchange="onDateChange('end')">
+        </div>
       </div>
       <div class="days-hint" id="daysHint" style="display:none">
         共 <span class="days-num" id="daysNum">0</span> 天行程
@@ -503,6 +512,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <button class="tag" data-tag="train" onclick="switchTransport('train')">高铁</button>
         <button class="tag" data-tag="taxi" onclick="switchTransport('taxi')">打车</button>
         <button class="tag" data-tag="selfdrive" onclick="switchTransport('selfdrive')">自驾</button>
+      </div>
+    </div>
+    <div class="form-item">
+      <label class="label">出行人群</label>
+      <div class="tag-group" id="travelGroup">
+        <button class="tag" data-tag="youth" onclick="switchTravelGroup('youth')">青少年</button>
+        <button class="tag" data-tag="senior" onclick="switchTravelGroup('senior')">中老年人</button>
+        <button class="tag" data-tag="family" onclick="switchTravelGroup('family')">全家出行</button>
       </div>
     </div>
     <button class="btn-generate" id="btnGenerate">
@@ -698,6 +715,7 @@ let departureCity = '';
 let budgetType = 'total';  // 预算类型：total=总预算, aa=AA制
 let isSelfDrive = false;   // 是否自驾（保留兼容性）
 let transportMode = '';     // 出行方式：plane/train/taxi/selfdrive，空字符串=未选择
+let travelGroup = '';       // 出行人群：youth/senior/family，空字符串=未选择
 let monitorTimer = null;   // 实时监测定时器
 let monitorRejected = false;  // 用户是否拒绝过监测建议
 let monitorStopped = false;   // 用户是否选择不再提示
@@ -707,6 +725,14 @@ function switchTransport(type) {
   transportMode = type;
   isSelfDrive = (type === 'selfdrive');
   document.querySelectorAll('#transportGroup .tag').forEach(b => {
+    b.classList.toggle('active', b.dataset.tag === type);
+  });
+}
+
+// 出行人群切换（青少年/中老年人/全家出行）
+function switchTravelGroup(type) {
+  travelGroup = type;
+  document.querySelectorAll('#travelGroup .tag').forEach(b => {
     b.classList.toggle('active', b.dataset.tag === type);
   });
 }
@@ -963,21 +989,57 @@ if (tagBtns && tagBtns.length) {
   });
 }
 
-// 日期选择器联动，限制从今天开始（防御性：确保DOM元素存在）
+// 日期选择器联动，限制从今天开始
 var startEl = document.getElementById('startDate');
 var endEl = document.getElementById('endDate');
+var startDisplay = document.getElementById('startDateDisplay');
+var endDisplay = document.getElementById('endDateDisplay');
+
+// 格式化日期为"X月X日"格式
+function formatDateDisplay(dateStr) {
+  if (!dateStr) return '';
+  var parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return parseInt(parts[1]) + '月' + parseInt(parts[2]) + '日';
+}
+
+// 打开日期选择器
+function openDatePicker(type) {
+  var el = type === 'start' ? startEl : endEl;
+  if (el && el.showPicker) {
+    try { el.showPicker(); } catch(e) {}
+  }
+}
+
+// 日期变更时更新显示
+function onDateChange(type) {
+  var el = type === 'start' ? startEl : endEl;
+  var display = type === 'start' ? startDisplay : endDisplay;
+  if (el && display) {
+    var formatted = formatDateDisplay(el.value);
+    if (formatted) {
+      display.textContent = formatted;
+      display.classList.remove('placeholder');
+    } else {
+      display.textContent = '选择日期';
+      display.classList.add('placeholder');
+    }
+    if (type === 'start' && el.value) {
+      endEl.setAttribute('min', el.value);
+    }
+    updateDays();
+  }
+}
+
 if (startEl && endEl) {
-  // 获取今天日期（YYYY-MM-DD格式），设置min属性禁止选择过去日期
+  // 获取今天日期，设置min属性
   var today = new Date();
   var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
   startEl.setAttribute('min', todayStr);
   endEl.setAttribute('min', todayStr);
-  // 开始日期变更时，结束日期同步min
-  startEl.addEventListener('change', function() {
-    endEl.setAttribute('min', this.value);
-    updateDays();
-  });
-  endEl.addEventListener('change', updateDays);
+  // 初始化显示
+  startDisplay.classList.add('placeholder');
+  endDisplay.classList.add('placeholder');
 }
 function updateDays() {
   if (!startEl || !endEl) return 0;
@@ -987,7 +1049,10 @@ function updateDays() {
     var daysNumEl = document.getElementById('daysNum');
     if (daysNumEl) daysNumEl.textContent = days;
     var daysHintEl = document.getElementById('daysHint');
-    if (daysHintEl) daysHintEl.style.display = 'block';
+    if (daysHintEl) {
+      daysHintEl.style.display = 'block';
+      daysHintEl.innerHTML = formatDateDisplay(s) + ' → ' + formatDateDisplay(e) + ' 共 <span class="days-num" id="daysNum">' + days + '</span> 天行程';
+    }
     return days;
   }
   var daysHintEl2 = document.getElementById('daysHint');
@@ -1042,6 +1107,7 @@ btnGen.addEventListener('click', async function(){
         pace: parseInt(document.getElementById('paceSlider').value),
         is_self_drive: isSelfDrive,
         transport_mode: transportMode,
+        travel_group: travelGroup,
       })
     });
     clearInterval(progressTimer);
@@ -2664,6 +2730,7 @@ async function regeneratePlan() {
         is_self_drive: isSelfDrive,
         transport_mode: transportMode,
         departure_city: departureCity,
+        travel_group: travelGroup,
       })
     });
     const data = await res.json();
