@@ -449,14 +449,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="form-item">
       <label class="label">出行日期</label>
       <div class="date-row">
-        <div class="date-picker-wrapper" onclick="openDatePicker('start')">
+        <div class="date-picker-wrapper" id="startDateWrapper">
           <span class="date-display" id="startDateDisplay">选择日期</span>
-          <input type="date" class="date-hidden" id="startDate" min="" onchange="onDateChange('start')">
+          <input type="date" class="date-hidden" id="startDate" min="">
         </div>
         <span class="date-arrow">→</span>
-        <div class="date-picker-wrapper" onclick="openDatePicker('end')">
+        <div class="date-picker-wrapper" id="endDateWrapper">
           <span class="date-display" id="endDateDisplay">选择日期</span>
-          <input type="date" class="date-hidden" id="endDate" min="" onchange="onDateChange('end')">
+          <input type="date" class="date-hidden" id="endDate" min="">
         </div>
       </div>
       <div class="days-hint" id="daysHint" style="display:none">
@@ -1040,6 +1040,13 @@ if (startEl && endEl) {
   // 初始化显示
   startDisplay.classList.add('placeholder');
   endDisplay.classList.add('placeholder');
+  // 使用addEventListener绑定事件（避免inline onclick无法访问IIFE内函数）
+  startEl.addEventListener('change', function() { onDateChange('start'); });
+  endEl.addEventListener('change', function() { onDateChange('end'); });
+  var startWrapper = document.getElementById('startDateWrapper');
+  var endWrapper = document.getElementById('endDateWrapper');
+  if (startWrapper) startWrapper.addEventListener('click', function() { openDatePicker('start'); });
+  if (endWrapper) endWrapper.addEventListener('click', function() { openDatePicker('end'); });
 }
 function updateDays() {
   if (!startEl || !endEl) return 0;
@@ -2991,6 +2998,7 @@ window.imgFallback = imgFallback;
 window.toggleFavorite = toggleFavorite;
 window.regenerateDetail = regenerateDetail;
 window.switchTransport = switchTransport;
+window.switchTravelGroup = switchTravelGroup;
 window.regeneratePlan = regeneratePlan;
 window.toggleMonitor = toggleMonitor;
 window.acceptMonitorSuggestion = acceptMonitorSuggestion;
