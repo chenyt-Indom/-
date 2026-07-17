@@ -177,6 +177,24 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                     transport["_verified_source"] = f"未验证（飞常准API无{effective_user_mode}数据）"
                     transport["note"] = (transport.get("note", "") + f"（⚠️ {effective_user_mode}班次未验证，请自行核实）").strip()
                     continue  # 跳过后续替换逻辑
+                elif transport_type in ("飞机", "高铁"):
+                    # 🔴 混合交通方式：根据已有type过滤，不跨类型替换
+                    type_filtered = _filter_by_user_mode(available_items, transport_type)
+                    if type_filtered:
+                        available_items = type_filtered
+                    else:
+                        # 该类型无匹配数据，不替换为其他类型，保留原type
+                        issue = f"{key}班次{flight_num}不在飞常准API数据中，且无{transport_type}类型班次可替换，保留原type={transport_type}"
+                        print(f"[WARN] {issue}")
+                        result["issues"].append(issue)
+                        result["fabricated"].append(flight_num)
+                        result["valid"] = False
+                        transport["flight_number"] = ""  # 清空编造的班次号
+                        transport["type"] = transport_type  # 保持当前交通类型
+                        transport["_verified"] = False
+                        transport["_verified_source"] = f"未验证（飞常准API无{transport_type}数据）"
+                        transport["note"] = (transport.get("note", "") + f"（⚠️ {transport_type}班次未验证，请自行核实）").strip()
+                        continue
                 chosen = available_items[0]
                 issue = f"{key}班次{flight_num}不在飞常准API数据中，已替换为{chosen['num']}"
                 if key == "return_transport" and used_departure_num and chosen["num"] == used_departure_num:
@@ -222,6 +240,17 @@ def _validate_transport_airports(trip_data: dict, departure_city: str = "", dest
                     transport["_verified"] = False
                     transport["_verified_source"] = f"未验证（飞常准API无{effective_user_mode}数据）"
                     continue  # 跳过自动填充
+                elif transport_type in ("飞机", "高铁"):
+                    # 🔴 混合交通方式：根据已有type过滤，不跨类型填充
+                    type_filtered = _filter_by_user_mode(available_items, transport_type)
+                    if type_filtered:
+                        available_items = type_filtered
+                    else:
+                        print(f"[WARN] {key}飞常准API有数据但无{transport_type}类型班次，保留type={transport_type}，不自动填充")
+                        transport["type"] = transport_type
+                        transport["_verified"] = False
+                        transport["_verified_source"] = f"未验证（飞常准API无{transport_type}数据）"
+                        continue
                 chosen = available_items[0]
                 transport["flight_number"] = chosen["num"]
                 transport["departure_time"] = chosen.get("dep", "")
@@ -686,13 +715,26 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             elif user_transport == "高铁" and vf_trains:
                 chosen = vf_trains[0]
             elif not user_transport:
-                # 用户未指定交通方式，优先航班，其次火车
-                chosen = vf_flights[0] if vf_flights else vf_trains[0]
+                # 🔴 混合交通或无用户指定：根据已有type选择数据源，不跨类型回退
+                if dep_type == "飞机" and vf_flights:
+                    chosen = vf_flights[0]
+                elif dep_type == "高铁" and vf_trains:
+                    chosen = vf_trains[0]
+                elif dep_type == "飞机" and not vf_flights:
+                    # 飞机类型但无航班数据，不降级到高铁
+                    print(f"[TRANSPORT] 去程已设为飞机但飞常准API无航班数据，保留type=飞机")
+                elif dep_type == "高铁" and not vf_trains:
+                    # 高铁类型但无火车数据，不降级到飞机
+                    print(f"[TRANSPORT] 去程已设为高铁但飞常准API无火车数据，保留type=高铁")
+                elif vf_flights:
+                    chosen = vf_flights[0]
+                elif vf_trains:
+                    chosen = vf_trains[0]
             if chosen:
                 print(f"[TRANSPORT] 去程交通缺flight_number，从飞常准API合并: {chosen['num']}")
                 _merge_vf_to_transport(trip_data["departure_transport"], chosen)
             else:
-                print(f"[TRANSPORT] 去程交通缺flight_number，但飞常准API无{user_transport}类型数据，保留type={user_transport}")
+                print(f"[TRANSPORT] 去程交通缺flight_number，但飞常准API无匹配类型数据，保留type={dep_type}")
         elif not trip_data["departure_transport"].get("type"):
             # AI生成了transport但缺type和flight_number，从静态数据补全type
             print("[TRANSPORT] 去程交通信息不完整且无API数据，补全type")
@@ -741,13 +783,26 @@ def _ensure_transport_data(trip_data: dict, departure_city: str, dest: str,
             elif user_transport == "高铁" and vf_trains:
                 chosen = vf_trains[0]
             elif not user_transport:
-                # 用户未指定交通方式，优先航班，其次火车
-                chosen = vf_flights[0] if vf_flights else vf_trains[0]
+                # 🔴 混合交通或无用户指定：根据已有type选择数据源，不跨类型回退
+                if ret_type == "飞机" and vf_flights:
+                    chosen = vf_flights[0]
+                elif ret_type == "高铁" and vf_trains:
+                    chosen = vf_trains[0]
+                elif ret_type == "飞机" and not vf_flights:
+                    # 飞机类型但无航班数据，不降级到高铁
+                    print(f"[TRANSPORT] 返程已设为飞机但飞常准API无航班数据，保留type=飞机")
+                elif ret_type == "高铁" and not vf_trains:
+                    # 高铁类型但无火车数据，不降级到飞机
+                    print(f"[TRANSPORT] 返程已设为高铁但飞常准API无火车数据，保留type=高铁")
+                elif vf_flights:
+                    chosen = vf_flights[0]
+                elif vf_trains:
+                    chosen = vf_trains[0]
             if chosen:
                 print(f"[TRANSPORT] 返程交通缺flight_number，从飞常准API合并: {chosen['num']}")
                 _merge_vf_to_transport(trip_data["return_transport"], chosen)
             else:
-                print(f"[TRANSPORT] 返程交通缺flight_number，但飞常准API无{user_transport}类型数据，保留type={user_transport}")
+                print(f"[TRANSPORT] 返程交通缺flight_number，但飞常准API无匹配类型数据，保留type={ret_type}")
         elif not trip_data["return_transport"].get("type"):
             # AI生成了transport但缺type和flight_number，从静态数据补全type
             print("[TRANSPORT] 返程交通信息不完整且无API数据，补全type")
