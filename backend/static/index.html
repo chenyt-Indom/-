@@ -738,7 +738,16 @@ setTimeout(function() {
   var homePage = document.getElementById('homePage');
   if (homePage) { homePage.style.display = 'block'; }
 }, 5000);
-
+// 兜底：window.onerror 捕获语法错误后也隐藏加载占位（兼容旧浏览器）
+window.onerror = function(msg, url, line) {
+  var initLoading = document.getElementById('pageInitLoading');
+  if (initLoading) { initLoading.style.display = 'none'; }
+  var homePage = document.getElementById('homePage');
+  if (homePage) { homePage.style.display = 'block'; }
+  return false;
+};
+</script>
+<script>
 (function() {
 var API = window.location.origin;
 let selectedTags = [];
