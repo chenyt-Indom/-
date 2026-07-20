@@ -11,7 +11,13 @@
 <title>行旅白 AI 旅行规划</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;min-height:100vh;color:#333}
+/* 移动端初始加载占位：在JS解析前立即显示，避免白屏 */
+.page-init-loading{position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:99999;display:flex;align-items:center;justify-content:center}
+.page-init-inner{text-align:center}
+.page-init-spinner{width:40px;height:40px;border:3px solid #e0e0e0;border-top-color:#4A90D9;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.page-init-text{color:#999;font-size:15px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;min-height:100vh;color:#333;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;text-size-adjust:100%}
 .container{max-width:420px;margin:0 auto;padding:40px 24px 32px}
 .header{text-align:center;margin-bottom:40px}
 .header-top{display:flex;align-items:center;justify-content:center;gap:12px}
@@ -433,8 +439,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 </head>
 <body>
-
-<!-- 首页 -->
+<!-- 移动端初始加载占位：在JS解析前立即显示，避免白屏 -->
+<div class="page-init-loading" id="pageInitLoading">
+  <div class="page-init-inner">
+    <div class="page-init-spinner"></div>
+    <div class="page-init-text">正在加载...</div>
+  </div>
+</div>
 <div class="container" id="homePage">
   <div class="header">
     <div class="logo">行旅白</div>
@@ -713,10 +724,20 @@ window.addEventListener('error', function(e) {
   console.warn('全局JS错误:', e.message, e.filename, e.lineno);
   var homePage = document.getElementById('homePage');
   if (homePage) { homePage.style.display = 'block'; }
+  var initLoading = document.getElementById('pageInitLoading');
+  if (initLoading) { initLoading.style.display = 'none'; }
 });
 window.addEventListener('unhandledrejection', function(e) {
   console.warn('未处理的Promise拒绝:', e.reason);
 });
+
+// 兜底超时：5秒后无论JS是否执行完毕，都隐藏加载占位，防止手机浏览器白屏
+setTimeout(function() {
+  var initLoading = document.getElementById('pageInitLoading');
+  if (initLoading) { initLoading.style.display = 'none'; }
+  var homePage = document.getElementById('homePage');
+  if (homePage) { homePage.style.display = 'block'; }
+}, 5000);
 
 (function() {
 var API = window.location.origin;
@@ -853,32 +874,73 @@ function updatePace() {
 }
 
 // 定位：优先GPS精确坐标→逆地理编码，失败则IP定位兜底
+// 移动端IP定位可能不准（运营商IP分配城市与实际位置不符），GPS定位更准确
 async function locateCity() {
   const badge = document.getElementById('cityName');
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  // 第一步：尝试浏览器GPS定位
-  if (navigator.geolocation) {
+  var gpsBlocked = false;
+  // 检查用户是否之前拒绝了定位权限（避免重复弹出权限请求）
+  if (navigator.permissions && navigator.permissions.query) {
+    try {
+      var permStatus = await navigator.permissions.query({name:'geolocation'});
+      if (permStatus.state === 'denied') {
+        gpsBlocked = true;
+        console.log('GPS权限已被拒绝，跳过GPS定位');
+      }
+    } catch(e) { /* permissions API不可用，继续尝试GPS */ }
+  }
+  // 第一步：尝试浏览器GPS定位（HTTPS环境下可用，位置最准确）
+  if (!gpsBlocked && navigator.geolocation) {
+    // 先尝试高精度GPS定位
     try {
       const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject,
-          { enableHighAccuracy: true, timeout: isMobile ? 15000 : 8000, maximumAge: 600000 });
+          { enableHighAccuracy: true, timeout: isMobile ? 10000 : 8000, maximumAge: 600000 });
       });
-      const res = await fetch(API + `/api/regeo?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`);
+      const res = await fetch(API + '/api/regeo?lat=' + pos.coords.latitude + '&lng=' + pos.coords.longitude);
       const data = await res.json();
       if (data.success && data.city) {
         departureCity = data.city;
         badge.textContent = departureCity;
         badge.title = 'GPS精确定位';
+        badge.style.color = '';
+        var marker = document.getElementById('locateType');
+        if (marker) { marker.textContent = ' 📍(GPS)'; marker.style.color = ''; }
         return;
       }
     } catch(e) {
-      // GPS失败原因：1)HTTP站点不支持 2)用户拒绝权限 3)定位超时
-      console.log('GPS定位失败:', e.message);
+      // GPS高精度失败，尝试低精度快速定位（手机浏览器可能只允许低精度）
+      console.log('GPS高精度定位失败:', e.message);
+      if (e.code === 1) { gpsBlocked = true; } // PERMISSION_DENIED
+      if (!gpsBlocked && isMobile) {
+        try {
+          const pos2 = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject,
+              { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
+          });
+          const res2 = await fetch(API + '/api/regeo?lat=' + pos2.coords.latitude + '&lng=' + pos2.coords.longitude);
+          const data2 = await res2.json();
+          if (data2.success && data2.city) {
+            departureCity = data2.city;
+            badge.textContent = departureCity;
+            badge.title = 'GPS定位（低精度）';
+            badge.style.color = '';
+            var marker2 = document.getElementById('locateType');
+            if (marker2) { marker2.textContent = ' 📍(GPS)'; marker2.style.color = ''; }
+            return;
+          }
+        } catch(e2) {
+          console.log('GPS低精度定位也失败:', e2.message);
+        }
+      }
     }
+  } else if (gpsBlocked) {
+    console.log('GPS权限已被拒绝，使用IP定位');
+    badge.title = 'GPS权限未开启，请在浏览器设置中允许定位';
   } else {
     console.log('浏览器不支持GPS定位');
   }
-  // 第二步：IP定位兜底
+  // 第二步：IP定位兜底（移动端运营商IP可能不准，后端已做多源交叉验证）
   badge.textContent = '定位中…';
   try {
     const res = await fetch(API + '/api/locate');
@@ -886,10 +948,27 @@ async function locateCity() {
     if (data.success && data.city) {
       departureCity = data.city;
       badge.textContent = departureCity;
-      badge.title = isMobile ? '基于IP定位，可能不准确，点击可手动修改' : 'IP定位';
-      // 添加小提示标记
-      const marker = document.getElementById('locateType');
-      if (marker) marker.textContent = isMobile ? ' 📍(IP)' : '';
+      var sourceLabel = data.source === 'ipapi_co' ? 'ipapi.co' : (data.source === 'ip-api' ? 'ip-api.com' : '高德');
+      badge.title = 'IP定位（' + sourceLabel + '）可能不准，点击手动修改。GPS被拒？请在浏览器设置中允许定位权限';
+      badge.style.color = '#e67e22';
+      var marker = document.getElementById('locateType');
+      if (marker) {
+        marker.textContent = gpsBlocked ? ' ⚠️GPS已拒' : ' ⚠️IP定位';
+        marker.style.color = '#e67e22';
+        marker.title = gpsBlocked ? 'GPS权限被拒绝，请在手机浏览器设置中允许定位' : 'IP定位可能不准确，点击城市名可手动修改';
+      }
+      // 显示重新定位提示（仅当GPS被拒绝时）
+      if (gpsBlocked) {
+        var relocateHint = document.getElementById('relocateHint');
+        if (!relocateHint) {
+          relocateHint = document.createElement('div');
+          relocateHint.id = 'relocateHint';
+          relocateHint.style.cssText = 'font-size:12px;color:#e67e22;margin-top:4px;text-align:center;cursor:pointer';
+          relocateHint.textContent = '点击重新定位';
+          relocateHint.onclick = function(e) { e.stopPropagation(); locateCity(); };
+          badge.parentElement.appendChild(relocateHint);
+        }
+      }
     } else {
       badge.textContent = '点击设置城市';
       badge.title = '定位失败，请手动设置';
@@ -908,7 +987,15 @@ function confirmCity() {
   const val = document.getElementById('cityInput').value.trim();
   if (val) {
     departureCity = val;
-    document.getElementById('cityName').textContent = departureCity;
+    var badge = document.getElementById('cityName');
+    badge.textContent = departureCity;
+    badge.style.color = '';  // 清除IP定位橙色警告
+    badge.title = '手动设置';
+    var marker = document.getElementById('locateType');
+    if (marker) { marker.textContent = ''; marker.style.color = ''; }
+    // 清除重新定位提示
+    var relocateHint = document.getElementById('relocateHint');
+    if (relocateHint) { relocateHint.remove(); }
   }
   document.getElementById('cityModal').classList.remove('show');
 }
@@ -3033,6 +3120,9 @@ window.toggleMonitor = toggleMonitor;
 window.acceptMonitorSuggestion = acceptMonitorSuggestion;
 window.rejectMonitorSuggestion = rejectMonitorSuggestion;
 window.stopMonitor = window._stopMonitorPermanent;
+// 隐藏初始加载占位（JS已就绪）
+var initLoading = document.getElementById('pageInitLoading');
+if (initLoading) { initLoading.style.display = 'none'; }
 })();
 </script>
 <!-- 城市编辑弹窗 -->
